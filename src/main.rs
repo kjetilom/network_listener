@@ -1,42 +1,25 @@
-extern crate pnet;
+use std::error::Error;
+use network_listener::listener::{
+    analyzer,
+    capture,
+    logger,
+    parser,
+};
+use log::{info, debug};
 
-use pnet::datalink::{self, NetworkInterface, Config};
-use pnet::packet::ethernet::EthernetPacket;
-use pnet::datalink::Channel::Ethernet;
+fn main() -> Result<(), Box<dyn Error>> {
+    logger::setup_logging()?;
 
-fn handle_packet(packet: &EthernetPacket) {
-    println!("Received packet: {:?}", packet);
-}
+    info!("Starting packet capture");
+    let mut pcap = capture::PacketCapturer::new()?;
 
-fn find_interface() -> Option<NetworkInterface> {
-    let interfaces = datalink::interfaces();
-    let iface = interfaces.into_iter()
-        .find(|iface| iface.is_up() && !iface.is_loopback() && iface.is_broadcast());
-    println!("Listening on interface: {:?}", iface);
-    iface
-}
+    let mut analyzer = analyzer::Analyzer::new();
 
-fn main() {
-    let interface = find_interface().expect("No suitable interface found");
+    pcap.capture_loop(|packet| {
+        if let Some(parsed_packet) = parser::parse_packet(packet) {
+            analyzer.process_packet(&parsed_packet);
+        }
+    })?;
 
-    let config = Config::default();
-    let channel = datalink::channel(&interface, config)
-                             .expect("Failed to create datalink channel");
-
-    match channel {
-        Ethernet(_, mut rx) => {
-            loop {
-                match rx.next() {
-                    Ok(packet) => {
-                        let packet = EthernetPacket::new(packet).unwrap();
-                        handle_packet(&packet);
-                    },
-                    Err(e) => {
-                        eprintln!("An error occurred while reading: {}", e);
-                    }
-                }
-            }
-        },
-        _ => eprintln!("Unsupported channel type"),
-    }
+    Ok(())
 }
