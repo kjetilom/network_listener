@@ -1,7 +1,7 @@
 use fern;
 
 pub fn setup_logging() -> Result<(), fern::InitError> {
-    fern::Dispatch::new()
+    let _logger = fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",
@@ -12,9 +12,9 @@ pub fn setup_logging() -> Result<(), fern::InitError> {
             ))
         })
         .level(log::LevelFilter::Debug)
-        //.chain(std::io::stdout())
         .chain(fern::log_file("output.log")?)
         .chain(std::io::stdout())
         .apply()?;
+
     Ok(())
 }
