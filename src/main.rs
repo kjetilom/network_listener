@@ -1,18 +1,23 @@
 use std::error::Error;
 use network_listener::listener::{
-    capture,
+    capture::PacketCapturer,
     logger,
+    parser::Parser
 };
-use capture::capture_packets;
+use log::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     logger::setup_logging()?;
 
-    let handle = tokio::spawn(async move {
-        let _res = capture_packets().await;
-    });
-    handle.await?;
+    info!("Starting packet capture");
+    let (pcap, receiver)
+        = PacketCapturer::new()?;
+
+    pcap.start_capture_loop();
+
+    let parser = Parser::new(receiver);
+    parser.start().await;
 
     Ok(())
 }

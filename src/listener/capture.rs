@@ -67,20 +67,3 @@ impl PacketCapturer {
     }
 }
 
-/*
- * Capture packets and log them
- */
-pub async fn capture_packets() -> Result<(), Box<dyn Error>> {
-
-    info!("Starting packet capture");
-    let (pcap, mut receiver)
-        = PacketCapturer::new()?;
-
-    pcap.start_capture_loop();
-
-    while let Some(packet) = receiver.recv().await {
-        info!("Received packet: {:?}", packet.header);
-    }
-
-    Ok(())
-}

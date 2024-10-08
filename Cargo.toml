@@ -16,3 +16,5 @@ clap = { version = "4.0.18", features = ["derive"] }
 serde_json = "1.0.68"
 fern = "0.6.2"
 tokio = { version = "1.10.0", features = ["full"] }
+pcap-async = "0.4.1"
+etherparse = "0.16.0"

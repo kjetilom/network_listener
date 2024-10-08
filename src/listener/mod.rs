@@ -4,3 +4,4 @@ pub mod utils;
 pub mod analyzer;
 pub mod capture;
 pub mod config;
+pub mod tracker;
