@@ -3,7 +3,7 @@ use std::net::Ipv4Addr;
 use log::{debug, warn};
 use pnet::packet::{ethernet::EthernetPacket, ip::IpNextHeaderProtocols, Packet};
 use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::tcp::TcpPacket;
+use pnet::packet::tcp::{TcpOption, TcpPacket};
 use capture::OwnedPacket;
 use super::analyzer::Analyzer;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -52,7 +52,8 @@ impl Parser {
 
             tracker.record_sent(parsed_packet.sequence);
             if let Some(duration) = tracker.record_ack(parsed_packet.acknowledgment) {
-                println!("RTT: {:?}, Source: {:?}, Destination: {:?}", duration, parsed_packet.src_ip, parsed_packet.dst_ip);
+                println!("RTT: {:?}, Source: {:?}, Destination: {:?}",
+                     duration, parsed_packet.src_ip, parsed_packet.dst_ip);
                 debug!(
                     "Received ACK for sequence_number: {} (ack_number: {}), RTT = {:?}",
                     parsed_packet.acknowledgment - 1,
@@ -66,9 +67,10 @@ impl Parser {
         }
     }
 
-    /// Parses an `OwnedPacket` into a `ParsedPacket`.
-    ///
-    /// Returns `Some(ParsedPacket)` if parsing is successful, otherwise `None`.
+    /* Parses an `OwnedPacket` into a `ParsedPacket`.
+     *
+     * Returns `Some(ParsedPacket)` if parsing is successful, otherwise `None`.
+     */
     pub fn parse_packet(&self, packet: &OwnedPacket) -> Option<ParsedPacket> {
         // Parse the Ethernet frame
         let total_length = packet.data.len();
@@ -86,11 +88,9 @@ impl Parser {
         // Parse the TCP segment
         let tcp = TcpPacket::new(ipv4.payload())?;
 
-        // Extract IP addresses
+        // Get source and destination IP and port
         let src_ip = ipv4.get_source();
         let dst_ip = ipv4.get_destination();
-
-        // Extract ports
         let src_port = tcp.get_source();
         let dst_port = tcp.get_destination();
 

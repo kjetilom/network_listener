@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::Ipv4Addr;
 use std::time::{Instant, Duration};
 
 pub struct PacketTracker {
@@ -12,14 +13,17 @@ impl PacketTracker {
         }
     }
 
-    /// Records a sent packet's sequence number and timestamp.
+    /*
+     * Records a sent packet's sequence number and timestamp.
+     */
     pub fn record_sent(&mut self, sequence: u32) {
         self.sent_packets.insert(sequence, Instant::now());
     }
 
-    /// Records an acknowledgment number and calculates RTT if possible.
-    ///
-    /// Returns `Some(Duration)` if RTT can be calculated, otherwise `None`.
+    /* Records an acknowledgment number and calculates RTT if possible.
+     *
+     * Returns `Some(Duration)` if RTT can be calculated, otherwise `None`.
+     */
     pub fn record_ack(&mut self, acknowledgment: u32) -> Option<Duration> {
         if acknowledgment > 0 {
             let expected_seq = acknowledgment - 1;
