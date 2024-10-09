@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::net::Ipv4Addr;
 use std::time::{Instant, Duration};
 
 pub struct PacketTracker {
@@ -27,10 +26,9 @@ impl PacketTracker {
     pub fn record_ack(&mut self, acknowledgment: u32) -> Option<Duration> {
         if acknowledgment > 0 {
             let expected_seq = acknowledgment - 1;
-            if let Some(sent_time) = self.sent_packets.remove(&expected_seq) {
-                return Some(sent_time.elapsed());
-            } else {
-                None
+            match self.sent_packets.remove(&expected_seq) {
+                Some(sent_time) => return Some(sent_time.elapsed()),
+                None => None,
             }
         } else {
             None

@@ -27,7 +27,6 @@ pub struct ParsedPacket {
     pub acknowledgment: u32,
     pub flags: u8,
     pub payload: Vec<u8>,
-    pub is_outgoing: bool,
     pub total_length: usize,
 }
 
@@ -51,30 +50,26 @@ impl Parser {
             analyzer.process_packet(&parsed_packet);
 
             tracker.record_sent(parsed_packet.sequence);
-            if let Some(duration) = tracker.record_ack(parsed_packet.acknowledgment) {
-                println!("RTT: {:?}, Source: {:?}, Destination: {:?}",
-                     duration, parsed_packet.src_ip, parsed_packet.dst_ip);
-                debug!(
-                    "Received ACK for sequence_number: {} (ack_number: {}), RTT = {:?}",
-                    parsed_packet.acknowledgment - 1,
-                    parsed_packet.acknowledgment,
-                    duration
-                );
-            } else {
-                //warn!("No RTT calculated for packet {:?}", parsed_packet);
+            match tracker.record_ack(parsed_packet.acknowledgment) {
+                Some(duration) => {
+                    println!("RTT: {:?}, Source: {:?}, Destination: {:?}",
+                         duration, parsed_packet.src_ip, parsed_packet.dst_ip);
+                }
+                None => {},
             }
 
         }
     }
 
     /* Parses an `OwnedPacket` into a `ParsedPacket`.
-     *
      * Returns `Some(ParsedPacket)` if parsing is successful, otherwise `None`.
      */
     pub fn parse_packet(&self, packet: &OwnedPacket) -> Option<ParsedPacket> {
         // Parse the Ethernet frame
         let total_length = packet.data.len();
         let eth = EthernetPacket::new(&packet.data)?;
+
+        // For now, we only care about IPv4 packets
         if eth.get_ethertype() != pnet::packet::ethernet::EtherTypes::Ipv4 {
             return None;
         }
@@ -88,37 +83,15 @@ impl Parser {
         // Parse the TCP segment
         let tcp = TcpPacket::new(ipv4.payload())?;
 
-        // Get source and destination IP and port
-        let src_ip = ipv4.get_source();
-        let dst_ip = ipv4.get_destination();
-        let src_port = tcp.get_source();
-        let dst_port = tcp.get_destination();
-
-        // Extract sequence and acknowledgment numbers
-        let sequence = tcp.get_sequence();
-        let acknowledgment = tcp.get_acknowledgement();
-
-        // Extract TCP flags
-        let flags = tcp.get_flags();
-
-        // Optional: Extract payload if needed
-        let payload = tcp.payload().to_vec();
-
-        // Determine if the packet is outgoing or incoming
-        // This requires knowing your own IP address; for demonstration, we'll compare with a placeholder
-        let own_ip = Ipv4Addr::new(192, 168, 1, 100); // Replace with your actual IP
-        let is_outgoing = src_ip == own_ip;
-
-        Some(ParsedPacket {
-            src_ip,
-            dst_ip,
-            src_port,
-            dst_port,
-            sequence,
-            acknowledgment,
-            flags,
-            payload,
-            is_outgoing,
+        Some (ParsedPacket {
+            src_ip: ipv4.get_source(),
+            dst_ip: ipv4.get_destination(),
+            src_port: tcp.get_source(),
+            dst_port: tcp.get_destination(),
+            sequence: tcp.get_sequence(),
+            acknowledgment: tcp.get_acknowledgement(),
+            flags: tcp.get_flags(),
+            payload: tcp.payload().to_vec(),
             total_length,
         })
     }

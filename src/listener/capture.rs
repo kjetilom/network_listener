@@ -1,9 +1,8 @@
-use pcap::{Active, Capture, Device, PacketHeader};
-use std::error::Error;
 use log::{error, info};
-use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel};
+use pcap::{Active, Capture, Device, Packet, PacketHeader};
+use std::error::Error;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task;
-
 
 pub struct PacketCapturer {
     cap: Capture<Active>,
@@ -16,13 +15,21 @@ pub struct OwnedPacket {
     pub data: Vec<u8>,
 }
 
+impl<'a> From<Packet<'a>> for OwnedPacket {
+    fn from(packet: Packet<'a>) -> Self {
+        OwnedPacket {
+            header: *packet.header,
+            data: packet.data.to_vec(),
+        }
+    }
+}
+
 impl PacketCapturer {
-    /*
-     * Create a new PacketCapturer instance
+    /**
+     *  Create a new PacketCapturer instance
      */
     pub fn new() -> Result<(Self, UnboundedReceiver<OwnedPacket>), Box<dyn Error>> {
-        let device = Device::lookup()?
-            .ok_or("No device available for capture")?;
+        let device = Device::lookup()?.ok_or("No device available for capture")?;
         info!("Using device: {}", device.name);
 
         let cap = Capture::from_device(device)?
@@ -36,8 +43,8 @@ impl PacketCapturer {
         Ok((PacketCapturer { cap, sender }, receiver))
     }
 
-    /*
-     * Start the asynchronous packet capturing loop
+    /**
+     *  Start the asynchronous packet capturing loop
      */
     pub fn start_capture_loop(mut self) {
         // Clone the sender to move into the thread
@@ -47,16 +54,13 @@ impl PacketCapturer {
             loop {
                 match self.cap.next_packet() {
                     Ok(packet) => {
-                        let packet = OwnedPacket {
-                            header: *packet.header,
-                            data: packet.data.to_vec(),
-                        };
+                        let packet = OwnedPacket::from(packet);
                         if sender.send(packet).is_err() {
                             // Receiver has been dropped
                             error!("Receiver dropped. Stopping packet capture.");
                             break;
                         }
-                    },
+                    }
                     Err(e) => {
                         error!("Error capturing packet: {}", e);
                         continue;
@@ -66,4 +70,3 @@ impl PacketCapturer {
         });
     }
 }
-

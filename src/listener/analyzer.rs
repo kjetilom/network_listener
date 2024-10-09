@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 use log::info;
-use pnet::packet::{tcp::TcpPacket, Packet};
 use crate::listener::parser::ParsedPacket;
 
 pub struct Analyzer {

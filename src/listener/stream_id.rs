@@ -10,6 +10,10 @@ pub struct TcpStreamId {
     dst_port: u16,
 }
 
+/*
+ * Implementing PartialEq, Eq, and Hash allows
+ *  us to use TcpStreamId as a key in a HashMap.
+ */
 impl PartialEq for TcpStreamId {
     fn eq(&self, other: &Self) -> bool {
         self.src_ip == other.src_ip
@@ -31,7 +35,10 @@ impl Hash for TcpStreamId {
 }
 
 impl TcpStreamId {
-    pub fn new(src_ip: Ipv4Addr, src_port: u16, dst_ip: Ipv4Addr, dst_port: u16) -> Self {
+    pub fn new(
+        src_ip: Ipv4Addr, src_port: u16,
+        dst_ip: Ipv4Addr, dst_port: u16
+    ) -> Self {
         TcpStreamId {
             src_ip,
             src_port,
