@@ -1,20 +1,23 @@
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 
-use log::{debug, warn};
-use pnet::packet::{ethernet::EthernetPacket, ip::IpNextHeaderProtocols, Packet};
-use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::tcp::{TcpOption, TcpPacket};
-use capture::OwnedPacket;
 use super::analyzer::Analyzer;
+use super::stream_id::TcpStreamId;
+use super::stream_manager::TcpStreamManager;
+use capture::OwnedPacket;
+use pcap::Device;
+use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::tcp::TcpPacket;
+use pnet::packet::{ethernet::EthernetPacket, ip::IpNextHeaderProtocols, Packet};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracker::PacketTracker;
 
-use super::tracker;
 use super::capture;
-
+use super::tracker;
 
 pub struct Parser {
     packet_stream: UnboundedReceiver<OwnedPacket>,
+    own_ip: Ipv4Addr,
+    stream_manager: TcpStreamManager,
 }
 
 #[derive(Debug)]
@@ -31,16 +34,24 @@ pub struct ParsedPacket {
 }
 
 impl Parser {
-    pub fn new(packet_stream: UnboundedReceiver<OwnedPacket>) -> Self {
-        Parser { packet_stream }
+    pub fn new(packet_stream: UnboundedReceiver<OwnedPacket>, device: Device) -> Self {
+
+        let own_ip = match device.addresses[0].addr {
+            IpAddr::V4(ip) => ip,
+            _ => panic!("Device does not have an IPv4 address"),
+        };
+
+        Parser {
+            packet_stream,
+            own_ip: own_ip,
+            stream_manager: TcpStreamManager::new(tracker::TIMEOUT),
+        }
     }
 
     pub async fn start(mut self) {
         let mut analyzer = Analyzer::new();
-        let mut tracker = PacketTracker::new();
 
         while let Some(packet) = self.packet_stream.recv().await {
-
             let parsed_packet = match self.parse_packet(&packet) {
                 Some(packet) => packet,
                 None => continue,
@@ -49,15 +60,21 @@ impl Parser {
             //debug!("{:?}", parsed_packet);
             analyzer.process_packet(&parsed_packet);
 
-            tracker.record_sent(parsed_packet.sequence);
-            match tracker.record_ack(parsed_packet.acknowledgment) {
-                Some(duration) => {
-                    println!("RTT: {:?}, Source: {:?}, Destination: {:?}",
-                         duration, parsed_packet.src_ip, parsed_packet.dst_ip);
-                }
-                None => {},
-            }
+            self.stream_manager.record_sent_packet(
+                &parsed_packet,
+                &parsed_packet.sequence,
+                self.own_ip,
+            );
 
+            match self.stream_manager.record_ack_packet(&parsed_packet) {
+                Some(duration) => {
+                    println!(
+                        "RTT: {:?}, Source: {:?}, Destination: {:?}",
+                        duration, parsed_packet.src_ip, parsed_packet.dst_ip
+                    );
+                }
+                None => {}
+            }
         }
     }
 
@@ -83,7 +100,7 @@ impl Parser {
         // Parse the TCP segment
         let tcp = TcpPacket::new(ipv4.payload())?;
 
-        Some (ParsedPacket {
+        Some(ParsedPacket {
             src_ip: ipv4.get_source(),
             dst_ip: ipv4.get_destination(),
             src_port: tcp.get_source(),

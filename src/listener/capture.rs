@@ -28,19 +28,20 @@ impl PacketCapturer {
     /**
      *  Create a new PacketCapturer instance
      */
-    pub fn new() -> Result<(Self, UnboundedReceiver<OwnedPacket>), Box<dyn Error>> {
+    pub fn new() -> Result<(Self, UnboundedReceiver<OwnedPacket>, Device), Box<dyn Error>> {
         let device = Device::lookup()?.ok_or("No device available for capture")?;
         info!("Using device: {}", device.name);
+        info!("Device ip: {:?}", device.addresses);
 
-        let cap = Capture::from_device(device)?
+        let cap = Capture::from_device(device.clone())?
             .promisc(true)
             .immediate_mode(true)
-            .timeout(1000) // Timeout in milliseconds
+            .timeout(0) // Timeout in milliseconds
             .open()?;
 
         let (sender, receiver) = unbounded_channel();
 
-        Ok((PacketCapturer { cap, sender }, receiver))
+        Ok((PacketCapturer { cap, sender }, receiver, device))
     }
 
     /**

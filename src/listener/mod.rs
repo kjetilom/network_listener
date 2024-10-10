@@ -6,3 +6,4 @@ pub mod capture;
 pub mod config;
 pub mod tracker;
 pub mod stream_id;
+pub mod stream_manager;

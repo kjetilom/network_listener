@@ -11,12 +11,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     logger::setup_logging()?;
 
     info!("Starting packet capture");
-    let (pcap, receiver)
+    let (pcap, receiver, device)
         = PacketCapturer::new()?;
 
     pcap.start_capture_loop();
 
-    let parser = Parser::new(receiver);
+    let parser = Parser::new(receiver, device);
     parser.start().await;
 
     Ok(())

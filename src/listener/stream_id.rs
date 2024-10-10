@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use super::parser::ParsedPacket;
 
+#[derive(Debug, Clone)]
 pub struct TcpStreamId {
     src_ip: Ipv4Addr,
     src_port: u16,
@@ -17,9 +18,9 @@ pub struct TcpStreamId {
 impl PartialEq for TcpStreamId {
     fn eq(&self, other: &Self) -> bool {
         self.src_ip == other.src_ip
-            && self.src_port == other.src_port
+            //&& self.src_port == other.src_port
             && self.dst_ip == other.dst_ip
-            && self.dst_port == other.dst_port
+            //&& self.dst_port == other.dst_port
     }
 }
 
@@ -47,12 +48,21 @@ impl TcpStreamId {
         }
     }
 
-    pub fn from_parsed_packet(packet: &ParsedPacket) -> Self {
+    pub fn from(packet: &ParsedPacket) -> TcpStreamId {
         TcpStreamId {
             src_ip: packet.src_ip,
             src_port: packet.src_port,
             dst_ip: packet.dst_ip,
             dst_port: packet.dst_port,
+        }
+    }
+
+    pub fn from_reversed(packet: &ParsedPacket) -> TcpStreamId {
+        TcpStreamId {
+            src_ip: packet.dst_ip,
+            src_port: packet.dst_port,
+            dst_ip: packet.src_ip,
+            dst_port: packet.src_port,
         }
     }
 }
