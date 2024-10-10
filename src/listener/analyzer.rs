@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 use log::info;
-use crate::listener::parser::ParsedPacket;
+
+use super::capture::OwnedPacket;
 
 pub struct Analyzer {
     start_time: Instant,
@@ -17,13 +18,13 @@ impl Analyzer {
         }
     }
 
-    pub fn process_packet(&mut self, packet: &ParsedPacket) {
+    pub fn process_packet(&mut self, packet: &OwnedPacket) {
         self.packet_count += 1;
-        self.byte_count += packet.payload.len();
+        self.byte_count += packet.header.len as usize;
 
         if self.start_time.elapsed() >= Duration::from_secs(1) {
             info!(
-                "Packets: {} | mbps: {} | Time elapsed: {}s",
+                "Packets: {} | Mbps: {} | Time elapsed: {}s",
                 self.packet_count,
                 self.byte_count as f32 * 8.0 / 1_000_000.0,
                 self.start_time.elapsed().as_secs()

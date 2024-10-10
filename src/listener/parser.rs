@@ -1,7 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr};
 
 use super::analyzer::Analyzer;
-use super::stream_id::TcpStreamId;
 use super::stream_manager::TcpStreamManager;
 use capture::OwnedPacket;
 use pcap::Device;
@@ -9,7 +8,6 @@ use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::tcp::TcpPacket;
 use pnet::packet::{ethernet::EthernetPacket, ip::IpNextHeaderProtocols, Packet};
 use tokio::sync::mpsc::UnboundedReceiver;
-use tracker::PacketTracker;
 
 use super::capture;
 use super::tracker;
@@ -20,7 +18,6 @@ pub struct Parser {
     stream_manager: TcpStreamManager,
 }
 
-#[derive(Debug)]
 pub struct ParsedPacket {
     pub src_ip: Ipv4Addr,
     pub dst_ip: Ipv4Addr,
@@ -29,8 +26,23 @@ pub struct ParsedPacket {
     pub sequence: u32,
     pub acknowledgment: u32,
     pub flags: u8,
-    pub payload: Vec<u8>,
-    pub total_length: usize,
+    pub total_length: u32,
+    pub timestamp: libc::timeval,
+}
+
+impl std::fmt::Debug for ParsedPacket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParsedPacket")
+            .field("src_ip", &self.src_ip)
+            .field("dst_ip", &self.dst_ip)
+            .field("src_port", &self.src_port)
+            .field("dst_port", &self.dst_port)
+            .field("sequence", &self.sequence)
+            .field("acknowledgment", &self.acknowledgment)
+            .field("flags", &self.flags)
+            .field("total_length", &self.total_length)
+            .finish()
+    }
 }
 
 impl Parser {
@@ -52,13 +64,12 @@ impl Parser {
         let mut analyzer = Analyzer::new();
 
         while let Some(packet) = self.packet_stream.recv().await {
+            analyzer.process_packet(&packet);
+
             let parsed_packet = match self.parse_packet(&packet) {
                 Some(packet) => packet,
                 None => continue,
             };
-            // Packet has been parsed
-            //debug!("{:?}", parsed_packet);
-            analyzer.process_packet(&parsed_packet);
 
             self.stream_manager.record_sent_packet(
                 &parsed_packet,
@@ -83,7 +94,7 @@ impl Parser {
      */
     pub fn parse_packet(&self, packet: &OwnedPacket) -> Option<ParsedPacket> {
         // Parse the Ethernet frame
-        let total_length = packet.data.len();
+        let total_length = packet.header.len;
         let eth = EthernetPacket::new(&packet.data)?;
 
         // For now, we only care about IPv4 packets
@@ -108,8 +119,8 @@ impl Parser {
             sequence: tcp.get_sequence(),
             acknowledgment: tcp.get_acknowledgement(),
             flags: tcp.get_flags(),
-            payload: tcp.payload().to_vec(),
             total_length,
+            timestamp: packet.header.ts,
         })
     }
 }

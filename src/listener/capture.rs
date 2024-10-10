@@ -19,7 +19,7 @@ impl<'a> From<Packet<'a>> for OwnedPacket {
     fn from(packet: Packet<'a>) -> Self {
         OwnedPacket {
             header: *packet.header,
-            data: packet.data.to_vec(),
+            data: packet.data.to_vec()
         }
     }
 }
@@ -53,8 +53,10 @@ impl PacketCapturer {
         // Capture needs to be in a blocking task since pcap::Capture is blocking
         task::spawn_blocking(move || {
             loop {
+                self.cap.stats().unwrap();
                 match self.cap.next_packet() {
                     Ok(packet) => {
+
                         let packet = OwnedPacket::from(packet);
                         if sender.send(packet).is_err() {
                             // Receiver has been dropped
