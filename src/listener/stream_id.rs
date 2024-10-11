@@ -1,7 +1,52 @@
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::hash::{Hash, Hasher};
 
 use super::parser::ParsedPacket;
+
+pub enum SocketType {
+    Local,
+    Remote,
+}
+
+pub enum Protocol {
+    Tcp,
+    Udp,
+}
+
+pub struct Socket {
+    pub ip: IpAddr,
+    pub port: u16,
+    pub socket_type: SocketType,
+    pub protocol: Protocol,
+}
+
+pub struct Connection {
+    pub local: Socket,
+    pub remote: Socket,
+}
+
+impl Connection {
+    pub fn new(local_ip: IpAddr, local_port: u16, remote_ip: IpAddr, remote_port: u16, protocol: Protocol) -> Self {
+        Connection {
+            local: Socket {
+                ip: local_ip,
+                port: local_port,
+                socket_type: SocketType::Local,
+                protocol,
+            },
+            remote: Socket {
+                ip: remote_ip,
+                port: remote_port,
+                socket_type: SocketType::Remote,
+                protocol,
+            },
+        }
+    }
+
+    pub fn from(packet: &ParsedPacket) -> Self {
+        match
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct TcpStreamId {

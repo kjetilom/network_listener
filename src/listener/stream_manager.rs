@@ -20,7 +20,7 @@ impl TcpStreamManager {
         }
     }
 
-    pub fn record_sent_packet(&mut self, packet: &ParsedPacket, sequence: &u32, own_ip: Ipv4Addr) {
+    pub fn record_sent(&mut self, packet: &ParsedPacket, own_ip: Ipv4Addr) {
         let stream_id = TcpStreamId::from(packet);
         //let is_syn = packet.flags & 0x02 != 0;
         let is_ack = packet.flags & 0x10 != 0;
@@ -28,11 +28,11 @@ impl TcpStreamManager {
         if !is_ack && packet.src_ip == own_ip {
             let tracker = self.streams.entry(stream_id)
                 .or_insert_with(|| PacketTracker::new(self.timeout));
-            tracker.record_sent(*sequence);
+            tracker.record_sent(packet);
         }
     }
 
-    pub fn record_ack_packet(&mut self, packet: &ParsedPacket) -> Option<Duration> {
+    pub fn record_ack(&mut self, packet: &ParsedPacket) -> Option<Duration> {
         let is_ack = packet.flags & 0x10 != 0;
 
         if is_ack {
@@ -40,7 +40,7 @@ impl TcpStreamManager {
             let stream_id = TcpStreamId::from_reversed(&packet);
 
             if let Some(tracker) = self.streams.get_mut(&stream_id) {
-                tracker.record_ack(packet.acknowledgment)
+                tracker.acknowledge(packet)
             } else {
                 None
             }
