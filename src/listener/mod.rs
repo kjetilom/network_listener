@@ -1,5 +1,5 @@
 pub mod logger;
-pub mod parser;
+pub mod traffic_analyzer;
 pub mod utils;
 pub mod capture;
 pub mod config;

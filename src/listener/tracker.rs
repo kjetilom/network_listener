@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use super::parser::{ParsedPacket, Timeval};
+use super::traffic_analyzer::{ParsedPacket, Timeval};
 
 pub(crate) static TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -25,7 +25,7 @@ impl PacketTracker {
      * Records a sent packet's sequence number and timestamp.
      */
     pub fn record_sent(&mut self, packet: &ParsedPacket) {
-        self.sent_packets.insert(packet.sequence, packet.timestamp);
+        self.sent_packets.insert(packet.as_tcp().unwrap().get_sequence(), packet.timestamp);
     }
 
     /* Records an acknowledgment number and calculates RTT if possible.
@@ -36,32 +36,33 @@ impl PacketTracker {
         // if self.processed_acks.contains(&packet.acknowledgment) {
         //     return None;
         // }
-        self.processed_acks.insert(packet.acknowledgment);
-        if let Some(sent_time) = self.sent_packets.remove(&(packet.acknowledgment - 1)) {
+        let ack = packet.as_tcp().unwrap().get_acknowledgement();
+        self.processed_acks.insert(ack);
+        if let Some(sent_time) = self.sent_packets.remove(&(ack - 1)) {
             Some(packet.timestamp - sent_time)
         } else {
             None
         }
     }
 
-    pub fn acknowledge(&mut self, packet: &ParsedPacket) -> Option<Duration> {
-        // Find all sequence numbers less than ack_number
-        let mut rtt = None;
-        let acknowledged_sequences: Vec<u32> = self.sent_packets
-            .keys()
-            .filter(|&&seq| seq <= packet.acknowledgment)
-            .cloned()
-            .collect();
+    // pub fn acknowledge(&mut self, packet: &ParsedPacket) -> Option<Duration> {
+    //     // Find all sequence numbers less than ack_number
+    //     let mut rtt = None;
+    //     let acknowledged_sequences: Vec<u32> = self.sent_packets
+    //         .keys()
+    //         .filter(|&&seq| seq <= packet.acknowledgment)
+    //         .cloned()
+    //         .collect();
 
-        for seq in acknowledged_sequences {
-            if let Some(stv) = self.sent_packets.remove(&seq) {
-                let current_rtt = packet.timestamp - stv;
-                // You can choose to store the RTTs or return the latest one
-                rtt = Some(current_rtt);
-            }
-        }
-        rtt
-    }
+    //     for seq in acknowledged_sequences {
+    //         if let Some(stv) = self.sent_packets.remove(&seq) {
+    //             let current_rtt = packet.timestamp - stv;
+    //             // You can choose to store the RTTs or return the latest one
+    //             rtt = Some(current_rtt);
+    //         }
+    //     }
+    //     rtt
+    // }
 
     pub fn cleanup(&mut self) {
         let now = Instant::now();

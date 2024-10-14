@@ -2,7 +2,7 @@ use std::error::Error;
 use network_listener::listener::{
     capture::PacketCapturer,
     logger,
-    parser::Parser
+    traffic_analyzer::TrafficAnalyzer
 };
 use log::info;
 
@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     pcap.start_capture_loop();
 
-    let parser = Parser::new(receiver, device);
+    let parser = TrafficAnalyzer::new(receiver, device);
     parser.start().await;
 
     Ok(())

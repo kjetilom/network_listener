@@ -1,14 +1,26 @@
 use std::collections::HashMap;
-use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use super::parser::ParsedPacket;
-use super::stream_id::TcpStreamId;
+use log::info;
+
+use super::traffic_analyzer::ParsedPacket;
+use super::stream_id::{Connection};
+use super::traffic_analyzer::Direction;
 use super::tracker::PacketTracker;
+
+pub struct StreamManager {
+    streams: HashMap<Connection, PacketTracker>,
+}
 
 #[derive(Debug)]
 pub struct TcpStreamManager {
-    streams: HashMap<TcpStreamId, PacketTracker>,
+    streams: HashMap<Connection, PacketTracker>,
+    timeout: Duration,
+}
+
+#[derive(Debug)]
+pub struct UDPStreamManager {
+    streams: HashMap<Connection, PacketTracker>,
     timeout: Duration,
 }
 
@@ -20,27 +32,46 @@ impl TcpStreamManager {
         }
     }
 
-    pub fn record_sent(&mut self, packet: &ParsedPacket, own_ip: Ipv4Addr) {
-        let stream_id = TcpStreamId::from(packet);
+    pub fn record_sent(&mut self, packet: &ParsedPacket) {
+        let tcp_packet = match packet.as_tcp() {
+            Some(packet) => packet,
+            None => panic!("Attempted to record a non-TCP packet in a TCP stream manager"),
+        };
+        let connection = match packet.connection() {
+            Some(connection) => connection,
+            None => panic!("Attempted to record a packet without a connection"),
+        };
         //let is_syn = packet.flags & 0x02 != 0;
-        let is_ack = packet.flags & 0x10 != 0;
+        let is_ack = tcp_packet.get_flags() & 0x10 != 0;
 
-        if !is_ack && packet.src_ip == own_ip {
-            let tracker = self.streams.entry(stream_id)
-                .or_insert_with(|| PacketTracker::new(self.timeout));
+        let tracker = match self.streams.get_mut(&connection) {
+            Some(tracker) => tracker,
+            None => {
+                let tracker = PacketTracker::new(self.timeout);
+                self.streams.insert(connection.clone(), tracker);
+                info!("New connection: {:?}", connection);
+                self.streams.get_mut(&connection).unwrap() // Safe!
+            }
+        };
+        if !is_ack {
             tracker.record_sent(packet);
         }
     }
 
     pub fn record_ack(&mut self, packet: &ParsedPacket) -> Option<Duration> {
-        let is_ack = packet.flags & 0x10 != 0;
+        let tcp_packet = match packet.as_tcp() {
+            Some(packet) => packet,
+            None => panic!("Attempted to record a non-TCP packet in a TCP stream manager"),
+        };
+        let connection = match packet.connection() {
+            Some(connection) => connection,
+            None => panic!("Attempted to record a packet without a connection"),
+        };
+        let is_ack = tcp_packet.get_flags() & 0x10 != 0;
 
         if is_ack {
-            // If the packet is an ACK, reverse the stream ID
-            let stream_id = TcpStreamId::from_reversed(&packet);
-
-            if let Some(tracker) = self.streams.get_mut(&stream_id) {
-                tracker.acknowledge(packet)
+            if let Some(tracker) = self.streams.get_mut(&connection) {
+                tracker.record_ack(packet)
             } else {
                 None
             }

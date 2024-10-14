@@ -1,113 +1,81 @@
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use std::hash::{Hash, Hasher};
 
-use super::parser::ParsedPacket;
+use pcap::Address;
 
-pub enum SocketType {
-    Local,
-    Remote,
-}
+use super::traffic_analyzer::{Direction, ParsedPacket, Protocol};
 
-pub enum Protocol {
-    Tcp,
-    Udp,
-}
-
+#[derive(Debug, Clone)]
 pub struct Socket {
     pub ip: IpAddr,
     pub port: u16,
-    pub socket_type: SocketType,
-    pub protocol: Protocol,
-}
-
-pub struct Connection {
-    pub local: Socket,
-    pub remote: Socket,
-}
-
-impl Connection {
-    pub fn new(local_ip: IpAddr, local_port: u16, remote_ip: IpAddr, remote_port: u16, protocol: Protocol) -> Self {
-        Connection {
-            local: Socket {
-                ip: local_ip,
-                port: local_port,
-                socket_type: SocketType::Local,
-                protocol,
-            },
-            remote: Socket {
-                ip: remote_ip,
-                port: remote_port,
-                socket_type: SocketType::Remote,
-                protocol,
-            },
-        }
-    }
-
-    pub fn from(packet: &ParsedPacket) -> Self {
-        match
-    }
 }
 
 #[derive(Debug, Clone)]
-pub struct TcpStreamId {
-    src_ip: Ipv4Addr,
-    src_port: u16,
-    dst_ip: Ipv4Addr,
-    dst_port: u16,
+pub struct Connection {
+    pub local: Socket,
+    pub remote: Socket,
+    pub protocol: Protocol,
 }
 
-/*
- * Implementing PartialEq, Eq, and Hash allows
- *  us to use TcpStreamId as a key in a HashMap.
- */
-impl PartialEq for TcpStreamId {
+impl Connection {
+    pub fn new(local: Socket, remote: Socket, protocol: Protocol) -> Connection {
+        Connection {
+            local,
+            remote,
+            protocol,
+        }
+    }
+
+    pub fn from(packet: &ParsedPacket) -> Option<Connection> {
+        if packet.protocol.protocol() == Protocol::Other {
+            return None;
+        }
+
+        let dir = &packet.direction;
+
+        let src_ip = packet.src_ip;
+        let dst_ip = packet.dst_ip;
+
+        let src_port = packet.src_port();
+        let dst_port = packet.dst_port();
+
+        let sock1 = Socket {
+            ip: src_ip,
+            port: src_port,
+        };
+        let sock2 = Socket {
+            ip: dst_ip,
+            port: dst_port,
+        };
+
+        match dir {
+            Direction::Incoming => Some(Connection::new(sock2, sock1, packet.protocol.protocol())),
+            Direction::Outgoing => Some(Connection::new(sock1, sock2, packet.protocol.protocol())),
+        }
+
+
+    }
+}
+
+impl PartialEq for Connection {
     fn eq(&self, other: &Self) -> bool {
-        self.src_ip == other.src_ip
-            //&& self.src_port == other.src_port
-            && self.dst_ip == other.dst_ip
-            //&& self.dst_port == other.dst_port
+        self.local.ip == other.local.ip
+            && self.local.port == other.local.port
+            && self.remote.ip == other.remote.ip
+            && self.remote.port == other.remote.port
+            && self.protocol == other.protocol
     }
 }
 
-impl Eq for TcpStreamId {}
+impl Eq for Connection {}
 
-impl Hash for TcpStreamId {
+impl Hash for Connection {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.src_ip.hash(state);
-        self.src_port.hash(state);
-        self.dst_ip.hash(state);
-        self.dst_port.hash(state);
-    }
-}
-
-impl TcpStreamId {
-    pub fn new(
-        src_ip: Ipv4Addr, src_port: u16,
-        dst_ip: Ipv4Addr, dst_port: u16
-    ) -> Self {
-        TcpStreamId {
-            src_ip,
-            src_port,
-            dst_ip,
-            dst_port,
-        }
-    }
-
-    pub fn from(packet: &ParsedPacket) -> TcpStreamId {
-        TcpStreamId {
-            src_ip: packet.src_ip,
-            src_port: packet.src_port,
-            dst_ip: packet.dst_ip,
-            dst_port: packet.dst_port,
-        }
-    }
-
-    pub fn from_reversed(packet: &ParsedPacket) -> TcpStreamId {
-        TcpStreamId {
-            src_ip: packet.dst_ip,
-            src_port: packet.dst_port,
-            dst_ip: packet.src_ip,
-            dst_port: packet.src_port,
-        }
+        self.local.ip.hash(state);
+        self.local.port.hash(state);
+        self.remote.ip.hash(state);
+        self.remote.port.hash(state);
+        self.protocol.hash(state);
     }
 }
