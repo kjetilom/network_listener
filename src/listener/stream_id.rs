@@ -1,13 +1,13 @@
-use std::net::Ipv4Addr;
+use std::net::IpAddr;
 use std::hash::{Hash, Hasher};
 
 use super::parser::ParsedPacket;
 
 #[derive(Debug, Clone)]
 pub struct TcpStreamId {
-    src_ip: Ipv4Addr,
+    src_ip: IpAddr,
     src_port: u16,
-    dst_ip: Ipv4Addr,
+    dst_ip: IpAddr,
     dst_port: u16,
 }
 
@@ -37,8 +37,8 @@ impl Hash for TcpStreamId {
 
 impl TcpStreamId {
     pub fn new(
-        src_ip: Ipv4Addr, src_port: u16,
-        dst_ip: Ipv4Addr, dst_port: u16
+        src_ip: IpAddr, src_port: u16,
+        dst_ip: IpAddr, dst_port: u16
     ) -> Self {
         TcpStreamId {
             src_ip,
