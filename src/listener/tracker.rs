@@ -1,70 +1,108 @@
-use std::collections::{HashMap, HashSet};
-use std::time::{Duration, Instant};
+use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
+
+use super::parser::{ParsedPacket, TransportPacket};
 
 pub(crate) static TIMEOUT: Duration = Duration::from_secs(20);
 
+// TCP connection states
+#[derive(Debug, PartialEq, Eq)]
+pub enum ConnectionState {
+    Closed,
+    SynSent,
+    SynReceived,
+    Established,
+    FinWait1,
+    FinWait2,
+    CloseWait,
+    LastAck,
+    TimeWait,
+    Closing,
+    Reset,
+}
+
 #[derive(Debug)]
 pub struct PacketTracker {
-    pub sent_packets: HashMap<u32, Instant>, // Keyed by TCP sequence number
-    pub processed_acks: HashSet<u32>,
-    timeout: Duration,
+    pub sent_packets: HashMap<u32, SystemTime>, // Keyed by TCP sequence number
+    pub initial_sequence_local: Option<u32>,
+    pub initial_sequence_remote: Option<u32>,
+    pub timeout: Duration,
+    pub state: ConnectionState,
 }
 
 impl PacketTracker {
     pub fn new(timeout: Duration) -> Self {
         PacketTracker {
             sent_packets: HashMap::new(),
-            processed_acks: HashSet::new(),
+            initial_sequence_local: None,
+            initial_sequence_remote: None,
             timeout,
+            state: ConnectionState::Closed,
         }
     }
 
-    /*
-     * Records a sent packet's sequence number and timestamp.
-     */
-    pub fn record_sent(&mut self, sequence: u32) {
-        self.sent_packets.insert(sequence, Instant::now());
-    }
+    pub fn handle_outgoing_packet(&mut self, packet: &ParsedPacket, is_syn: bool, _: bool, is_fin: bool, is_rst: bool) {
+        if let TransportPacket::TCP { sequence, .. } = &packet.transport {
+            if is_syn {
+                self.state = ConnectionState::SynSent;
+                self.initial_sequence_local = Some(*sequence);
+            }
 
-    /* Records an acknowledgment number and calculates RTT if possible.
-     *
-     * Returns `Some(Duration)` if RTT can be calculated, otherwise `None`.
-     */
-    pub fn record_ack(&mut self, acknowledgment: u32) -> Option<Duration> {
-        if self.processed_acks.contains(&acknowledgment) {
-            return None;
-        }
-        self.processed_acks.insert(acknowledgment);
-        if let Some(sent_time) = self.sent_packets.remove(&(acknowledgment - 1)) {
-            Some(sent_time.elapsed())
-        } else {
-            None
-        }
-    }
+            if is_fin {
+                self.state = ConnectionState::FinWait1;
+            }
 
-    pub fn acknowledge(&mut self, ack_number: u32) -> Option<Duration> {
-        // Find all sequence numbers less than ack_number
-        let mut rtt = None;
-        let acknowledged_sequences: Vec<u32> = self.sent_packets
-            .keys()
-            .filter(|&&seq| seq < ack_number)
-            .cloned()
-            .collect();
+            if is_rst {
+                self.state = ConnectionState::Reset;
+            }
 
-        for seq in acknowledged_sequences {
-            if let Some(sent_info) = self.sent_packets.remove(&seq) {
-                let current_rtt = sent_info.elapsed();
-                // You can choose to store the RTTs or return the latest one
-                rtt = Some(current_rtt);
+            if let Some(initial_seq) = self.initial_sequence_local {
+                let relative_seq = sequence.wrapping_sub(initial_seq);
+                self.sent_packets.insert(relative_seq, packet.timestamp);
+            } else {
+                self.initial_sequence_local = Some(*sequence);
             }
         }
+    }
 
-        rtt
+    pub fn handle_incoming_packet(&mut self, packet: &ParsedPacket, is_syn: bool, is_ack: bool, is_fin: bool, is_rst: bool) -> Option<Duration> {
+        if let TransportPacket::TCP { sequence, acknowledgment, .. } = &packet.transport {
+            if is_syn && !is_ack { // SYN received
+                self.state = ConnectionState::SynReceived;
+                self.initial_sequence_remote = Some(*sequence);
+            } else if is_syn && is_ack { // SYN-ACK received
+                self.state = ConnectionState::SynReceived;
+                self.initial_sequence_remote = Some(*sequence);
+            }
+
+            if (self.state == ConnectionState::SynSent || self.state == ConnectionState::SynReceived) && is_ack {
+                self.state = ConnectionState::Established;
+            }
+
+            if is_fin {
+                self.state = ConnectionState::CloseWait;
+            }
+
+            if is_rst {
+                self.state = ConnectionState::Reset;
+            }
+
+            if is_ack {
+                if let Some(initial_seq_local) = self.initial_sequence_local {
+                    let relative_ack = acknowledgment.wrapping_sub(initial_seq_local);
+                    if let Some(sent_time) = self.sent_packets.remove(&relative_ack) {
+                        return Some(sent_time.elapsed().unwrap_or_default());
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub fn cleanup(&mut self) {
-        let now = Instant::now();
-        self.sent_packets
-            .retain(|_, &mut sent_time| now.duration_since(sent_time) < self.timeout);
+        let timeout = self.timeout;
+        self.sent_packets.retain(|_, &mut timestamp| {
+            timestamp.elapsed().unwrap() < timeout
+        });
     }
 }

@@ -1,4 +1,5 @@
 use std::net::IpAddr;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::analyzer::Analyzer;
 use super::stream_manager::TcpStreamManager;
@@ -10,6 +11,7 @@ use pnet::packet::tcp::{TcpOptionIterable, TcpPacket};
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::{ethernet::EthernetPacket, ip::IpNextHeaderProtocols, Packet};
 use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::time;
 
 use super::capture;
 use super::tracker;
@@ -20,6 +22,7 @@ pub struct Parser {
     stream_manager: TcpStreamManager,
 }
 
+#[derive(Debug)]
 pub enum TransportPacket {
     TCP {
         sequence: u32,
@@ -31,6 +34,20 @@ pub enum TransportPacket {
     UDP,
 }
 
+pub fn tv_to_system_time(tv: libc::timeval) -> SystemTime {
+    match super::Settings::PRESICION {
+        pcap::Precision::Micro => {
+            let dur = time::Duration::new(tv.tv_sec as u64, tv.tv_usec as u32 * 1000);
+            UNIX_EPOCH + dur
+        }
+        pcap::Precision::Nano => {
+            let dur = time::Duration::new(tv.tv_sec as u64, tv.tv_usec as u32);
+            UNIX_EPOCH + dur
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct ParsedPacket {
     pub src_ip: IpAddr,
     pub dst_ip: IpAddr,
@@ -38,35 +55,9 @@ pub struct ParsedPacket {
     pub dst_port: u16,
     pub transport: TransportPacket,
     pub total_length: u32,
-    pub timestamp: libc::timeval,
+    pub timestamp: SystemTime,
 }
 
-impl std::fmt::Debug for ParsedPacket {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ParsedPacket")
-            .field("src_ip", &self.src_ip)
-            .field("dst_ip", &self.dst_ip)
-            .field("src_port", &self.src_port)
-            .field("dst_port", &self.dst_port)
-            .field("transport", &self.transport)
-            .field("total_length", &self.total_length)
-            .finish()
-    }
-}
-
-impl std::fmt::Debug for TransportPacket {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TransportPacket::TCP { sequence, acknowledgment, flags, .. } => f
-                .debug_struct("TCP")
-                .field("sequence", sequence)
-                .field("acknowledgment", acknowledgment)
-                .field("flags", flags)
-                .finish(),
-            TransportPacket::UDP => f.debug_struct("UDP").finish(),
-        }
-    }
-}
 
 
 impl Parser {
@@ -99,16 +90,8 @@ impl Parser {
 
             match &parsed_packet.transport {
                 TransportPacket::TCP { .. } => {
-                    self.stream_manager.record_sent_packet(
-                        &parsed_packet,
-                        self.own_ip,
-                    );
-
-                    if let Some(duration) = self.stream_manager.record_ack_packet(&parsed_packet) {
-                        println!(
-                            "RTT: {:?}, Source: {:?}, Destination: {:?}",
-                            duration, parsed_packet.src_ip, parsed_packet.dst_ip
-                        );
+                    if let Some(rtt) = self.stream_manager.record_packet(&parsed_packet, self.own_ip) {
+                        println!("RTT: {:?}, SRC: {:?}, DST: {:?}", rtt, parsed_packet.src_ip, parsed_packet.dst_ip);
                     }
                 }
                 TransportPacket::UDP => {
@@ -131,10 +114,10 @@ impl Parser {
 
         match eth.get_ethertype() {
             pnet::packet::ethernet::EtherTypes::Ipv4 => {
-                self.parse_ipv4_packet(eth.payload(), total_length, packet.header.ts)
+                self.parse_ipv4_packet(eth.payload(), total_length, tv_to_system_time(packet.header.ts))
             }
             pnet::packet::ethernet::EtherTypes::Ipv6 => {
-                self.parse_ipv6_packet(eth.payload(), total_length, packet.header.ts)
+                self.parse_ipv6_packet(eth.payload(), total_length, tv_to_system_time(packet.header.ts))
             }
             _ => None,
         }
@@ -145,7 +128,7 @@ impl Parser {
         &self,
         payload: &[u8],
         total_length: u32,
-        timestamp: libc::timeval,
+        timestamp: SystemTime,
     ) -> Option<ParsedPacket> {
         let ipv4 = Ipv4Packet::new(payload)?;
         let protocol = ipv4.get_next_level_protocol();
@@ -177,7 +160,7 @@ impl Parser {
         &self,
         payload: &[u8],
         total_length: u32,
-        timestamp: libc::timeval,
+        timestamp: SystemTime,
     ) -> Option<ParsedPacket> {
         let ipv6 = Ipv6Packet::new(payload)?;
         let protocol = ipv6.get_next_header();
@@ -228,7 +211,7 @@ impl Parser {
                     timestamp_bytes[7],
                 ]);
 
-                println!("TSval: {}, TSecr: {}", tsval, tsecr);
+                //println!("TSval: {}, TSecr: {}", tsval, tsecr);
 
                 return Some((tsval, tsecr));
             }
@@ -242,7 +225,7 @@ impl Parser {
         src_ip: IpAddr,
         dst_ip: IpAddr,
         total_length: u32,
-        timestamp: libc::timeval,
+        timestamp: SystemTime,
     ) -> Option<ParsedPacket> {
         let tcp = TcpPacket::new(payload)?;
         // Print timestamp if TCP timestamp option is present
@@ -274,7 +257,7 @@ impl Parser {
         src_ip: IpAddr,
         dst_ip: IpAddr,
         total_length: u32,
-        timestamp: libc::timeval,
+        timestamp: SystemTime,
     ) -> Option<ParsedPacket> {
         let udp = UdpPacket::new(payload)?;
 

@@ -4,6 +4,8 @@ use std::error::Error;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task;
 
+use crate::listener::Settings;
+
 pub struct PacketCapturer {
     cap: Capture<Active>,
     sender: UnboundedSender<OwnedPacket>,
@@ -34,9 +36,11 @@ impl PacketCapturer {
         info!("Device ip: {:?}", device.addresses);
 
         let cap = Capture::from_device(device.clone())?
-            .promisc(true)
-            .immediate_mode(true)
-            .timeout(0) // Timeout in milliseconds
+            .promisc(Settings::PROMISC)
+            .immediate_mode(Settings::IMMEDIATE_MODE)
+            .timeout(Settings::TIMEOUT) // Timeout in milliseconds
+            .tstamp_type(Settings::TSTAMP_TYPE)
+            .precision(Settings::PRESICION)
             .open()?;
 
         let (sender, receiver) = unbounded_channel();

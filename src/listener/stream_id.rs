@@ -5,10 +5,10 @@ use super::parser::ParsedPacket;
 
 #[derive(Debug, Clone)]
 pub struct TcpStreamId {
-    src_ip: IpAddr,
-    src_port: u16,
-    dst_ip: IpAddr,
-    dst_port: u16,
+    local_ip: IpAddr,
+    local_port: u16,
+    remote_ip: IpAddr,
+    remote_port: u16,
 }
 
 /*
@@ -17,10 +17,10 @@ pub struct TcpStreamId {
  */
 impl PartialEq for TcpStreamId {
     fn eq(&self, other: &Self) -> bool {
-        self.src_ip == other.src_ip
-            //&& self.src_port == other.src_port
-            && self.dst_ip == other.dst_ip
-            //&& self.dst_port == other.dst_port
+        self.local_ip == other.local_ip
+            && self.local_port == other.local_port
+            && self.remote_ip == other.remote_ip
+            && self.remote_port == other.remote_port
     }
 }
 
@@ -28,41 +28,29 @@ impl Eq for TcpStreamId {}
 
 impl Hash for TcpStreamId {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.src_ip.hash(state);
-        self.src_port.hash(state);
-        self.dst_ip.hash(state);
-        self.dst_port.hash(state);
+        self.local_ip.hash(state);
+        self.local_port.hash(state);
+        self.remote_ip.hash(state);
+        self.remote_port.hash(state);
     }
 }
 
 impl TcpStreamId {
-    pub fn new(
-        src_ip: IpAddr, src_port: u16,
-        dst_ip: IpAddr, dst_port: u16
-    ) -> Self {
-        TcpStreamId {
-            src_ip,
-            src_port,
-            dst_ip,
-            dst_port,
-        }
-    }
-
-    pub fn from(packet: &ParsedPacket) -> TcpStreamId {
-        TcpStreamId {
-            src_ip: packet.src_ip,
-            src_port: packet.src_port,
-            dst_ip: packet.dst_ip,
-            dst_port: packet.dst_port,
-        }
-    }
-
-    pub fn from_reversed(packet: &ParsedPacket) -> TcpStreamId {
-        TcpStreamId {
-            src_ip: packet.dst_ip,
-            src_port: packet.dst_port,
-            dst_ip: packet.src_ip,
-            dst_port: packet.src_port,
+    pub fn from(packet: &ParsedPacket, own_ip: IpAddr) -> Self {
+        if packet.src_ip == own_ip {
+            TcpStreamId {
+                local_ip: packet.src_ip,
+                local_port: packet.src_port,
+                remote_ip: packet.dst_ip,
+                remote_port: packet.dst_port,
+            }
+        } else {
+            TcpStreamId {
+                local_ip: packet.dst_ip,
+                local_port: packet.dst_port,
+                remote_ip: packet.src_ip,
+                remote_port: packet.src_port,
+            }
         }
     }
 }
