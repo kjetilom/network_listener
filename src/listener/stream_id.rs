@@ -1,3 +1,4 @@
+use std::fmt::{self, Display};
 use std::net::IpAddr;
 use std::hash::{Hash, Hasher};
 
@@ -52,5 +53,14 @@ impl TcpStreamId {
                 remote_port: packet.src_port,
             }
         }
+    }
+}
+
+impl Display for TcpStreamId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}:{} -> {}:{}", self.local_ip, self.local_port, self.remote_ip, self.remote_port
+        )
     }
 }

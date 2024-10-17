@@ -14,7 +14,6 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::time;
 
 use super::capture;
-use super::tracker;
 
 pub struct Parser {
     packet_stream: UnboundedReceiver<OwnedPacket>,
@@ -73,7 +72,7 @@ impl Parser {
         Parser {
             packet_stream,
             own_ip,
-            stream_manager: TcpStreamManager::new(tracker::TIMEOUT),
+            stream_manager: TcpStreamManager::new(super::Settings::TCP_STREAM_TIMEOUT),
         }
     }
 

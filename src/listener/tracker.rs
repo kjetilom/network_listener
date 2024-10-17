@@ -3,8 +3,6 @@ use std::time::{Duration, SystemTime};
 
 use super::parser::{ParsedPacket, TransportPacket};
 
-pub(crate) static TIMEOUT: Duration = Duration::from_secs(20);
-
 // TCP connection states
 #[derive(Debug, PartialEq, Eq)]
 pub enum ConnectionState {
@@ -19,13 +17,18 @@ pub enum ConnectionState {
     TimeWait,
     Closing,
     Reset,
+    // Custom state since we start tracking a connection at any point
+    Unknown,
 }
 
+
+/// Tracks TCP streams and their state.
 #[derive(Debug)]
 pub struct PacketTracker {
     pub sent_packets: HashMap<u32, SystemTime>, // Keyed by TCP sequence number
     pub initial_sequence_local: Option<u32>,
     pub initial_sequence_remote: Option<u32>,
+    pub last_registered: SystemTime,
     pub timeout: Duration,
     pub state: ConnectionState,
 }
@@ -36,16 +39,21 @@ impl PacketTracker {
             sent_packets: HashMap::new(),
             initial_sequence_local: None,
             initial_sequence_remote: None,
+            last_registered: SystemTime::now(),
             timeout,
-            state: ConnectionState::Closed,
+            state: ConnectionState::Unknown,
         }
     }
 
-    pub fn handle_outgoing_packet(&mut self, packet: &ParsedPacket, is_syn: bool, _: bool, is_fin: bool, is_rst: bool) {
+    pub fn handle_outgoing_packet(&mut self, packet: &ParsedPacket, is_syn: bool, is_ack: bool, is_fin: bool, is_rst: bool) {
         if let TransportPacket::TCP { sequence, .. } = &packet.transport {
-            if is_syn {
+            if is_syn && !is_ack {
                 self.state = ConnectionState::SynSent;
                 self.initial_sequence_local = Some(*sequence);
+            }
+
+            if is_syn && is_ack {
+                self.state = ConnectionState::Established;
             }
 
             if is_fin {
