@@ -7,7 +7,6 @@ use procfs::net::TcpState;
 /// Represents a sent TCP packet with its sequence number, length, send time, and retransmission count.
 #[derive(Debug)]
 struct SentPacket {
-    seq: u32,
     len: u32,
     sent_time: SystemTime,
     retransmissions: u32,
@@ -16,22 +15,19 @@ struct SentPacket {
 /// Tracks TCP streams and their state.
 #[derive(Debug)]
 pub struct PacketTracker {
-    pub sent_packets: BTreeMap<u32, SentPacket>, // Keyed by absolute sequence number
+    sent_packets: BTreeMap<u32, SentPacket>, // Keyed by absolute sequence number
     pub initial_sequence_local: Option<u32>,
     pub initial_sequence_remote: Option<u32>,
     pub last_registered: SystemTime,
     pub timeout: Duration,
     pub state: Option<TcpState>,
     pub total_retransmissions: u32,
+    pub total_unique_packets: u32,
 }
 
 // Helper functions for sequence number comparisons considering wrap-around.
 fn seq_cmp(a: u32, b: u32) -> i32 {
     (a.wrapping_sub(b)) as i32
-}
-
-fn seq_less(a: u32, b: u32) -> bool {
-    seq_cmp(a, b) < 0
 }
 
 fn seq_less_equal(a: u32, b: u32) -> bool {
@@ -48,6 +44,7 @@ impl PacketTracker {
             timeout,
             state: None,
             total_retransmissions: 0,
+            total_unique_packets: 0,
         }
     }
 
@@ -91,11 +88,11 @@ impl PacketTracker {
                     } else {
                         // New packet sent.
                         let sent_packet = SentPacket {
-                            seq,
                             len,
                             sent_time: packet.timestamp,
                             retransmissions: 0,
                         };
+                        self.total_unique_packets += 1;
 
                         self.sent_packets.insert(seq, sent_packet);
                     }

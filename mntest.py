@@ -26,7 +26,7 @@ class MyTopo( Topo ):
         # Add links
         self.addLink( leftHost, leftSwitch, bw=1000, delay='1ms', use_tbf=True )
 #        self.addLink( leftHost, rightHost, bw=10, delay='10ms', loss=10, use_tbf=False )
-        self.addLink( leftSwitch, rightSwitch, bw=100, delay='10ms',loss=0, use_tbf=True)
+        self.addLink( leftSwitch, rightSwitch, bw=100, delay='10ms',loss=1.0, use_tbf=True)
         self.addLink( rightSwitch, rightHost, bw=1000, delay='1ms', use_tbf=True )
 
 
