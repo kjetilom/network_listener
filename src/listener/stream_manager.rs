@@ -43,6 +43,7 @@ impl TcpStreamManager {
                 println!("Cleanup took {:?}", inst.elapsed());
                 for (stream_id, tracker) in self.streams.iter() {
                     println!("{}, State: {:?}, Elapsed {:?}", stream_id, tracker.state, tracker.last_registered.elapsed());
+                    println!("Total retransmissions: {:?}", tracker.total_retransmissions);
                 }
 
                 self.last_cleanup = Instant::now();

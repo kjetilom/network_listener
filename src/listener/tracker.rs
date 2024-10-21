@@ -4,25 +4,38 @@ use std::time::{Duration, SystemTime};
 use super::parser::{ParsedPacket, TransportPacket};
 use procfs::net::TcpState;
 
+/// Represents a sent TCP packet with its sequence number, length, send time, and retransmission count.
+#[derive(Debug)]
+struct SentPacket {
+    seq: u32,
+    len: u32,
+    sent_time: SystemTime,
+    retransmissions: u32,
+}
+
 /// Tracks TCP streams and their state.
 #[derive(Debug)]
 pub struct PacketTracker {
-    pub sent_packets: BTreeMap<u32, Vec<SystemTime>>, // Keyed by relative sequence number
+    pub sent_packets: BTreeMap<u32, SentPacket>, // Keyed by absolute sequence number
     pub initial_sequence_local: Option<u32>,
     pub initial_sequence_remote: Option<u32>,
     pub last_registered: SystemTime,
     pub timeout: Duration,
     pub state: Option<TcpState>,
-    pub next_expected_seq_out: Option<u32>,
     pub total_retransmissions: u32,
 }
 
-// fn seq_less(a: u32, b: u32) -> bool {
-//     ((a as i32).wrapping_sub(b as i32)) < 0
-// }
+// Helper functions for sequence number comparisons considering wrap-around.
+fn seq_cmp(a: u32, b: u32) -> i32 {
+    (a.wrapping_sub(b)) as i32
+}
+
+fn seq_less(a: u32, b: u32) -> bool {
+    seq_cmp(a, b) < 0
+}
 
 fn seq_less_equal(a: u32, b: u32) -> bool {
-    ((a as i32).wrapping_sub(b as i32)) <= 0
+    seq_cmp(a, b) <= 0
 }
 
 impl PacketTracker {
@@ -34,7 +47,6 @@ impl PacketTracker {
             last_registered: SystemTime::now(),
             timeout,
             state: None,
-            next_expected_seq_out: None,
             total_retransmissions: 0,
         }
     }
@@ -44,32 +56,55 @@ impl PacketTracker {
         packet: &ParsedPacket,
         is_syn: bool,
         is_ack: bool,
-    ) -> (){
+    ) {
         if let TransportPacket::TCP {
             sequence,
             payload_len,
+            flags,
             ..
-        } = &packet.transport {
+        } = &packet.transport
+        {
             if is_syn && !is_ack {
                 self.initial_sequence_local = Some(*sequence);
             }
 
-            //println!("Payload_size: {}, Seq: {}", payload_len, sequence);
+            if let Some(_initial_seq) = self.initial_sequence_local {
+                let seq = *sequence;
 
+                // Calculate the length considering SYN and FIN flags.
+                let mut len = *payload_len as u32;
+                if flags & 0x02 != 0 {
+                    // SYN flag
+                    len += 1;
+                }
+                if flags & 0x01 != 0 {
+                    // FIN flag
+                    len += 1;
+                }
 
-            if let Some(initial_seq) = self.initial_sequence_local {
-                let relative_seq = sequence.wrapping_sub(initial_seq);
-                if let Some(timestamps) = self.sent_packets.get_mut(&relative_seq) {
-                    timestamps.push(packet.timestamp);
-                } else {
-                    self.sent_packets.insert(relative_seq, vec![packet.timestamp]);
+                if len > 0 {
+                    if let Some(sent_packet) = self.sent_packets.get_mut(&seq) {
+                        // Retransmission detected.
+                        sent_packet.retransmissions += 1;
+                        self.total_retransmissions += 1;
+                        // Do not update sent_time to keep the original send time (Karn's Algorithm).
+                    } else {
+                        // New packet sent.
+                        let sent_packet = SentPacket {
+                            seq,
+                            len,
+                            sent_time: packet.timestamp,
+                            retransmissions: 0,
+                        };
+
+                        self.sent_packets.insert(seq, sent_packet);
+                    }
                 }
             } else {
                 // Since we don't know the initial sequence number,
-                // we'll just count the first packet as the initial one
+                // we'll count the first packet as the initial one.
                 self.initial_sequence_local = Some(*sequence);
             }
-            self.next_expected_seq_out = Some(sequence.wrapping_add(*payload_len as u32));
         }
     }
 
@@ -83,42 +118,42 @@ impl PacketTracker {
             sequence,
             acknowledgment,
             ..
-        } = &packet.transport {
+        } = &packet.transport
+        {
             if is_syn {
                 // SYN received
                 self.initial_sequence_remote = Some(*sequence);
             }
 
             if is_ack {
-                if let Some(initial_seq_local) = self.initial_sequence_local {
-                    let relative_ack = acknowledgment.wrapping_sub(initial_seq_local);
+                if let Some(_initial_seq_local) = self.initial_sequence_local {
+                    let ack = *acknowledgment;
 
-                    // Collect RTTs
                     let mut rtts = Vec::new();
                     let mut keys_to_remove = Vec::new();
 
-                    for (&seq, timestamps) in self.sent_packets.iter() {
-                        if seq_less_equal(seq, relative_ack) {
-                            if timestamps.len() == 1 {
-                                let sent_time = timestamps[0];
-                                let rtt = packet.timestamp.duration_since(sent_time).unwrap_or_default();
-                                rtts.push(rtt);
-                            } else {
-                                //println!("Multiple timestamps for seq {}", seq);
-                                //return None;
+                    for (&seq, sent_packet) in self.sent_packets.iter() {
+                        // Check if the packet is fully acknowledged.
+                        if seq_less_equal(
+                            seq.wrapping_add(sent_packet.len - 1),
+                            ack.wrapping_sub(1),
+                        ) {
+                            if sent_packet.retransmissions == 0 {
+                                // Compute RTT for packets not retransmitted.
+                                if let Ok(rtt) = packet.timestamp.duration_since(sent_packet.sent_time) {
+                                    rtts.push(rtt);
+                                }
                             }
                             keys_to_remove.push(seq);
-                        } else {
-                            break;
                         }
                     }
 
-                    // Remove acknowledged packets from sent_packets
+                    // Remove acknowledged packets from sent_packets.
                     for seq in keys_to_remove {
                         self.sent_packets.remove(&seq);
                     }
 
-                    // Return the most recent RTT measurement
+                    // Return the most recent RTT measurement.
                     if let Some(rtt) = rtts.last() {
                         return Some(*rtt);
                     }
@@ -130,13 +165,13 @@ impl PacketTracker {
 
     pub fn cleanup(&mut self) {
         let timeout = self.timeout;
-        self.sent_packets.retain(|_, timestamps| {
-            if let Some(last_sent_time) = timestamps.last() {
-                last_sent_time.elapsed().unwrap() < timeout
-            } else {
-                false
-            }
+        self.sent_packets.retain(|_, sent_packet| {
+            sent_packet.sent_time.elapsed().unwrap_or_default() < timeout
         });
     }
 
+    /// Get the total number of retransmissions.
+    pub fn get_retransmission_count(&self) -> u32 {
+        self.total_retransmissions
+    }
 }
