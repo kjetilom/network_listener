@@ -7,7 +7,7 @@ use capture::OwnedPacket;
 use pcap::Device;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
-use pnet::packet::tcp::{TcpOptionIterable, TcpPacket};
+use pnet::packet::tcp::{TcpOptionIterable, TcpPacket, Tcp};
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::{ethernet::EthernetPacket, ip::IpNextHeaderProtocols, Packet};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -27,8 +27,10 @@ pub enum TransportPacket {
         sequence: u32,
         acknowledgment: u32,
         flags: u8,
-        tsval: u32,
-        tsecr: u32,
+        // Maximum size of an IP packet is 65,535 bytes (2^16 - 1)
+        payload_len: u16,
+        tsval: Option<u32>,
+        tsecr: Option<u32>,
     },
     UDP,
 }
@@ -242,8 +244,9 @@ impl Parser {
                 sequence: tcp.get_sequence(),
                 acknowledgment: tcp.get_acknowledgement(),
                 flags: tcp.get_flags(),
-                tsval,
-                tsecr,
+                payload_len: tcp.payload().len() as u16,
+                tsval: Some(tsval),
+                tsecr: Some(tsecr),
             },
             total_length,
             timestamp,

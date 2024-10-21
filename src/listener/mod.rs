@@ -9,10 +9,9 @@ impl Settings {
     pub const TSTAMP_TYPE: pcap::TimestampType = pcap::TimestampType::Adapter;
     pub const PRESICION: pcap::Precision = pcap::Precision::Nano;
     pub const TCP_STREAM_TIMEOUT: Duration = Duration::from_secs(900);
-    pub const SYN_ACK_TIMEOUT: Duration = Duration::from_secs(75);
+    pub const SYN_ACK_TIMEOUT: Duration = Duration::from_secs(10); // 75
     pub const FIN_WAIT_TIMEOUT: Duration = Duration::from_secs(675);
-    pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
-
+    pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(10); // 900
 }
 
 pub mod logger;
@@ -24,3 +23,4 @@ pub mod config;
 pub mod tracker;
 pub mod stream_id;
 pub mod stream_manager;
+pub mod procfs_reader;

@@ -2,6 +2,8 @@ use std::fmt::{self, Display};
 use std::net::IpAddr;
 use std::hash::{Hash, Hasher};
 
+use procfs::net::TcpNetEntry;
+
 use super::parser::ParsedPacket;
 
 #[derive(Debug, Clone)]
@@ -36,8 +38,28 @@ impl Hash for TcpStreamId {
     }
 }
 
+impl From<&TcpNetEntry> for TcpStreamId {
+    fn from(entry: &TcpNetEntry) -> Self {
+        TcpStreamId {
+            local_ip: entry.local_address.ip(),
+            local_port: entry.local_address.port(),
+            remote_ip: entry.remote_address.ip(),
+            remote_port: entry.remote_address.port(),
+        }
+    }
+}
+
 impl TcpStreamId {
-    pub fn from(packet: &ParsedPacket, own_ip: IpAddr) -> Self {
+    pub fn new(local_ip: IpAddr, local_port: u16, remote_ip: IpAddr, remote_port: u16) -> Self {
+        TcpStreamId {
+            local_ip,
+            local_port,
+            remote_ip,
+            remote_port,
+        }
+    }
+
+    pub fn from_pcap(packet: &ParsedPacket, own_ip: IpAddr) -> Self {
         if packet.src_ip == own_ip {
             TcpStreamId {
                 local_ip: packet.src_ip,

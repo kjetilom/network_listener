@@ -20,6 +20,9 @@ build:
 run: build
 	sudo ./target/release/$(BINARY_NAME)
 
+runbin:
+	sudo ./target/release/$(BINARY_NAME)
+
 # Clean the project
 clean:
 	cargo clean

@@ -8,6 +8,7 @@ use log::info;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+
     logger::setup_logging()?;
 
     info!("Starting packet capture");
