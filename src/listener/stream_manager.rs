@@ -3,7 +3,6 @@ use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
 use super::parser::{ParsedPacket, TransportPacket};
-use super::procfs_reader::netstat_test;
 use super::stream_id::TcpStreamId;
 use super::tracker::PacketTracker;
 
@@ -48,8 +47,18 @@ impl TcpStreamManager {
         None
     }
 
-    pub fn periodic(&mut self) {
-        let proc_map = netstat_test();
+    pub fn periodic(&mut self, proc_map: Option<HashMap<TcpStreamId, (procfs::net::TcpState, u32, u32, u64)>>) {
+        match proc_map {
+            Some(proc_map) => self.update_states(proc_map),
+            None => (),
+        };
+
+        for (stream_id, tracker) in self.streams.iter() {
+            println!("{}, State: {:?}, Elapsed {:?}", stream_id, tracker.state, tracker.last_registered.elapsed());
+        }
+    }
+
+    fn update_states(&mut self, proc_map: HashMap<TcpStreamId, (procfs::net::TcpState, u32, u32, u64)>) {
         self.streams.retain(
             |stream_id, tracker| {
                 if let Some((state, _, _, _)) = proc_map.get(stream_id) {
@@ -60,10 +69,6 @@ impl TcpStreamManager {
                 }
             }
         );
-        for (stream_id, tracker) in self.streams.iter() {
-            println!("{}, State: {:?}, Elapsed {:?}", stream_id, tracker.state, tracker.last_registered.elapsed());
-        }
-        self.last_cleanup = Instant::now();
     }
 
     /// Cleans up all streams by removing probes that have timed out.

@@ -33,6 +33,8 @@ pub struct Parser {
     device_name: String,
     stream_manager: TcpStreamManager,
     netlink_data: Option<NetlinkData>,
+    netstat_data: Option<HashMap<TcpStreamId, (TcpState, u32, u32, u64)>>,
+    analyzer: Analyzer,
 }
 
 #[derive(Debug)]
@@ -96,11 +98,13 @@ impl Parser {
             device_name: device.name,
             stream_manager: TcpStreamManager::new(super::Settings::TCP_STREAM_TIMEOUT),
             netlink_data: None,
+            netstat_data: None,
+            analyzer: Analyzer::new(),
         }
     }
 
     pub async fn start(mut self) {
-        let mut analyzer = Analyzer::new();
+
 
         let interface = match get_interface(&self.device_name).await {
             Ok(interface) => {
@@ -116,10 +120,15 @@ impl Parser {
 
         // Create the channel
         let (netlink_tx, mut netlink_rx) = mpsc::unbounded_channel();
+        let (netstat_tx, mut netstat_rx) = mpsc::unbounded_channel();
 
         // Spawn netlink_comms and pass the sender
         let netlink_handle = tokio::spawn(async move {
             Parser::netlink_comms(netlink_tx, interface).await;
+        });
+
+        let netstat_handle = tokio::spawn(async move {
+            Parser::periodic_netstat(netstat_tx).await;
         });
 
         let mut interval = time::interval(super::Settings::CLEANUP_INTERVAL);
@@ -127,37 +136,28 @@ impl Parser {
         loop {
             tokio::select! {
                 Some(packet) = self.packet_stream.recv() => {
-                    analyzer.process_packet(&packet);
-
-                    let parsed_packet = match self.parse_packet(&packet) {
-                        Some(packet) => packet,
-                        None => continue,
-                    };
-
-                    match &parsed_packet.transport {
-                        TransportPacket::TCP { .. } => {
-                            if let Some(rtt) = self.stream_manager.record_packet(&parsed_packet, self.own_ip) {
-                                println!("RTT: {:?}, SRC: {:?}, DST: {:?}", rtt, parsed_packet.src_ip, parsed_packet.dst_ip);
-                            }
-                        }
-                        TransportPacket::UDP => {
-                            // Handle UDP packet
-                        }
-                        TransportPacket::ICMP => {
-                            // Handle ICMP packet
-                            //println!("ICMP packet received");
-                        }
-                    }
+                    // Handle the captured packet
+                    self.handle_capture(packet);
                 },
                 Some(netlink_data) = netlink_rx.recv() => {
                     // Handle netlink data received from netlink_comms
-                    // For example, update state, process data, etc.
                     self.handle_netlink_data(netlink_data);
+                },
+                Some(netstat) = netstat_rx.recv() => {
+                    // Handle netstat data received from periodic_netstat
+                    self.handle_netstat_data(netstat);
                 },
                 _ = interval.tick() => {
                     // Perform the periodic action here
-                    println!("Performing periodic action");
-                    self.stream_manager.periodic();
+                    //println!("Performing periodic action");
+                    self.stream_manager.periodic(self.netstat_data.take());
+                    if let Some(data) = &self.netlink_data {
+                        // Print bitrate and signal strength
+                        for station in &data.stations {
+                            println!("Station: {:?}, Signal: {:?} dBm, RX {:?}, TX {:?}", station.bssid, station.signal, station.rx_bitrate, station.tx_bitrate);
+                            println!("Station_info: {:?}", station);
+                        }
+                    }
                 },
                 else => {
                     // Both streams have ended
@@ -168,6 +168,7 @@ impl Parser {
 
         // Optionally wait for netlink_comms to finish
         let _ = netlink_handle.await;
+        let _ = netstat_handle.await;
     }
 
     pub async fn stop(self) {
@@ -182,7 +183,7 @@ impl Parser {
                 break;
             }
 
-            time::sleep(super::Settings::CLEANUP_INTERVAL).await;
+            time::sleep(time::Duration::from_secs(3)).await;
         }
 
     }
@@ -200,11 +201,40 @@ impl Parser {
         }
     }
 
+    /// Placeholder for handling netlink data
     fn handle_netlink_data(&mut self, data: NetlinkData) {
-        // Handle the data received from netlink_comms
         self.netlink_data = Some(data);
-     }
+    }
 
+    /// Placeholder for handling netstat data
+    fn handle_netstat_data(&mut self, data: HashMap<TcpStreamId, (TcpState, u32, u32, u64)>) {
+        self.netstat_data = Some(data);
+    }
+
+    fn handle_capture(&mut self, packet: OwnedPacket) {
+        // Handle the captured packet
+        self.analyzer.process_packet(&packet);
+
+        let parsed_packet = match self.parse_packet(&packet) {
+            Some(packet) => packet,
+            None => return,
+        };
+
+        match &parsed_packet.transport {
+            TransportPacket::TCP { .. } => {
+                if let Some(rtt) = self.stream_manager.record_packet(&parsed_packet, self.own_ip) {
+                    println!("RTT: {:?}, SRC: {:?}, DST: {:?}", rtt, parsed_packet.src_ip, parsed_packet.dst_ip);
+                }
+            }
+            TransportPacket::UDP => {
+                // Handle UDP packet
+            }
+            TransportPacket::ICMP => {
+                // Handle ICMP packet
+                //println!("ICMP packet received");
+            }
+        }
+    }
 
     /* Parses an `OwnedPacket` into a `ParsedPacket`.
      * Returns `Some(ParsedPacket)` if parsing is successful, otherwise `None`.
@@ -271,6 +301,8 @@ impl Parser {
             },
         }
     }
+
+///! Should probably fix this part.
 
     fn parse_ipv6_packet(
         &self,
