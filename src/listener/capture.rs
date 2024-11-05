@@ -31,9 +31,11 @@ impl PacketCapturer {
      *  Create a new PacketCapturer instance
      */
     pub fn new() -> Result<(Self, UnboundedReceiver<OwnedPacket>, Device), Box<dyn Error>> {
+        // ! Change this to select device by name maybe?
         let device = Device::lookup()?.ok_or("No device available for capture")?;
         info!("Using device: {}", device.name);
         info!("Device ip: {:?}", device.addresses);
+
 
         let cap = Capture::from_device(device.clone())?
             .promisc(Settings::PROMISC)
@@ -41,11 +43,15 @@ impl PacketCapturer {
             .timeout(Settings::TIMEOUT) // Timeout in milliseconds
             .tstamp_type(Settings::TSTAMP_TYPE)
             .precision(Settings::PRESICION)
+            // .rfmon(true)
             .open()?;
 
         let (sender, receiver) = unbounded_channel();
 
-        Ok((PacketCapturer { cap, sender }, receiver, device))
+        Ok((PacketCapturer {
+            cap,
+            sender,
+        }, receiver, device))
     }
 
     /**

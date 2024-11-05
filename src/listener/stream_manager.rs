@@ -27,28 +27,6 @@ impl TcpStreamManager {
     pub fn record_packet(&mut self, packet: &ParsedPacket, own_ip: IpAddr) -> Option<Duration> {
         if let TransportPacket::TCP { flags, .. } = &packet.transport {
 
-            if self.last_cleanup.elapsed() > super::Settings::CLEANUP_INTERVAL {
-                let inst = Instant::now();
-                let proc_map = netstat_test();
-                self.streams.retain(
-                    |stream_id, tracker| {
-                        if let Some((state, _, _, _)) = proc_map.get(stream_id) {
-                            tracker.state = Some(state.clone());
-                            true
-                        } else {
-                            false
-                        }
-                    }
-                );
-                println!("Cleanup took {:?}", inst.elapsed());
-                for (stream_id, tracker) in self.streams.iter() {
-                    println!("{}, State: {:?}, Elapsed {:?}", stream_id, tracker.state, tracker.last_registered.elapsed());
-                    println!("Packetloss: {:?}", tracker.total_unique_packets);
-                }
-
-                self.last_cleanup = Instant::now();
-            }
-
             let stream_id = TcpStreamId::from_pcap(packet, own_ip);
 
             let tracker = self.streams.entry(stream_id)
@@ -68,6 +46,24 @@ impl TcpStreamManager {
             }
         }
         None
+    }
+
+    pub fn periodic(&mut self) {
+        let proc_map = netstat_test();
+        self.streams.retain(
+            |stream_id, tracker| {
+                if let Some((state, _, _, _)) = proc_map.get(stream_id) {
+                    tracker.state = Some(state.clone());
+                    true
+                } else {
+                    false
+                }
+            }
+        );
+        for (stream_id, tracker) in self.streams.iter() {
+            println!("{}, State: {:?}, Elapsed {:?}", stream_id, tracker.state, tracker.last_registered.elapsed());
+        }
+        self.last_cleanup = Instant::now();
     }
 
     /// Cleans up all streams by removing probes that have timed out.
