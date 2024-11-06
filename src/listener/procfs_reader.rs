@@ -42,7 +42,7 @@ pub async fn netstat_test_async() -> HashMap<TcpStreamId, (TcpState, u32, u32, u
     stream_map
 }
 
-pub async fn delay() {
+pub async fn print_ifaces() {
     let delay = std::time::Duration::from_secs(2);
 
     let mut prev_stats = procfs::net::dev_status().unwrap();

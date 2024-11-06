@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use super::parser::{ParsedPacket, TransportPacket};
 use super::stream_id::TcpStreamId;
@@ -11,7 +11,6 @@ use super::tracker::PacketTracker;
 pub struct TcpStreamManager {
     streams: HashMap<TcpStreamId, PacketTracker>,
     timeout: Duration,
-    last_cleanup: Instant,
 }
 
 impl TcpStreamManager {
@@ -19,7 +18,6 @@ impl TcpStreamManager {
         TcpStreamManager {
             streams: HashMap::new(),
             timeout,
-            last_cleanup: Instant::now(),
         }
     }
 
@@ -36,6 +34,7 @@ impl TcpStreamManager {
             let is_syn = flags & 0x02 != 0;
             let is_ack = flags & 0x10 != 0;
 
+            // !This needs to be fixed. It only supports one direction of communication.
             if packet.src_ip == own_ip {
                 // Handle packets sent from own IP
                 tracker.handle_outgoing_packet(packet, is_syn, is_ack);
