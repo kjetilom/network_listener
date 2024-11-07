@@ -10,22 +10,29 @@ struct SentPacket {
     len: u32,
     sent_time: SystemTime,
     retransmissions: u32,
+    total_packet_size: u32,
 }
 
 /// Tracks TCP streams and their state.
 #[derive(Debug)]
-pub struct PacketTracker {
+pub struct TcpTracker {
     sent_packets: BTreeMap<u32, SentPacket>, // Keyed by absolute sequence number
-    pub initial_sequence_local: Option<u32>,
-    pub initial_sequence_remote: Option<u32>,
+    initial_sequence_local: Option<u32>,
+    initial_sequence_remote: Option<u32>,
     pub last_registered: SystemTime,
-    pub timeout: Duration,
+    timeout: Duration,
     pub state: Option<TcpState>,
-    pub total_retransmissions: u32,
-    pub total_unique_packets: u32,
+    total_retransmissions: u32,
+    total_unique_packets: u32,
+    pub rtt_to_size: Vec<(u32, Duration)>,
 }
 
-// Helper functions for sequence number comparisons considering wrap-around.
+#[derive(Debug)]
+pub struct UdpTracker {
+    pub last_registered: SystemTime,
+}
+
+/// Wrap-around aware comparison
 fn seq_cmp(a: u32, b: u32) -> i32 {
     (a.wrapping_sub(b)) as i32
 }
@@ -34,9 +41,9 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
     seq_cmp(a, b) <= 0
 }
 
-impl PacketTracker {
+impl TcpTracker {
     pub fn new(timeout: Duration) -> Self {
-        PacketTracker {
+        TcpTracker {
             sent_packets: BTreeMap::new(),
             initial_sequence_local: None,
             initial_sequence_remote: None,
@@ -45,6 +52,7 @@ impl PacketTracker {
             state: None,
             total_retransmissions: 0,
             total_unique_packets: 0,
+            rtt_to_size: Vec::new(),
         }
     }
 
@@ -70,12 +78,8 @@ impl PacketTracker {
 
                 // Calculate the length considering SYN and FIN flags.
                 let mut len = *payload_len as u32;
-                if flags & 0x02 != 0 {
-                    // SYN flag
-                    len += 1;
-                }
-                if flags & 0x01 != 0 {
-                    // FIN flag
+                if flags & 0x02 != 0 || flags & 0x01 != 0 {
+                    // SYN or FIN flag
                     len += 1;
                 }
 
@@ -91,6 +95,7 @@ impl PacketTracker {
                             len,
                             sent_time: packet.timestamp,
                             retransmissions: 0,
+                            total_packet_size: packet.total_length,
                         };
                         self.total_unique_packets += 1;
 
@@ -144,9 +149,18 @@ impl PacketTracker {
                             keys_to_remove.push(seq);
                         }
                     }
+                    if keys_to_remove.len() == 1 && rtts.len() == 1 {
+                        let seq = keys_to_remove[0];
+                        let rtt = rtts[0];
+                        if let Some(sent_packet) = self.sent_packets.get(&seq) {
+                            let rtt_to_size = (sent_packet.total_packet_size, rtt);
+                            self.rtt_to_size.push(rtt_to_size);
+                        }
+                    }
 
                     // Remove acknowledged packets from sent_packets.
                     for seq in keys_to_remove {
+
                         self.sent_packets.remove(&seq);
                     }
 

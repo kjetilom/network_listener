@@ -14,7 +14,6 @@ impl Settings {
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(10); // 900
 }
 
-pub mod logger;
 pub mod parser;
 pub mod utils;
 pub mod analyzer;

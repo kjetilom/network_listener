@@ -4,8 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::analyzer::Analyzer;
 use super::procfs_reader::{self, get_interface, get_interface_info};
-use super::stream_id::TcpStreamId;
-use super::stream_manager::TcpStreamManager;
+use super::stream_id::StreamId;
+use super::stream_manager::StreamManager;
 use capture::OwnedPacket;
 use log::{error, info};
 use neli_wifi::{Bss, Interface, Station};
@@ -15,7 +15,7 @@ use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::{TcpOptionIterable, TcpPacket};
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::{ethernet::EthernetPacket, ip::IpNextHeaderProtocols, Packet};
-use procfs::net::TcpState;
+use procfs::net::{TcpState, UdpState};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio::time;
 
@@ -31,9 +31,9 @@ pub struct Parser {
     packet_stream: UnboundedReceiver<OwnedPacket>,
     own_ip: IpAddr,
     device_name: String,
-    stream_manager: TcpStreamManager,
+    stream_manager: StreamManager,
     netlink_data: Option<NetlinkData>,
-    netstat_data: Option<HashMap<TcpStreamId, (TcpState, u32, u32, u64)>>,
+    netstat_data: Option<HashMap<StreamId, (TcpState, u32, u32, u64)>>,
     analyzer: Analyzer,
 }
 
@@ -47,9 +47,40 @@ pub enum TransportPacket {
         payload_len: u16,
         tsval: Option<u32>,
         tsecr: Option<u32>,
+        src_port: u16,
+        dst_port: u16,
     },
-    UDP,
+    UDP {
+        src_port: u16,
+        dst_port: u16,
+    },
     ICMP,
+    OTHER {
+        protocol: u8,
+    },
+}
+
+impl TransportPacket {
+    pub fn is_syn(&self) -> bool {
+        match self {
+            TransportPacket::TCP { flags, .. } => flags & 0x02 != 0,
+            _ => false,
+        }
+    }
+
+    pub fn is_ack(&self) -> bool {
+        match self {
+            TransportPacket::TCP { flags, .. } => flags & 0x10 != 0,
+            _ => false,
+        }
+    }
+
+    pub fn is_fin(&self) -> bool {
+        match self {
+            TransportPacket::TCP { flags, .. } => flags & 0x01 != 0,
+            _ => false,
+        }
+    }
 }
 
 /// time::Duration and SystemTime uses Nanosecond precision
@@ -70,8 +101,6 @@ pub fn tv_to_system_time(tv: libc::timeval) -> SystemTime {
 pub struct ParsedPacket {
     pub src_ip: IpAddr,
     pub dst_ip: IpAddr,
-    pub src_port: u16,
-    pub dst_port: u16,
     pub transport: TransportPacket,
     pub total_length: u32,
     pub timestamp: SystemTime,
@@ -96,7 +125,7 @@ impl Parser {
             packet_stream,
             own_ip,
             device_name: device.name,
-            stream_manager: TcpStreamManager::new(super::Settings::TCP_STREAM_TIMEOUT),
+            stream_manager: StreamManager::new(super::Settings::TCP_STREAM_TIMEOUT),
             netlink_data: None,
             netstat_data: None,
             analyzer: Analyzer::new(),
@@ -120,7 +149,8 @@ impl Parser {
 
         // Create the channel
         let (netlink_tx, mut netlink_rx) = mpsc::unbounded_channel();
-        let (netstat_tx, mut netstat_rx) = mpsc::unbounded_channel();
+        let (tcp_netstat_tx, mut tcp_netstat_rx) = mpsc::unbounded_channel();
+        let (udp_netstat_tx, mut udp_netstat_rx) = mpsc::unbounded_channel();
 
         // Spawn netlink_comms and pass the sender
         let netlink_handle = tokio::spawn(async move {
@@ -128,7 +158,7 @@ impl Parser {
         });
 
         let netstat_handle = tokio::spawn(async move {
-            Parser::periodic_netstat(netstat_tx).await;
+            Parser::periodic_netstat(tcp_netstat_tx, udp_netstat_tx).await;
         });
 
         let mut interval = time::interval(super::Settings::CLEANUP_INTERVAL);
@@ -143,9 +173,13 @@ impl Parser {
                     // Handle netlink data received from netlink_comms
                     self.handle_netlink_data(netlink_data);
                 },
-                Some(netstat) = netstat_rx.recv() => {
+                Some(tcp_netstat) = tcp_netstat_rx.recv() => {
                     // Handle netstat data received from periodic_netstat
-                    self.handle_netstat_data(netstat);
+                    self.handle_netstat_data(tcp_netstat);
+                },
+                Some(_udp_netstat) = udp_netstat_rx.recv() => {
+                    // Handle netstat data received from periodic_netstat
+                    //info!("UDP netstat data received");
                 },
                 _ = interval.tick() => {
                     // Perform the periodic action here
@@ -155,7 +189,6 @@ impl Parser {
                         // Print bitrate and signal strength
                         for station in &data.stations {
                             println!("Station: {:?}, Signal: {:?} dBm, RX {:?}, TX {:?}", station.bssid, station.signal, station.rx_bitrate, station.tx_bitrate);
-                            println!("Station_info: {:?}", station);
                         }
                     }
                 },
@@ -175,15 +208,20 @@ impl Parser {
         // Stop the parser
     }
 
-    async fn periodic_netstat(netstat_tx: mpsc::UnboundedSender<HashMap<TcpStreamId, (TcpState, u32, u32, u64)>>) {
+    async fn periodic_netstat(
+        tcp_netstat_tx: mpsc::UnboundedSender<HashMap<StreamId, (TcpState, u32, u32, u64)>>,
+        udp_netstat_tx: mpsc::UnboundedSender<HashMap<StreamId, (UdpState, u32, u32, u64)>>,
+    ) {
         loop {
-            let netstat = procfs_reader::netstat_test_async().await;
+            let tcp_netstat = procfs_reader::proc_net_tcp().await;
+            let udp_netstat = procfs_reader::proc_net_udp().await;
             // Send a message to trigger the periodic action
-            if netstat_tx.send(netstat).is_err() {
+            if tcp_netstat_tx.send(tcp_netstat).is_err()
+                || udp_netstat_tx.send(udp_netstat).is_err() {
                 break;
             }
 
-            time::sleep(time::Duration::from_secs(3)).await;
+            time::sleep(time::Duration::from_secs(7)).await;
         }
 
     }
@@ -197,7 +235,7 @@ impl Parser {
                 break;
             }
 
-            time::sleep(time::Duration::from_secs(3)).await;
+            time::sleep(time::Duration::from_secs(7)).await;
         }
     }
 
@@ -207,7 +245,7 @@ impl Parser {
     }
 
     /// Placeholder for handling netstat data
-    fn handle_netstat_data(&mut self, data: HashMap<TcpStreamId, (TcpState, u32, u32, u64)>) {
+    fn handle_netstat_data(&mut self, data: HashMap<StreamId, (TcpState, u32, u32, u64)>) {
         self.netstat_data = Some(data);
     }
 
@@ -226,12 +264,15 @@ impl Parser {
                     println!("RTT: {:?}, SRC: {:?}, DST: {:?}", rtt, parsed_packet.src_ip, parsed_packet.dst_ip);
                 }
             }
-            TransportPacket::UDP => {
-                // Handle UDP packet
+            TransportPacket::UDP { .. } => {
+                self.stream_manager.record_packet(&parsed_packet, self.own_ip);
             }
             TransportPacket::ICMP => {
                 // Handle ICMP packet
                 //println!("ICMP packet received");
+            }
+            TransportPacket::OTHER { .. } => {
+                // Handle other packet
             }
         }
     }
@@ -288,16 +329,21 @@ impl Parser {
                 Some(ParsedPacket {
                     src_ip: IpAddr::V4(ipv4.get_source()),
                     dst_ip: IpAddr::V4(ipv4.get_destination()),
-                    src_port: 0,
-                    dst_port: 0,
                     transport: TransportPacket::ICMP,
                     total_length,
                     timestamp,
                 })
             }
             _ => {
-                println!("Unknown protocol: {:?}", protocol);
-                None
+                Some(ParsedPacket {
+                    src_ip: IpAddr::V4(ipv4.get_source()),
+                    dst_ip: IpAddr::V4(ipv4.get_destination()),
+                    transport: TransportPacket::OTHER {
+                        protocol: protocol.0,
+                    },
+                    total_length,
+                    timestamp,
+                })
             },
         }
     }
@@ -336,8 +382,6 @@ impl Parser {
                 Some(ParsedPacket {
                     src_ip: IpAddr::V6(ipv6.get_source()),
                     dst_ip: IpAddr::V6(ipv6.get_destination()),
-                    src_port: 0,
-                    dst_port: 0,
                     transport: TransportPacket::ICMP,
                     total_length,
                     timestamp,
@@ -396,8 +440,6 @@ impl Parser {
         Some(ParsedPacket {
             src_ip,
             dst_ip,
-            src_port: tcp.get_source(),
-            dst_port: tcp.get_destination(),
             transport: TransportPacket::TCP {
                 sequence: tcp.get_sequence(),
                 acknowledgment: tcp.get_acknowledgement(),
@@ -405,6 +447,8 @@ impl Parser {
                 payload_len: tcp.payload().len() as u16,
                 tsval: Some(tsval),
                 tsecr: Some(tsecr),
+                src_port: tcp.get_source(),
+                dst_port: tcp.get_destination(),
             },
             total_length,
             timestamp,
@@ -424,9 +468,10 @@ impl Parser {
         Some(ParsedPacket {
             src_ip,
             dst_ip,
-            src_port: udp.get_source(),
-            dst_port: udp.get_destination(),
-            transport: TransportPacket::UDP,
+            transport: TransportPacket::UDP {
+                src_port: udp.get_source(),
+                dst_port: udp.get_destination(),
+            },
             total_length,
             timestamp,
         })

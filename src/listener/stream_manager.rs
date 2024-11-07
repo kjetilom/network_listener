@@ -3,62 +3,91 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use super::parser::{ParsedPacket, TransportPacket};
-use super::stream_id::TcpStreamId;
-use super::tracker::PacketTracker;
+use super::stream_id::StreamId;
+use super::tracker::{TcpTracker, UdpTracker};
 
 
 #[derive(Debug)]
-pub struct TcpStreamManager {
-    streams: HashMap<TcpStreamId, PacketTracker>,
+pub struct StreamManager {
+    tcp_streams: HashMap<StreamId, TcpTracker>,
+    udp_streams: HashMap<StreamId, UdpTracker>,
     timeout: Duration,
 }
 
-impl TcpStreamManager {
+impl StreamManager {
     pub fn new(timeout: Duration) -> Self {
-        TcpStreamManager {
-            streams: HashMap::new(),
+        StreamManager {
+            tcp_streams: HashMap::new(),
+            udp_streams: HashMap::new(),
             timeout,
         }
     }
 
     pub fn record_packet(&mut self, packet: &ParsedPacket, own_ip: IpAddr) -> Option<Duration> {
-        if let TransportPacket::TCP { flags, .. } = &packet.transport {
-
-            let stream_id = TcpStreamId::from_pcap(packet, own_ip);
-
-            let tracker = self.streams.entry(stream_id)
-                .or_insert_with(|| PacketTracker::new(self.timeout));
-
-            tracker.last_registered = packet.timestamp;
-
-            let is_syn = flags & 0x02 != 0;
-            let is_ack = flags & 0x10 != 0;
-
-            // !This needs to be fixed. It only supports one direction of communication.
-            if packet.src_ip == own_ip {
-                // Handle packets sent from own IP
-                tracker.handle_outgoing_packet(packet, is_syn, is_ack);
-            } else {
-                // Handle packets received by own IP
-                return tracker.handle_incoming_packet(packet, is_syn, is_ack);
-            }
+        match packet.transport {
+            TransportPacket::TCP { .. } => self.record_tcp(packet, own_ip),
+            TransportPacket::UDP { .. } => self.record_udp(packet, own_ip),
+            _ => None,
         }
+    }
+
+    fn record_tcp(&mut self, packet: &ParsedPacket, own_ip: IpAddr) -> Option<Duration> {
+        let stream_id = StreamId::from_pcap(packet, own_ip);
+
+        let tracker = self.tcp_streams.entry(stream_id)
+            .or_insert_with(|| TcpTracker::new(self.timeout));
+
+        tracker.last_registered = packet.timestamp;
+
+        let is_syn = packet.transport.is_syn();
+        let is_ack = packet.transport.is_ack();
+
+        // !This needs to be fixed. It only supports one direction of communication.
+        if packet.src_ip == own_ip {
+            // Handle packets sent from own IP
+            tracker.handle_outgoing_packet(packet, is_syn, is_ack);
+            None
+        } else {
+            // Handle packets received by own IP
+            tracker.handle_incoming_packet(packet, is_syn, is_ack)
+        }
+    }
+
+    fn record_udp(&mut self, packet: &ParsedPacket, own_ip: IpAddr) -> Option<Duration> {
+        let stream_id = StreamId::from_pcap(packet, own_ip);
+
+        let tracker = self.udp_streams.entry(stream_id)
+            .or_insert_with(|| UdpTracker {
+                last_registered: packet.timestamp,
+            });
+
+        tracker.last_registered = packet.timestamp;
         None
     }
 
-    pub fn periodic(&mut self, proc_map: Option<HashMap<TcpStreamId, (procfs::net::TcpState, u32, u32, u64)>>) {
+    pub fn periodic(&mut self, proc_map: Option<HashMap<StreamId, (procfs::net::TcpState, u32, u32, u64)>>) {
         match proc_map {
             Some(proc_map) => self.update_states(proc_map),
             None => (),
         };
 
-        for (stream_id, tracker) in self.streams.iter() {
+        for (stream_id, tracker) in self.tcp_streams.iter() {
             println!("{}, State: {:?}, Elapsed {:?}", stream_id, tracker.state, tracker.last_registered.elapsed());
         }
+
+        for (stream_id, tracker) in self.tcp_streams.iter() {
+            for (size, rtt) in tracker.rtt_to_size.iter() {
+                println!("{}, RTT: {:?}, Size: {}", stream_id, rtt, size);
+            }
+        }
+
+        // for (stream_id, tracker) in self.udp_streams.iter() {
+        //     println!("{}, Elapsed {:?}", stream_id, tracker.last_registered.elapsed());
+        // }
     }
 
-    fn update_states(&mut self, proc_map: HashMap<TcpStreamId, (procfs::net::TcpState, u32, u32, u64)>) {
-        self.streams.retain(
+    fn update_states(&mut self, proc_map: HashMap<StreamId, (procfs::net::TcpState, u32, u32, u64)>) {
+        self.tcp_streams.retain(
             |stream_id, tracker| {
                 if let Some((state, _, _, _)) = proc_map.get(stream_id) {
                     tracker.state = Some(state.clone());

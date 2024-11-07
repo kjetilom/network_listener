@@ -1,41 +1,61 @@
 use std::collections::HashMap;
-use procfs::net::TcpState;
-use super::stream_id::TcpStreamId;
+use procfs::net::{TcpState, UdpState};
+use super::stream_id::StreamId;
 use neli_wifi::{AsyncSocket, Interface};
 use std::error::Error;
 use super::parser::NetlinkData;
 
-pub fn netstat_test() -> HashMap<TcpStreamId, (TcpState, u32, u32, u64)> {
+pub async fn proc_net_tcp() -> HashMap<StreamId, (TcpState, u32, u32, u64)> {
     // get the tcp table
     let tcp = [procfs::net::tcp(), procfs::net::tcp6()];
 
     let entries = tcp.into_iter().filter_map(|res| res.ok()).flatten();
-    // Iterate over the entries and map to TcpStreamId : State, rx_queue, tx_queue, u3inode,
+    // Iterate over the entries and map to StreamId : State, rx_queue, tx_queue, u3inode,
 
-    let mut stream_map: HashMap<TcpStreamId, (TcpState, u32, u32, u64)> = HashMap::new();
+    let mut stream_map: HashMap<StreamId, (TcpState, u32, u32, u64)> = HashMap::new();
 
     entries.into_iter().for_each(|entry| {
         stream_map.insert(
-            TcpStreamId::from(&entry),
+            StreamId::from(&entry),
             (entry.state, entry.rx_queue, entry.tx_queue, entry.inode
         ));
     });
     stream_map
 }
 
+pub async fn proc_net_udp() -> HashMap<StreamId, (UdpState, u32, u32, u64)> {
+    // get the udp table
+    let udp = [procfs::net::udp(), procfs::net::udp6()];
+
+    let entries = udp.into_iter().filter_map(|res| res.ok()).flatten();
+    // Iterate over the entries and map to StreamId : ()
+    let mut stream_map: HashMap<StreamId, (UdpState, u32, u32, u64)> = HashMap::new();
+    for entry in entries {
+        if entry.state != UdpState::Established {
+            continue;
+        }
+        stream_map.insert(
+            StreamId::from(&entry),
+            (entry.state, entry.rx_queue, entry.tx_queue, entry.inode)
+        );
+    }
+
+    stream_map
+}
+
 // Async version of the netstat_test function
-pub async fn netstat_test_async() -> HashMap<TcpStreamId, (TcpState, u32, u32, u64)> {
+pub async fn netstat_test_async() -> HashMap<StreamId, (TcpState, u32, u32, u64)> {
     // get the tcp table
     let tcp = [procfs::net::tcp(), procfs::net::tcp6()];
 
     let entries = tcp.into_iter().filter_map(|res| res.ok()).flatten();
-    // Iterate over the entries and map to TcpStreamId : State, rx_queue, tx_queue, u3inode,
+    // Iterate over the entries and map to StreamId : State, rx_queue, tx_queue, u3inode,
 
-    let mut stream_map: HashMap<TcpStreamId, (TcpState, u32, u32, u64)> = HashMap::new();
+    let mut stream_map: HashMap<StreamId, (TcpState, u32, u32, u64)> = HashMap::new();
 
     entries.into_iter().for_each(|entry| {
         stream_map.insert(
-            TcpStreamId::from(&entry),
+            StreamId::from(&entry),
             (entry.state, entry.rx_queue, entry.tx_queue, entry.inode
         ));
     });

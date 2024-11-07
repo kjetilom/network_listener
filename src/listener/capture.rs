@@ -43,7 +43,26 @@ impl PacketCapturer {
             .timeout(Settings::TIMEOUT) // Timeout in milliseconds
             .tstamp_type(Settings::TSTAMP_TYPE)
             .precision(Settings::PRESICION)
-            // .rfmon(true)
+            .open()?;
+
+        let (sender, receiver) = unbounded_channel();
+
+        Ok((PacketCapturer {
+            cap,
+            sender,
+        }, receiver, device))
+    }
+
+    pub fn monitor_device(dev_name: String) -> Result<(Self, UnboundedReceiver<OwnedPacket>, Device), Box<dyn Error>> {
+        let device = Device::list()?.into_iter().find(|d| d.name == dev_name).ok_or("No device available for capture")?;
+        info!("Using device: {}", device.name);
+        dbg!(&device);
+        let cap = Capture::from_device(device.clone())?
+            .promisc(true)
+            .immediate_mode(Settings::IMMEDIATE_MODE)
+            .timeout(Settings::TIMEOUT) // Timeout in milliseconds
+            .tstamp_type(Settings::TSTAMP_TYPE)
+            .precision(Settings::PRESICION)
             .open()?;
 
         let (sender, receiver) = unbounded_channel();
