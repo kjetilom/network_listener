@@ -7,7 +7,7 @@ impl Settings {
     pub const IMMEDIATE_MODE: bool = true;
     pub const TIMEOUT: i32 = 0;
     pub const TSTAMP_TYPE: pcap::TimestampType = pcap::TimestampType::Adapter;
-    pub const PRESICION: pcap::Precision = pcap::Precision::Nano;
+    pub const PRECISION: pcap::Precision = pcap::Precision::Nano;
     pub const TCP_STREAM_TIMEOUT: Duration = Duration::from_secs(900);
     pub const SYN_ACK_TIMEOUT: Duration = Duration::from_secs(10); // 75
     pub const FIN_WAIT_TIMEOUT: Duration = Duration::from_secs(675);

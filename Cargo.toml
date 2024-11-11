@@ -13,12 +13,12 @@ chrono = "0.4.19"
 log = "0.4.14"
 env_logger = "0.11.5"
 serde = { version = "1.0.214", features = ["derive"] }
-clap = { version = "4.0.18", features = ["derive"] }
+clap = { version = "4.5.20", features = ["derive"] }
 serde_json = "1.0.132"
 fern = "0.7.0"
-tokio = { version = "1.41.0", features = ["full"] }
+tokio = { version = "1.41.1", features = ["full"] }
 pcap-async = "0.4.1"
-libc = "0.2.161"
+libc = "0.2.162"
 bitflags = "2.6.0"
 procfs = "0.17.0"
 rtnetlink = "0.14.1"
@@ -27,3 +27,9 @@ neli-wifi = { version = "0.6.0", features = ["async"] }
 # neli = { version = "0.6.4", features = ["async"] }
 radiotap = "1.3.0"
 
+# Grafana
+prometheus = { version = "0.13.4" }
+hyper = { version = "0.14.31", features = ["full"] }
+lazy_static = "1.4"
+rand = "0.8"
+anyhow = "1.0.93"

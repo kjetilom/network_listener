@@ -65,7 +65,6 @@ impl TcpTracker {
         if let TransportPacket::TCP {
             sequence,
             payload_len,
-            flags,
             ..
         } = &packet.transport
         {
@@ -78,7 +77,7 @@ impl TcpTracker {
 
                 // Calculate the length considering SYN and FIN flags.
                 let mut len = *payload_len as u32;
-                if flags & 0x02 != 0 || flags & 0x01 != 0 {
+                if packet.transport.is_syn() || packet.transport.is_fin() {
                     // SYN or FIN flag
                     len += 1;
                 }

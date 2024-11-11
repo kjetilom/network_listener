@@ -1,5 +1,5 @@
 use tokio::sync::mpsc::UnboundedReceiver;
-use radiotap::{field, RadiotapIterator};
+use radiotap::{field::Kind, Radiotap};
 
 use crate::listener::capture::OwnedPacket;
 
@@ -33,16 +33,24 @@ impl Parser {
     }
 }
 
+/// Parse a packet into a WirelessPacket
 fn parse_packet(packet: &OwnedPacket) -> Option<WirelessPacket> {
     // Parsing logic goes here
     let data = packet.data.as_slice();
 
-    // Parse Radiotap header
-    for element in RadiotapIterator::from_bytes(&data).unwrap() {
-        match element {
-            Ok((field::Kind::VHT, data)) => {
-                let vht: field::VHT = field::from_bytes(data).unwrap();
-                println!("{:?}", vht);
+    //println!("{:?}", data);
+
+    let (rtap, _) = Radiotap::parse(data).ok()?;
+    for field in rtap.header.present.iter() {
+        match field {
+            Kind::Antenna => {
+                println!("{:?}", rtap.antenna);
+            },
+            Kind::Channel => {
+                println!("{:?}", rtap.channel);
+            },
+            Kind::Rate => {
+                println!("{:?}", rtap.rate);
             },
             _ => {}
         }

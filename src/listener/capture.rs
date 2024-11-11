@@ -42,7 +42,7 @@ impl PacketCapturer {
             .immediate_mode(Settings::IMMEDIATE_MODE)
             .timeout(Settings::TIMEOUT) // Timeout in milliseconds
             .tstamp_type(Settings::TSTAMP_TYPE)
-            .precision(Settings::PRESICION)
+            .precision(Settings::PRECISION)
             .open()?;
 
         let (sender, receiver) = unbounded_channel();
@@ -57,14 +57,14 @@ impl PacketCapturer {
         let device = Device::list()?.into_iter().find(|d| d.name == dev_name).ok_or("No device available for capture")?;
         info!("Using device: {}", device.name);
         dbg!(&device);
-        let cap = Capture::from_device(device.clone())?
-            .promisc(true)
+        let mut cap = Capture::from_device(device.clone())?
+            .promisc(false)
             .immediate_mode(Settings::IMMEDIATE_MODE)
             .timeout(Settings::TIMEOUT) // Timeout in milliseconds
             .tstamp_type(Settings::TSTAMP_TYPE)
-            .precision(Settings::PRESICION)
+            .precision(Settings::PRECISION)
             .open()?;
-
+        cap.set_datalink(pcap::Linktype(127)).unwrap();
         let (sender, receiver) = unbounded_channel();
 
         Ok((PacketCapturer {
@@ -76,11 +76,11 @@ impl PacketCapturer {
     /**
      *  Start the asynchronous packet capturing loop
      */
-    pub fn start_capture_loop(mut self) {
+    pub fn start_capture_loop(mut self) -> task::JoinHandle<()> {
         // Clone the sender to move into the thread
         let sender = self.sender.clone();
         // Capture needs to be in a blocking task since pcap::Capture is blocking
-        task::spawn_blocking(move || {
+        let handle = task::spawn_blocking(move || {
             loop {
                 self.cap.stats().unwrap();
                 match self.cap.next_packet() {
@@ -100,5 +100,6 @@ impl PacketCapturer {
                 }
             }
         });
+        handle
     }
 }

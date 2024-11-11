@@ -18,6 +18,10 @@ use pnet::packet::{ethernet::EthernetPacket, ip::IpNextHeaderProtocols, Packet};
 use procfs::net::{TcpState, UdpState};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio::time;
+use anyhow::{Result, Context};
+use tokio::sync::mpsc::{Receiver, Sender};
+
+const CHANNEL_CAPACITY: usize = 1000;
 
 use super::capture;
 
@@ -42,7 +46,7 @@ pub enum TransportPacket {
     TCP {
         sequence: u32,
         acknowledgment: u32,
-        flags: u8,
+        flags: TcpFlags,
         // Maximum size of an IP packet is 65,535 bytes (2^16 - 1)
         payload_len: u16,
         tsval: Option<u32>,
@@ -60,32 +64,44 @@ pub enum TransportPacket {
     },
 }
 
+#[derive(Debug)]
+pub struct TcpFlags(u8);
+
+impl TcpFlags {
+    const SYN: u8 = 0x02;
+    const ACK: u8 = 0x10;
+    const FIN: u8 = 0x01;
+
+    fn is_syn(&self) -> bool {
+        self.0 & Self::SYN != 0
+    }
+
+    fn is_ack(&self) -> bool {
+        self.0 & Self::ACK != 0
+    }
+
+    fn is_fin(&self) -> bool {
+        self.0 & Self::FIN != 0
+    }
+}
+
 impl TransportPacket {
     pub fn is_syn(&self) -> bool {
-        match self {
-            TransportPacket::TCP { flags, .. } => flags & 0x02 != 0,
-            _ => false,
-        }
+        matches!(self, TransportPacket::TCP { flags, .. } if flags.is_syn())
     }
 
     pub fn is_ack(&self) -> bool {
-        match self {
-            TransportPacket::TCP { flags, .. } => flags & 0x10 != 0,
-            _ => false,
-        }
+        matches!(self, TransportPacket::TCP { flags, .. } if flags.is_ack())
     }
 
     pub fn is_fin(&self) -> bool {
-        match self {
-            TransportPacket::TCP { flags, .. } => flags & 0x01 != 0,
-            _ => false,
-        }
+        matches!(self, TransportPacket::TCP { flags, .. } if flags.is_fin())
     }
 }
 
 /// time::Duration and SystemTime uses Nanosecond precision
-pub fn tv_to_system_time(tv: libc::timeval) -> SystemTime {
-    match super::Settings::PRESICION {
+pub fn timeval_to_system_time(tv: libc::timeval) -> SystemTime {
+    match super::Settings::PRECISION {
         pcap::Precision::Micro => {
             let dur = time::Duration::new(tv.tv_sec as u64, tv.tv_usec as u32 * 1000);
             UNIX_EPOCH + dur
@@ -111,17 +127,16 @@ impl Parser {
     pub fn new(
         packet_stream: UnboundedReceiver<OwnedPacket>,
         device: Device,
-    ) -> Self {
-
-        // Attempt to find an IPv4 or IPv6 address
-        let own_ip = device.addresses.iter().find_map(|addr| {
-            match addr.addr {
+    ) -> Result<Self> {
+        let own_ip = device.addresses.iter()
+            .filter_map(|addr| match addr.addr {
                 IpAddr::V4(ipv4) => Some(IpAddr::V4(ipv4)),
                 IpAddr::V6(ipv6) => Some(IpAddr::V6(ipv6)),
-            }
-        }).expect("Device does not have an IPv4 or IPv6 address");
+            })
+            .next()
+            .context("Device does not have an IPv4 or IPv6 address")?;
 
-        Parser {
+        Ok(Parser {
             packet_stream,
             own_ip,
             device_name: device.name,
@@ -129,7 +144,7 @@ impl Parser {
             netlink_data: None,
             netstat_data: None,
             analyzer: Analyzer::new(),
-        }
+        })
     }
 
     pub async fn start(mut self) {
@@ -147,10 +162,10 @@ impl Parser {
         };
 
 
-        // Create the channel
-        let (netlink_tx, mut netlink_rx) = mpsc::unbounded_channel();
-        let (tcp_netstat_tx, mut tcp_netstat_rx) = mpsc::unbounded_channel();
-        let (udp_netstat_tx, mut udp_netstat_rx) = mpsc::unbounded_channel();
+        // Create bounded channels
+        let (netlink_tx, mut netlink_rx): (Sender<NetlinkData>, Receiver<NetlinkData>) = mpsc::channel(CHANNEL_CAPACITY);
+        let (tcp_netstat_tx, mut tcp_netstat_rx): (Sender<HashMap<StreamId, (TcpState, u32, u32, u64)>>, Receiver<_>) = mpsc::channel(CHANNEL_CAPACITY);
+        let (udp_netstat_tx, mut udp_netstat_rx): (Sender<HashMap<StreamId, (UdpState, u32, u32, u64)>>, Receiver<_>) = mpsc::channel(CHANNEL_CAPACITY);
 
         // Spawn netlink_comms and pass the sender
         let netlink_handle = tokio::spawn(async move {
@@ -166,27 +181,20 @@ impl Parser {
         loop {
             tokio::select! {
                 Some(packet) = self.packet_stream.recv() => {
-                    // Handle the captured packet
                     self.handle_capture(packet);
                 },
                 Some(netlink_data) = netlink_rx.recv() => {
-                    // Handle netlink data received from netlink_comms
                     self.handle_netlink_data(netlink_data);
                 },
                 Some(tcp_netstat) = tcp_netstat_rx.recv() => {
-                    // Handle netstat data received from periodic_netstat
                     self.handle_netstat_data(tcp_netstat);
                 },
                 Some(_udp_netstat) = udp_netstat_rx.recv() => {
-                    // Handle netstat data received from periodic_netstat
-                    //info!("UDP netstat data received");
+                    //self.handle_netstat_data(udp_netstat);
                 },
                 _ = interval.tick() => {
-                    // Perform the periodic action here
-                    //println!("Performing periodic action");
                     self.stream_manager.periodic(self.netstat_data.take());
                     if let Some(data) = &self.netlink_data {
-                        // Print bitrate and signal strength
                         for station in &data.stations {
                             println!("Station: {:?}, Signal: {:?} dBm, RX {:?}, TX {:?}", station.bssid, station.signal, station.rx_bitrate, station.tx_bitrate);
                         }
@@ -199,7 +207,6 @@ impl Parser {
             }
         }
 
-        // Optionally wait for netlink_comms to finish
         let _ = netlink_handle.await;
         let _ = netstat_handle.await;
     }
@@ -209,29 +216,28 @@ impl Parser {
     }
 
     async fn periodic_netstat(
-        tcp_netstat_tx: mpsc::UnboundedSender<HashMap<StreamId, (TcpState, u32, u32, u64)>>,
-        udp_netstat_tx: mpsc::UnboundedSender<HashMap<StreamId, (UdpState, u32, u32, u64)>>,
+        tcp_netstat_tx: Sender<HashMap<StreamId, (TcpState, u32, u32, u64)>>,
+        udp_netstat_tx: Sender<HashMap<StreamId, (UdpState, u32, u32, u64)>>,
     ) {
         loop {
             let tcp_netstat = procfs_reader::proc_net_tcp().await;
             let udp_netstat = procfs_reader::proc_net_udp().await;
-            // Send a message to trigger the periodic action
-            if tcp_netstat_tx.send(tcp_netstat).is_err()
-                || udp_netstat_tx.send(udp_netstat).is_err() {
+
+            if tcp_netstat_tx.send(tcp_netstat).await.is_err()
+                || udp_netstat_tx.send(udp_netstat).await.is_err()
+            {
                 break;
             }
 
             time::sleep(time::Duration::from_secs(7)).await;
         }
-
     }
 
-    async fn netlink_comms(netlink_tx: mpsc::UnboundedSender<NetlinkData>, interface: Interface) {
+    async fn netlink_comms(netlink_tx: Sender<NetlinkData>, interface: Interface) {
         loop {
-            // Obtain the data you want to send
             let data = get_interface_info(interface.index.unwrap()).await;
 
-            if netlink_tx.send(data.unwrap()).is_err() {
+            if netlink_tx.send(data.unwrap()).await.is_err() {
                 break;
             }
 
@@ -287,12 +293,63 @@ impl Parser {
 
         match eth.get_ethertype() {
             pnet::packet::ethernet::EtherTypes::Ipv4 => {
-                self.parse_ipv4_packet(eth.payload(), total_length, tv_to_system_time(packet.header.ts))
+                self.parse_ipv4_packet(eth.payload(), total_length, timeval_to_system_time(packet.header.ts))
             }
             pnet::packet::ethernet::EtherTypes::Ipv6 => {
-                self.parse_ipv6_packet(eth.payload(), total_length, tv_to_system_time(packet.header.ts))
+                self.parse_ipv6_packet(eth.payload(), total_length, timeval_to_system_time(packet.header.ts))
             }
             _ => None,
+        }
+    }
+
+    fn parse_ip_packet (
+        &self,
+        payload: &[u8],
+        src_ip: IpAddr,
+        dst_ip: IpAddr,
+        total_length: u32,
+        timestamp: SystemTime,
+        protocol: pnet::packet::ip::IpNextHeaderProtocol,
+    ) -> Option<ParsedPacket> {
+        match protocol {
+            IpNextHeaderProtocols::Tcp => {
+                self.parse_tcp_packet(
+                    payload,
+                    src_ip,
+                    dst_ip,
+                    total_length,
+                    timestamp,
+                )
+            }
+            IpNextHeaderProtocols::Udp => {
+                self.parse_udp_packet(
+                    payload,
+                    src_ip,
+                    dst_ip,
+                    total_length,
+                    timestamp,
+                )
+            }
+            IpNextHeaderProtocols::Icmp => {
+                Some(ParsedPacket {
+                    src_ip,
+                    dst_ip,
+                    transport: TransportPacket::ICMP,
+                    total_length,
+                    timestamp,
+                })
+            }
+            _ => {
+                Some(ParsedPacket {
+                    src_ip,
+                    dst_ip,
+                    transport: TransportPacket::OTHER {
+                        protocol: protocol.0,
+                    },
+                    total_length,
+                    timestamp,
+                })
+            },
         }
     }
 
@@ -306,49 +363,15 @@ impl Parser {
         let ipv4 = Ipv4Packet::new(payload)?;
         let protocol = ipv4.get_next_level_protocol();
 
-        match protocol {
-            IpNextHeaderProtocols::Tcp => {
-                self.parse_tcp_packet(
-                    ipv4.payload(),
-                    IpAddr::V4(ipv4.get_source()),
-                    IpAddr::V4(ipv4.get_destination()),
-                    total_length,
-                    timestamp,
-                )
-            }
-            IpNextHeaderProtocols::Udp => {
-                self.parse_udp_packet(
-                    ipv4.payload(),
-                    IpAddr::V4(ipv4.get_source()),
-                    IpAddr::V4(ipv4.get_destination()),
-                    total_length,
-                    timestamp,
-                )
-            }
-            IpNextHeaderProtocols::Icmp => {
-                Some(ParsedPacket {
-                    src_ip: IpAddr::V4(ipv4.get_source()),
-                    dst_ip: IpAddr::V4(ipv4.get_destination()),
-                    transport: TransportPacket::ICMP,
-                    total_length,
-                    timestamp,
-                })
-            }
-            _ => {
-                Some(ParsedPacket {
-                    src_ip: IpAddr::V4(ipv4.get_source()),
-                    dst_ip: IpAddr::V4(ipv4.get_destination()),
-                    transport: TransportPacket::OTHER {
-                        protocol: protocol.0,
-                    },
-                    total_length,
-                    timestamp,
-                })
-            },
-        }
+        self.parse_ip_packet(
+            ipv4.payload(),
+            IpAddr::V4(ipv4.get_source()),
+            IpAddr::V4(ipv4.get_destination()),
+            total_length,
+            timestamp,
+            protocol,
+        )
     }
-
-///! Should probably fix this part.
 
     fn parse_ipv6_packet(
         &self,
@@ -359,46 +382,23 @@ impl Parser {
         let ipv6 = Ipv6Packet::new(payload)?;
         let protocol = ipv6.get_next_header();
 
-        match protocol {
-            IpNextHeaderProtocols::Tcp => {
-                self.parse_tcp_packet(
-                    ipv6.payload(),
-                    IpAddr::V6(ipv6.get_source()),
-                    IpAddr::V6(ipv6.get_destination()),
-                    total_length,
-                    timestamp,
-                )
-            }
-            IpNextHeaderProtocols::Udp => {
-                self.parse_udp_packet(
-                    ipv6.payload(),
-                    IpAddr::V6(ipv6.get_source()),
-                    IpAddr::V6(ipv6.get_destination()),
-                    total_length,
-                    timestamp,
-                )
-            }
-            IpNextHeaderProtocols::Icmpv6 => {
-                Some(ParsedPacket {
-                    src_ip: IpAddr::V6(ipv6.get_source()),
-                    dst_ip: IpAddr::V6(ipv6.get_destination()),
-                    transport: TransportPacket::ICMP,
-                    total_length,
-                    timestamp,
-                })
-            }
-            _ => None,
-        }
+        self.parse_ip_packet(
+            ipv6.payload(),
+            IpAddr::V6(ipv6.get_source()),
+            IpAddr::V6(ipv6.get_destination()),
+            total_length,
+            timestamp,
+            protocol,
+        )
     }
 
-    fn parse_timestamp(&self, tcp_options : TcpOptionIterable) -> Option<(u32, u32)> {
+    fn parse_timestamp(&self, tcp_options: TcpOptionIterable) -> Option<(u32, u32)> {
         for option in tcp_options {
             if option.get_number() == pnet::packet::tcp::TcpOptionNumbers::TIMESTAMPS {
                 let timestamp_bytes = option.payload();
 
-                // Ensure the timestamp option payload is 8 bytes (TSval + TSecr)
                 if timestamp_bytes.len() != 8 {
-                    // println!("Invalid timestamp length");
+                    log::warn!("Invalid timestamp length: expected 8, got {}", timestamp_bytes.len());
                     continue;
                 }
                 let tsval = u32::from_be_bytes([
@@ -413,8 +413,6 @@ impl Parser {
                     timestamp_bytes[6],
                     timestamp_bytes[7],
                 ]);
-
-                //println!("TSval: {}, TSecr: {}", tsval, tsecr);
 
                 return Some((tsval, tsecr));
             }
@@ -443,7 +441,7 @@ impl Parser {
             transport: TransportPacket::TCP {
                 sequence: tcp.get_sequence(),
                 acknowledgment: tcp.get_acknowledgement(),
-                flags: tcp.get_flags(),
+                flags: TcpFlags(tcp.get_flags()),
                 payload_len: tcp.payload().len() as u16,
                 tsval: Some(tsval),
                 tsecr: Some(tsecr),
