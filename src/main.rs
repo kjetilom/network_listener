@@ -13,7 +13,7 @@ static DO_WIRELESS: bool = false;
 async fn main() -> Result<(), Box<dyn Error>> {
 
     logger::setup_logging()?;
-    let _ = tokio::spawn(network_listener::grafana::client::start_client());
+    // let _ = tokio::spawn(network_listener::grafana::client::start_client());
 
     info!("Starting packet capture");
     let (pcap, receiver, device)

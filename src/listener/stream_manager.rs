@@ -3,6 +3,7 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 use super::parser::{ParsedPacket, TransportPacket};
+use super::procfs_reader::{NetEntry, NetStat};
 use super::stream_id::StreamId;
 use super::tracker::{TcpTracker, UdpTracker};
 
@@ -11,15 +12,13 @@ use super::tracker::{TcpTracker, UdpTracker};
 pub struct StreamManager {
     tcp_streams: HashMap<StreamId, TcpTracker>,
     udp_streams: HashMap<StreamId, UdpTracker>,
-    timeout: Duration,
 }
 
 impl StreamManager {
-    pub fn new(timeout: Duration) -> Self {
+    pub fn new() -> Self {
         StreamManager {
             tcp_streams: HashMap::new(),
             udp_streams: HashMap::new(),
-            timeout,
         }
     }
 
@@ -35,7 +34,7 @@ impl StreamManager {
         let stream_id = StreamId::from_pcap(packet, own_ip);
 
         let tracker = self.tcp_streams.entry(stream_id)
-            .or_insert_with(|| TcpTracker::new(self.timeout));
+            .or_insert_with(|| TcpTracker::new());
 
         tracker.last_registered = packet.timestamp;
 
@@ -59,48 +58,51 @@ impl StreamManager {
         let tracker = self.udp_streams.entry(stream_id)
             .or_insert_with(|| UdpTracker {
                 last_registered: packet.timestamp,
+                state: None,
             });
 
         tracker.last_registered = packet.timestamp;
         None
     }
 
-    pub fn periodic(&mut self, proc_map: Option<HashMap<StreamId, (procfs::net::TcpState, u32, u32, u64)>>) {
+    pub fn periodic(&mut self, proc_map: Option<NetStat>) {
         match proc_map {
             Some(proc_map) => self.update_states(proc_map),
             None => (),
         };
-
-        for (stream_id, tracker) in self.tcp_streams.iter() {
-            println!("{}, State: {:?}, Elapsed {:?}", stream_id, tracker.state, tracker.last_registered.elapsed());
-        }
-
-        for (stream_id, tracker) in self.tcp_streams.iter() {
-            for (size, rtt) in tracker.rtt_to_size.iter() {
-                println!("{}, RTT: {:?}, Size: {}", stream_id, rtt, size);
-            }
-        }
-
-        // for (stream_id, tracker) in self.udp_streams.iter() {
-        //     println!("{}, Elapsed {:?}", stream_id, tracker.last_registered.elapsed());
-        // }
     }
 
-    fn update_states(&mut self, proc_map: HashMap<StreamId, (procfs::net::TcpState, u32, u32, u64)>) {
+    fn update_states(&mut self, nstat: NetStat) {
         self.tcp_streams.retain(
             |stream_id, tracker| {
-                if let Some((state, _, _, _)) = proc_map.get(stream_id) {
-                    tracker.state = Some(state.clone());
-                    true
+                if let Some(net_entry) = nstat.tcp.get(stream_id) {
+                    match net_entry {
+                        NetEntry::Tcp { entry } => {
+                            tracker.state = Some(entry.state.clone());
+                            true
+                        },
+                        _ => false,
+                    }
                 } else {
                     false
                 }
             }
         );
-    }
 
-    /// Cleans up all streams by removing probes that have timed out.
-    pub fn cleanup(&mut self) {
-
+        self.udp_streams.retain(
+            |stream_id, tracker| {
+                if let Some(net_entry) = nstat.udp.get(stream_id) {
+                    match net_entry {
+                        NetEntry::Udp { entry } => {
+                            tracker.state = Some(entry.state.clone());
+                            true
+                        },
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            }
+        );
     }
 }

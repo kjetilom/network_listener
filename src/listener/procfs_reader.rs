@@ -4,23 +4,54 @@ use super::stream_id::StreamId;
 use neli_wifi::{AsyncSocket, Interface};
 use std::error::Error;
 use super::parser::NetlinkData;
+use procfs::net::{TcpNetEntry, UdpNetEntry};
 
-pub async fn proc_net_tcp() -> HashMap<StreamId, (TcpState, u32, u32, u64)> {
-    // get the tcp table
+pub enum NetEntry {
+    Tcp{
+        entry: TcpNetEntry
+    },
+    Udp{
+        entry: UdpNetEntry
+    },
+}
+
+pub struct NetStat {
+    pub tcp: HashMap<StreamId, NetEntry>,
+    pub udp: HashMap<StreamId, NetEntry>,
+}
+
+
+pub async fn proc_net() -> NetStat {
+
     let tcp = [procfs::net::tcp(), procfs::net::tcp6()];
+    let udp = [procfs::net::udp(), procfs::net::udp6()];
 
     let entries = tcp.into_iter().filter_map(|res| res.ok()).flatten();
-    // Iterate over the entries and map to StreamId : State, rx_queue, tx_queue, u3inode,
+    let udp_entries = udp.into_iter().filter_map(|res| res.ok()).flatten();
 
-    let mut stream_map: HashMap<StreamId, (TcpState, u32, u32, u64)> = HashMap::new();
+    let mut nstat = NetStat {
+        tcp: HashMap::new(),
+        udp: HashMap::new(),
+    };
 
-    entries.into_iter().for_each(|entry| {
-        stream_map.insert(
-            StreamId::from(&entry),
-            (entry.state, entry.rx_queue, entry.tx_queue, entry.inode
-        ));
-    });
-    stream_map
+    for tcp_entry in entries {
+        nstat.tcp.insert(
+            StreamId::from(&tcp_entry),
+            NetEntry::Tcp {
+                entry: tcp_entry
+            }
+        );
+    }
+    for udp_entry in udp_entries {
+        nstat.udp.insert(
+            StreamId::from(&udp_entry),
+            NetEntry::Udp {
+                entry: udp_entry
+            }
+        );
+    }
+
+    nstat
 }
 
 pub async fn proc_net_udp() -> HashMap<StreamId, (UdpState, u32, u32, u64)> {

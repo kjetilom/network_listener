@@ -1,10 +1,7 @@
-use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
-
 use super::analyzer::Analyzer;
-use super::procfs_reader::{self, get_interface, get_interface_info};
-use super::stream_id::StreamId;
+use super::procfs_reader::{self, get_interface, get_interface_info, NetStat};
 use super::stream_manager::StreamManager;
 use capture::OwnedPacket;
 use log::{error, info};
@@ -15,7 +12,6 @@ use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::{TcpOptionIterable, TcpPacket};
 use pnet::packet::udp::UdpPacket;
 use pnet::packet::{ethernet::EthernetPacket, ip::IpNextHeaderProtocols, Packet};
-use procfs::net::{TcpState, UdpState};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio::time;
 use anyhow::{Result, Context};
@@ -36,8 +32,8 @@ pub struct Parser {
     own_ip: IpAddr,
     device_name: String,
     stream_manager: StreamManager,
-    netlink_data: Option<NetlinkData>,
-    netstat_data: Option<HashMap<StreamId, (TcpState, u32, u32, u64)>>,
+    netlink_data: Vec<NetlinkData>,
+    netstat_data: Option<NetStat>,
     analyzer: Analyzer,
 }
 
@@ -140,8 +136,8 @@ impl Parser {
             packet_stream,
             own_ip,
             device_name: device.name,
-            stream_manager: StreamManager::new(super::Settings::TCP_STREAM_TIMEOUT),
-            netlink_data: None,
+            stream_manager: StreamManager::new(),
+            netlink_data: Vec::new(),
             netstat_data: None,
             analyzer: Analyzer::new(),
         })
@@ -163,9 +159,13 @@ impl Parser {
 
 
         // Create bounded channels
-        let (netlink_tx, mut netlink_rx): (Sender<NetlinkData>, Receiver<NetlinkData>) = mpsc::channel(CHANNEL_CAPACITY);
-        let (tcp_netstat_tx, mut tcp_netstat_rx): (Sender<HashMap<StreamId, (TcpState, u32, u32, u64)>>, Receiver<_>) = mpsc::channel(CHANNEL_CAPACITY);
-        let (udp_netstat_tx, mut udp_netstat_rx): (Sender<HashMap<StreamId, (UdpState, u32, u32, u64)>>, Receiver<_>) = mpsc::channel(CHANNEL_CAPACITY);
+        let (netlink_tx, mut netlink_rx):
+            (Sender<NetlinkData>, Receiver<NetlinkData>)
+            = mpsc::channel(CHANNEL_CAPACITY);
+
+        let (netstat_tx, mut netstat_rx):
+            (Sender<NetStat>, Receiver<_>)
+            = mpsc::channel(CHANNEL_CAPACITY);
 
         // Spawn netlink_comms and pass the sender
         let netlink_handle = tokio::spawn(async move {
@@ -173,7 +173,7 @@ impl Parser {
         });
 
         let netstat_handle = tokio::spawn(async move {
-            Parser::periodic_netstat(tcp_netstat_tx, udp_netstat_tx).await;
+            Parser::periodic_netstat(netstat_tx).await;
         });
 
         let mut interval = time::interval(super::Settings::CLEANUP_INTERVAL);
@@ -186,19 +186,11 @@ impl Parser {
                 Some(netlink_data) = netlink_rx.recv() => {
                     self.handle_netlink_data(netlink_data);
                 },
-                Some(tcp_netstat) = tcp_netstat_rx.recv() => {
-                    self.handle_netstat_data(tcp_netstat);
-                },
-                Some(_udp_netstat) = udp_netstat_rx.recv() => {
-                    //self.handle_netstat_data(udp_netstat);
+                Some(netstat_data) = netstat_rx.recv() => {
+                    self.handle_netstat_data(netstat_data);
                 },
                 _ = interval.tick() => {
                     self.stream_manager.periodic(self.netstat_data.take());
-                    if let Some(data) = &self.netlink_data {
-                        for station in &data.stations {
-                            println!("Station: {:?}, Signal: {:?} dBm, RX {:?}, TX {:?}", station.bssid, station.signal, station.rx_bitrate, station.tx_bitrate);
-                        }
-                    }
                 },
                 else => {
                     // Both streams have ended
@@ -216,16 +208,12 @@ impl Parser {
     }
 
     async fn periodic_netstat(
-        tcp_netstat_tx: Sender<HashMap<StreamId, (TcpState, u32, u32, u64)>>,
-        udp_netstat_tx: Sender<HashMap<StreamId, (UdpState, u32, u32, u64)>>,
+        netstat_tx: Sender<NetStat>,
     ) {
         loop {
-            let tcp_netstat = procfs_reader::proc_net_tcp().await;
-            let udp_netstat = procfs_reader::proc_net_udp().await;
+            let netstat = procfs_reader::proc_net().await;
 
-            if tcp_netstat_tx.send(tcp_netstat).await.is_err()
-                || udp_netstat_tx.send(udp_netstat).await.is_err()
-            {
+            if netstat_tx.send(netstat).await.is_err() {
                 break;
             }
 
@@ -247,11 +235,14 @@ impl Parser {
 
     /// Placeholder for handling netlink data
     fn handle_netlink_data(&mut self, data: NetlinkData) {
-        self.netlink_data = Some(data);
+        self.netlink_data.push(data);
+        if self.netlink_data.len() > 10 {
+            self.netlink_data.remove(0);
+        }
     }
 
     /// Placeholder for handling netstat data
-    fn handle_netstat_data(&mut self, data: HashMap<StreamId, (TcpState, u32, u32, u64)>) {
+    fn handle_netstat_data(&mut self, data: NetStat) {
         self.netstat_data = Some(data);
     }
 

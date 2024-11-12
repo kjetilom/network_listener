@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use super::parser::{ParsedPacket, TransportPacket};
-use procfs::net::TcpState;
+use procfs::net::{TcpState, UdpState};
 
 /// Represents a sent TCP packet with its sequence number, length, send time, and retransmission count.
 #[derive(Debug)]
@@ -20,7 +20,6 @@ pub struct TcpTracker {
     initial_sequence_local: Option<u32>,
     initial_sequence_remote: Option<u32>,
     pub last_registered: SystemTime,
-    timeout: Duration,
     pub state: Option<TcpState>,
     total_retransmissions: u32,
     total_unique_packets: u32,
@@ -30,6 +29,7 @@ pub struct TcpTracker {
 #[derive(Debug)]
 pub struct UdpTracker {
     pub last_registered: SystemTime,
+    pub state: Option<UdpState>,
 }
 
 /// Wrap-around aware comparison
@@ -41,14 +41,21 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
     seq_cmp(a, b) <= 0
 }
 
+pub struct Stats {
+    pub total_retransmissions: u32,
+    pub total_unique_packets: u32,
+    pub rtt_to_size: Vec<(u32, Duration)>,
+    pub state: Option<TcpState>,
+
+}
+
 impl TcpTracker {
-    pub fn new(timeout: Duration) -> Self {
+    pub fn new() -> Self {
         TcpTracker {
             sent_packets: BTreeMap::new(),
             initial_sequence_local: None,
             initial_sequence_remote: None,
             last_registered: SystemTime::now(),
-            timeout,
             state: None,
             total_retransmissions: 0,
             total_unique_packets: 0,
@@ -171,13 +178,6 @@ impl TcpTracker {
             }
         }
         None
-    }
-
-    pub fn cleanup(&mut self) {
-        let timeout = self.timeout;
-        self.sent_packets.retain(|_, sent_packet| {
-            sent_packet.sent_time.elapsed().unwrap_or_default() < timeout
-        });
     }
 
     /// Get the total number of retransmissions.
