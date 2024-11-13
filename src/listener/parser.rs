@@ -136,7 +136,7 @@ impl Parser {
             packet_stream,
             own_ip,
             device_name: device.name,
-            stream_manager: StreamManager::new(),
+            stream_manager: StreamManager::default(),
             netlink_data: Vec::new(),
             netstat_data: None,
             analyzer: Analyzer::new(),
@@ -255,23 +255,7 @@ impl Parser {
             None => return,
         };
 
-        match &parsed_packet.transport {
-            TransportPacket::TCP { .. } => {
-                if let Some(rtt) = self.stream_manager.record_packet(&parsed_packet, self.own_ip) {
-                    println!("RTT: {:?}, SRC: {:?}, DST: {:?}", rtt, parsed_packet.src_ip, parsed_packet.dst_ip);
-                }
-            }
-            TransportPacket::UDP { .. } => {
-                self.stream_manager.record_packet(&parsed_packet, self.own_ip);
-            }
-            TransportPacket::ICMP => {
-                // Handle ICMP packet
-                //println!("ICMP packet received");
-            }
-            TransportPacket::OTHER { .. } => {
-                // Handle other packet
-            }
-        }
+        self.stream_manager.record_ip_packet(parsed_packet, self.own_ip);
     }
 
     /* Parses an `OwnedPacket` into a `ParsedPacket`.

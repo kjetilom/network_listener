@@ -91,7 +91,7 @@ impl StreamId {
                 }
             }
         } else {
-            panic!("Packet is not a TCP packet");
+            panic!("Packet is not a TCP or UDP packet");
         }
     }
 }
