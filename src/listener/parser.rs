@@ -7,6 +7,7 @@ use capture::OwnedPacket;
 use log::{error, info};
 use neli_wifi::{Bss, Interface, Station};
 use pcap::Device;
+use pnet::packet::ip::IpNextHeaderProtocol;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::tcp::{TcpOptionIterable, TcpPacket};
@@ -25,6 +26,26 @@ use super::capture;
 pub struct NetlinkData {
     pub stations: Vec<Station>, // Currently connected stations
     pub bss: Vec<Bss>, // BSS information
+}
+
+#[derive(Debug)]
+pub enum Direction {
+    Incoming,
+    Outgoing,
+}
+
+impl Direction {
+    pub fn from_packet(packet: &ParsedPacket, own_ip: IpAddr) -> Self {
+        if packet.src_ip == own_ip {
+            Direction::Outgoing
+        } else {
+            Direction::Incoming
+        }
+    }
+
+    pub fn is_outgoing(&self) -> bool {
+        matches!(self, Direction::Outgoing)
+    }
 }
 
 pub struct Parser {
@@ -58,6 +79,17 @@ pub enum TransportPacket {
     OTHER {
         protocol: u8,
     },
+}
+
+impl TransportPacket {
+    pub fn get_ip_proto(&self) -> IpNextHeaderProtocol {
+        match self {
+            TransportPacket::TCP { .. } => IpNextHeaderProtocols::Tcp,
+            TransportPacket::UDP { .. } => IpNextHeaderProtocols::Udp,
+            TransportPacket::ICMP => IpNextHeaderProtocols::Icmp,
+            TransportPacket::OTHER { protocol } => IpNextHeaderProtocol(*protocol),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -116,6 +148,7 @@ pub struct ParsedPacket {
     pub transport: TransportPacket,
     pub total_length: u32,
     pub timestamp: SystemTime,
+    pub direction: Direction,
 }
 
 
@@ -255,7 +288,7 @@ impl Parser {
             None => return,
         };
 
-        self.stream_manager.record_ip_packet(&parsed_packet, self.own_ip);
+        self.stream_manager.record_ip_packet(&parsed_packet);
     }
 
     /* Parses an `OwnedPacket` into a `ParsedPacket`.
@@ -286,6 +319,11 @@ impl Parser {
         timestamp: SystemTime,
         protocol: pnet::packet::ip::IpNextHeaderProtocol,
     ) -> Option<ParsedPacket> {
+        let direction = if src_ip == self.own_ip {
+            Direction::Outgoing
+        } else {
+            Direction::Incoming
+        };
         match protocol {
             IpNextHeaderProtocols::Tcp => {
                 self.parse_tcp_packet(
@@ -294,6 +332,7 @@ impl Parser {
                     dst_ip,
                     total_length,
                     timestamp,
+                    direction,
                 )
             }
             IpNextHeaderProtocols::Udp => {
@@ -303,6 +342,7 @@ impl Parser {
                     dst_ip,
                     total_length,
                     timestamp,
+                    direction,
                 )
             }
             IpNextHeaderProtocols::Icmp => {
@@ -312,6 +352,7 @@ impl Parser {
                     transport: TransportPacket::ICMP,
                     total_length,
                     timestamp,
+                    direction,
                 })
             }
             _ => {
@@ -323,6 +364,7 @@ impl Parser {
                     },
                     total_length,
                     timestamp,
+                    direction,
                 })
             },
         }
@@ -402,6 +444,7 @@ impl Parser {
         dst_ip: IpAddr,
         total_length: u32,
         timestamp: SystemTime,
+        direction: Direction,
     ) -> Option<ParsedPacket> {
         let tcp = TcpPacket::new(payload)?;
         // Print timestamp if TCP timestamp option is present
@@ -425,6 +468,7 @@ impl Parser {
             },
             total_length,
             timestamp,
+            direction,
         })
     }
 
@@ -435,6 +479,7 @@ impl Parser {
         dst_ip: IpAddr,
         total_length: u32,
         timestamp: SystemTime,
+        direction: Direction,
     ) -> Option<ParsedPacket> {
         let udp = UdpPacket::new(payload)?;
 
@@ -447,6 +492,7 @@ impl Parser {
             },
             total_length,
             timestamp,
+            direction,
         })
     }
 }

@@ -1,7 +1,7 @@
 use super::timeseries::Timeseries;
-use crate::listener::tracker::Stats;
+use crate::listener::tracker::TcpStats;
 
-impl Timeseries<Stats> {
+impl Timeseries<TcpStats> {
     pub fn get_total_retransmissions(&self) -> u32 {
         self.data.iter().map(|dp| dp.value.total_retransmissions).sum()
     }

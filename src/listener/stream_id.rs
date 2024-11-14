@@ -53,9 +53,10 @@ impl ConnectionKey {
     /// # Returns
     ///
     /// A ConnectionKey representing the connection
-    pub fn from_pcap(packet: &ParsedPacket, own_ip: IpAddr) -> Self {
+    pub fn from_pcap(packet: &ParsedPacket) -> Self {
         // Determine if the packet is outgoing or incoming
-        let outgoing = packet.src_ip == own_ip;
+        let outgoing = packet.direction.is_outgoing();
+
         let local_ip = if outgoing { packet.src_ip } else { packet.dst_ip };
         let remote_ip = if outgoing { packet.dst_ip } else { packet.src_ip };
 

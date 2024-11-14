@@ -1,8 +1,4 @@
 use std::collections::HashMap;
-use std::net::IpAddr;
-
-use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
-use procfs::net::UdpState;
 
 use super::parser::{ParsedPacket, TransportPacket};
 use super::procfs_reader::{NetEntry, NetStat};
@@ -18,20 +14,6 @@ pub struct StreamManager {
     other_streams: HashMap<ConnectionKey, Tracker<GenericTracker>>,
 }
 
-pub enum Direction {
-    Incoming,
-    Outgoing,
-}
-
-impl Direction {
-    pub fn from_packet(packet: &ParsedPacket, own_ip: IpAddr) -> Self {
-        if packet.src_ip == own_ip {
-            Direction::Outgoing
-        } else {
-            Direction::Incoming
-        }
-    }
-}
 
 impl StreamManager {
     pub fn default() -> Self {
@@ -42,58 +24,35 @@ impl StreamManager {
         }
     }
 
-    pub fn record_ip_packet(&mut self, packet: &ParsedPacket, own_ip: IpAddr) {
-        let direction = Direction::from_packet(packet, own_ip);
+    pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
+
+        let stream_id = ConnectionKey::from_pcap(&packet);
 
         match packet.transport {
-            TransportPacket::TCP { .. } => self.record_tcp(packet, own_ip),
-            TransportPacket::UDP { .. } => self.record_udp(packet, own_ip),
-            _ => self.record_other(packet, own_ip),
-        };
-    }
-
-    fn record_tcp(&mut self, packet: &ParsedPacket, own_ip: IpAddr) {
-        let stream_id = ConnectionKey::from_pcap(&packet, own_ip);
-
-        let tracker = self.tcp_streams.entry(stream_id)
-            .or_insert_with(|| Tracker::new(packet.timestamp, IpNextHeaderProtocols::Tcp));
-
-        if tracker.last_registered != packet.timestamp {
-            tracker.last_registered = packet.timestamp;
-        }
-
-        if packet.src_ip == own_ip {
-            // Handle packets sent from own IP
-            tracker.state.get_or_insert_with(|| TcpTracker::new())
-                .handle_outgoing_packet(packet);
-        } else {
-            // Handle packets received by own IP
-            tracker.state.get_or_insert_with(|| TcpTracker::new())
-                .handle_incoming_packet(packet);
-        }
-    }
-
-    fn record_udp(&mut self, packet: &ParsedPacket, own_ip: IpAddr) {
-        let key = ConnectionKey::from_pcap(&packet, own_ip);
-
-        let tracker = self.udp_streams.entry(key)
-            .or_insert_with(|| Tracker::new(packet.timestamp, IpNextHeaderProtocols::Udp));
-
-        if tracker.last_registered != packet.timestamp {
-            tracker.last_registered = packet.timestamp;
-        }
-
-        // You may need to initialize the UdpTracker state here if needed
-        tracker.state.get_or_insert_with(|| UdpTracker {state: Some(UdpState::Established)});
-    }
-
-    fn record_other(&mut self, packet: &ParsedPacket, _own_ip: IpAddr) {
-        let key = ConnectionKey::from_pcap(&packet, _own_ip);
-        if let TransportPacket::OTHER { protocol } = packet.transport {
-            let tracker = self.other_streams.entry(key)
-                .or_insert_with(|| Tracker::new(packet.timestamp, IpNextHeaderProtocol(protocol)));
-
-            tracker.register_packet(packet);
+            TransportPacket::TCP { .. } => {
+                self.tcp_streams.entry(stream_id)
+                    .or_insert_with(|| Tracker::new(
+                        packet.timestamp,
+                        packet.transport.get_ip_proto()
+                    ))
+                    .register_packet(packet);
+            }
+            TransportPacket::UDP { .. } => {
+                self.udp_streams.entry(stream_id)
+                    .or_insert_with(|| Tracker::new(
+                        packet.timestamp,
+                        packet.transport.get_ip_proto()
+                    ))
+                    .register_packet(packet);
+            }
+            _ => {
+                self.other_streams.entry(stream_id)
+                    .or_insert_with(|| Tracker::new(
+                        packet.timestamp,
+                        packet.transport.get_ip_proto()
+                    ))
+                    .register_packet(packet);
+            }
         }
     }
 
@@ -105,7 +64,7 @@ impl StreamManager {
         self.tcp_streams.retain(|stream_id, tracker| {
             match nstat.tcp.get(stream_id) {
                 Some(NetEntry::Tcp { entry }) => {
-                    tracker.state.as_mut().unwrap().stats.state = Some(entry.state.clone());
+                    tracker.state.stats.state = Some(entry.state.clone());
                     true
                 },
                 _ => false,
@@ -115,11 +74,16 @@ impl StreamManager {
         self.udp_streams.retain(|stream_id, tracker| {
             match nstat.tcp.get(stream_id) {
                 Some(NetEntry::Udp { entry }) => {
-                    tracker.state.as_mut().unwrap().state = Some(entry.state.clone());
+                    tracker.state.state = Some(entry.state.clone());
                     true
                 },
                 _ => false,
             }
         });
+        self.other_streams.retain(|_, tracker| {
+            tracker.last_registered.elapsed().unwrap().as_secs() < 60
+        }
+
+        );
     }
 }

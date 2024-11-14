@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
-use super::parser::{ParsedPacket, TransportPacket};
+use super::parser::{Direction, ParsedPacket, TransportPacket};
 use pnet::packet::ip::IpNextHeaderProtocol;
-use pnet::packet::Packet;
 use procfs::net::{TcpState, UdpState};
 
 pub trait PacketTracker {
+    fn default() -> Self;
     fn register_packet(&mut self, packet: &ParsedPacket);
 }
 
@@ -16,7 +16,7 @@ pub struct Tracker<T: PacketTracker> {
     pub total_bytes_sent: u64,
     pub total_bytes_received: u64,
     pub protocol: IpNextHeaderProtocol,
-    pub state: Option<T>,
+    pub state: T,
 }
 
 impl<T: PacketTracker> Tracker<T> {
@@ -26,28 +26,57 @@ impl<T: PacketTracker> Tracker<T> {
             total_bytes_sent: 0,
             total_bytes_received: 0,
             protocol,
-            state: None,
+            state: T::default(),
         }
     }
 
     pub fn register_packet(&mut self, packet: &ParsedPacket) {
-        // Call register_packet on state if it exists
-        if let Some(state) = self.state.as_mut() {
-            state.register_packet(packet);
+        match packet.direction {
+            Direction::Incoming => {
+                self.total_bytes_received += packet.total_length as u64;
+            }
+            Direction::Outgoing => {
+                self.total_bytes_sent += packet.total_length as u64;
+            }
         }
-        self.total_bytes_sent += packet.total_length as u64;
+        self.last_registered = packet.timestamp;
+
+        // Call register_packet on state if it exists
+        self.state.register_packet(packet);
     }
 }
 
 impl PacketTracker for TcpTracker {
     fn register_packet(&mut self, packet: &ParsedPacket) {
-        self.handle_outgoing_packet(packet);
+        match packet.direction {
+            Direction::Incoming => {
+                self.handle_incoming_packet(packet);
+            }
+            Direction::Outgoing => {
+                self.handle_outgoing_packet(packet);
+            }
+        }
+    }
+
+    fn default() -> Self {
+        TcpTracker::new()
     }
 }
 
 impl PacketTracker for UdpTracker {
-    fn register_packet(&mut self, _packet: &ParsedPacket) {
-        // Implement UDP-specific handling here
+    fn register_packet(&mut self, _packet: &ParsedPacket) {}
+    fn default() -> Self {
+        UdpTracker { state: Some(UdpState::Established) }
+    }
+}
+
+#[derive(Debug)]
+pub struct GenericTracker {}
+
+impl PacketTracker for GenericTracker {
+    fn register_packet(&mut self, _packet: &ParsedPacket) {}
+    fn default() -> Self {
+        GenericTracker {}
     }
 }
 
@@ -65,7 +94,7 @@ struct SentPacket {
 pub struct TcpTracker {
     sent_packets: BTreeMap<u32, SentPacket>,
     initial_sequence_local: Option<u32>,
-    pub stats: Stats,
+    pub stats: TcpStats,
     total_bytes_sent: u64,
     total_bytes_acked: u64,
 }
@@ -74,14 +103,6 @@ pub struct TcpTracker {
 pub struct UdpTracker {
     pub state: Option<UdpState>,
 }
-
-#[derive(Debug)]
-pub struct GenericTracker {}
-
-impl PacketTracker for GenericTracker {
-    fn register_packet(&mut self, _packet: &ParsedPacket) {}
-}
-
 
 /// Wrap-around aware comparison
 fn seq_cmp(a: u32, b: u32) -> i32 {
@@ -100,16 +121,16 @@ pub struct RTT {
 }
 
 #[derive(Debug)]
-pub struct Stats {
+pub struct TcpStats {
     pub total_retransmissions: u32,
     pub total_unique_packets: u32,
     pub rtts: Vec<RTT>,
     pub state: Option<TcpState>,
 }
 
-impl Stats {
+impl TcpStats {
     pub fn new() -> Self {
-        Stats {
+        TcpStats {
             total_retransmissions: 0,
             total_unique_packets: 0,
             rtts: Vec::new(),
@@ -139,7 +160,7 @@ impl TcpTracker {
         TcpTracker {
             sent_packets: BTreeMap::new(),
             initial_sequence_local: None,
-            stats: Stats::new(),
+            stats: TcpStats::new(),
             total_bytes_sent: 0,
             total_bytes_acked: 0,
         }
