@@ -255,7 +255,7 @@ impl Parser {
             None => return,
         };
 
-        self.stream_manager.record_ip_packet(parsed_packet, self.own_ip);
+        self.stream_manager.record_ip_packet(&parsed_packet, self.own_ip);
     }
 
     /* Parses an `OwnedPacket` into a `ParsedPacket`.

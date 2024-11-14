@@ -2,7 +2,54 @@ use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use super::parser::{ParsedPacket, TransportPacket};
+use pnet::packet::ip::IpNextHeaderProtocol;
+use pnet::packet::Packet;
 use procfs::net::{TcpState, UdpState};
+
+pub trait PacketTracker {
+    fn register_packet(&mut self, packet: &ParsedPacket);
+}
+
+#[derive(Debug)]
+pub struct Tracker<T: PacketTracker> {
+    pub last_registered: SystemTime,
+    pub total_bytes_sent: u64,
+    pub total_bytes_received: u64,
+    pub protocol: IpNextHeaderProtocol,
+    pub state: Option<T>,
+}
+
+impl<T: PacketTracker> Tracker<T> {
+    pub fn new(timestamp: SystemTime, protocol: IpNextHeaderProtocol) -> Self {
+        Tracker {
+            last_registered: timestamp,
+            total_bytes_sent: 0,
+            total_bytes_received: 0,
+            protocol,
+            state: None,
+        }
+    }
+
+    pub fn register_packet(&mut self, packet: &ParsedPacket) {
+        // Call register_packet on state if it exists
+        if let Some(state) = self.state.as_mut() {
+            state.register_packet(packet);
+        }
+        self.total_bytes_sent += packet.total_length as u64;
+    }
+}
+
+impl PacketTracker for TcpTracker {
+    fn register_packet(&mut self, packet: &ParsedPacket) {
+        self.handle_outgoing_packet(packet);
+    }
+}
+
+impl PacketTracker for UdpTracker {
+    fn register_packet(&mut self, _packet: &ParsedPacket) {
+        // Implement UDP-specific handling here
+    }
+}
 
 /// Represents a sent TCP packet with its sequence number, length, send time, and retransmission count.
 #[derive(Debug)]
@@ -18,19 +65,23 @@ struct SentPacket {
 pub struct TcpTracker {
     sent_packets: BTreeMap<u32, SentPacket>,
     initial_sequence_local: Option<u32>,
-    initial_sequence_remote: Option<u32>,
-    pub last_registered: SystemTime,
     pub stats: Stats,
     total_bytes_sent: u64,
     total_bytes_acked: u64,
-    start_time: SystemTime,
 }
 
 #[derive(Debug)]
 pub struct UdpTracker {
-    pub last_registered: SystemTime,
     pub state: Option<UdpState>,
 }
+
+#[derive(Debug)]
+pub struct GenericTracker {}
+
+impl PacketTracker for GenericTracker {
+    fn register_packet(&mut self, _packet: &ParsedPacket) {}
+}
+
 
 /// Wrap-around aware comparison
 fn seq_cmp(a: u32, b: u32) -> i32 {
@@ -84,22 +135,19 @@ impl Stats {
 }
 
 impl TcpTracker {
-    pub fn new(timestamp: SystemTime) -> Self {
+    pub fn new() -> Self {
         TcpTracker {
             sent_packets: BTreeMap::new(),
             initial_sequence_local: None,
-            initial_sequence_remote: None,
-            last_registered: timestamp,
             stats: Stats::new(),
             total_bytes_sent: 0,
             total_bytes_acked: 0,
-            start_time: timestamp,
         }
     }
 
     pub fn handle_outgoing_packet(
         &mut self,
-        packet: ParsedPacket,
+        packet: &ParsedPacket,
     ) {
         if let TransportPacket::TCP {
             sequence,
@@ -150,7 +198,7 @@ impl TcpTracker {
         }
     }
 
-    pub fn handle_incoming_packet(&mut self, packet: ParsedPacket) {
+    pub fn handle_incoming_packet(&mut self, packet: &ParsedPacket) {
         if let TransportPacket::TCP {
             acknowledgment,
             ..
@@ -189,16 +237,5 @@ impl TcpTracker {
                 }
             }
         }
-    }
-
-    pub fn get_bandwidth(&self) -> Option<f64> {
-        if let Ok(duration) = self.last_registered.duration_since(self.start_time) {
-            let seconds = duration.as_secs_f64();
-            if seconds > 0.0 {
-                let bandwidth = (self.total_bytes_acked as f64) / seconds;
-                return Some(bandwidth);
-            }
-        }
-        None
     }
 }

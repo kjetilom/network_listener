@@ -2,13 +2,11 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 use hyper::{Body, Request, Response, Server};
 use hyper::service::{make_service_fn, service_fn};
-use prometheus::{Encoder, TextEncoder, register_counter, register_gauge, register_histogram, Counter, Gauge, Histogram};
-use tokio::time::{self, Duration};
-use lazy_static::lazy_static;
+use prometheus::{Encoder, TextEncoder,};
 
 
 
-async fn metrics_handler(_req: Request<Body>) -> Result<Response<Body>, Infallible> {
+pub async fn metrics_handler(_req: Request<Body>) -> Result<Response<Body>, Infallible> {
     let encoder = TextEncoder::new();
     let metric_families = prometheus::gather();
     let mut buffer = Vec::new();
@@ -21,7 +19,7 @@ async fn metrics_handler(_req: Request<Body>) -> Result<Response<Body>, Infallib
         .unwrap())
 }
 
-async fn setup_metrics_server() {
+pub async fn setup_metrics_server() {
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     let make_svc = make_service_fn(|_conn| {
         async {
