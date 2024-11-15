@@ -85,6 +85,13 @@ impl ConnectionKey {
             }
         }
     }
+
+    pub fn get_remote_ip(&self) -> IpAddr {
+        match self {
+            ConnectionKey::StreamId { remote_ip, .. } => *remote_ip,
+            ConnectionKey::IpPair { remote_ip, .. } => *remote_ip,
+        }
+    }
 }
 
 impl Display for ConnectionKey {

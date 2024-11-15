@@ -5,11 +5,6 @@ use super::parser::{Direction, ParsedPacket, TransportPacket};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use procfs::net::{TcpState, UdpState};
 
-pub trait PacketTracker {
-    fn default(protocol: IpNextHeaderProtocol) -> Self;
-    fn register_packet(&mut self, packet: &ParsedPacket);
-}
-
 #[derive(Debug)]
 pub enum TrackerState {
     Tcp(TcpTracker),
@@ -17,7 +12,7 @@ pub enum TrackerState {
     Other(GenericTracker),
 }
 
-impl PacketTracker for TrackerState {
+impl TrackerState {
     fn register_packet(&mut self, packet: &ParsedPacket) {
         match self {
             TrackerState::Tcp(tracker) => tracker.register_packet(packet),
@@ -70,37 +65,6 @@ impl Tracker<TrackerState> {
         self.state.register_packet(packet);
     }
 }
-
-// impl PacketTracker for TcpTracker {
-//     fn register_packet(&mut self, packet: &ParsedPacket) {
-//         match packet.direction {
-//             Direction::Incoming => {
-//                 self.handle_incoming_packet(packet);
-//             }
-//             Direction::Outgoing => {
-//                 self.handle_outgoing_packet(packet);
-//             }
-//         }
-//     }
-
-//     fn default() -> Self {
-//         TcpTracker::new()
-//     }
-// }
-
-// impl PacketTracker for UdpTracker {
-//     fn register_packet(&mut self, _packet: &ParsedPacket) {}
-//     fn default() -> Self {
-//         UdpTracker { state: Some(UdpState::Established) }
-//     }
-// }
-
-// impl PacketTracker for GenericTracker {
-//     fn register_packet(&mut self, _packet: &ParsedPacket) {}
-//     fn default() -> Self {
-//         GenericTracker {}
-//     }
-// }
 
 #[derive(Debug)]
 pub struct GenericTracker {}
@@ -182,18 +146,6 @@ impl TcpStats {
 
     pub fn register_rtt(&mut self, rtt: RTT) {
         self.rtts.push(rtt);
-    }
-
-    pub fn register_retransmission(&mut self) {
-        self.total_retransmissions += 1;
-    }
-
-    pub fn register_packet(&mut self) {
-        self.total_unique_packets += 1;
-    }
-
-    pub fn set_state(&mut self, state: TcpState) {
-        self.state = Some(state);
     }
 
     pub fn estimate_bandwidth(&self) -> Option<f64> {
@@ -319,12 +271,11 @@ impl TcpTracker {
                     if seq_less_equal(seq + sent_packet.len - 1, ack - 1) {
                         if sent_packet.retransmissions == 0 {
                             if let Ok(rtt) = packet.timestamp.duration_since(sent_packet.sent_time) {
-                                let rtt_entry = RTT {
+                                self.stats.register_rtt(RTT {
                                     rtt,
                                     packet_size: sent_packet.total_packet_size,
                                     timestamp: packet.timestamp,
-                                };
-                                self.stats.register_rtt(rtt_entry);
+                                });
                             }
                         }
                         keys_to_remove.push(seq);

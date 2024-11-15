@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::net::IpAddr;
 
 use super::parser::ParsedPacket;
 use super::procfs_reader::{NetEntry, NetStat};
@@ -36,11 +37,9 @@ impl StreamManager {
     pub fn periodic(&mut self, proc_map: Option<NetStat>) {
         proc_map.map(|proc_map| self.update_states(proc_map));
 
-        // for (stream_id, tracker) in self.streams.iter_mut() {
-        //     if let Some(bw) = tracker.state.stats.estimate_bandwidth() {
-        //         println!("Estimated bandwidth for {} : {:?} mb/s", stream_id, bw*8.0/1_000_000.0);
-        //     }
-        // }
+        let seen_remote_ips: Vec<IpAddr> = self.streams.iter().map(|(k, _)| k.get_remote_ip()).collect();
+
+        println!("Seen remote IPs: {:?}", seen_remote_ips);
 
         for (stream_id, tracker) in self.streams.iter() {
             match tracker.state {
