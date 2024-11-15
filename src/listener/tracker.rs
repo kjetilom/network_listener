@@ -2,31 +2,56 @@ use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use super::parser::{Direction, ParsedPacket, TransportPacket};
-use pnet::packet::ip::IpNextHeaderProtocol;
+use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use procfs::net::{TcpState, UdpState};
 
 pub trait PacketTracker {
-    fn default() -> Self;
+    fn default(protocol: IpNextHeaderProtocol) -> Self;
     fn register_packet(&mut self, packet: &ParsedPacket);
 }
 
 #[derive(Debug)]
-pub struct Tracker<T: PacketTracker> {
+pub enum TrackerState {
+    Tcp(TcpTracker),
+    Udp(UdpTracker),
+    Other(GenericTracker),
+}
+
+impl PacketTracker for TrackerState {
+    fn register_packet(&mut self, packet: &ParsedPacket) {
+        match self {
+            TrackerState::Tcp(tracker) => tracker.register_packet(packet),
+            TrackerState::Udp(tracker) => tracker.register_packet(packet),
+            TrackerState::Other(tracker) => tracker.register_packet(packet),
+        }
+    }
+
+    fn default(protocol: IpNextHeaderProtocol) -> Self {
+        match protocol {
+            IpNextHeaderProtocols::Tcp => TrackerState::Tcp(TcpTracker::new()),
+            IpNextHeaderProtocols::Udp => TrackerState::Udp(UdpTracker::new()),
+            _ => TrackerState::Other(GenericTracker::new()),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Tracker<TrackerState> {
     pub last_registered: SystemTime,
     pub total_bytes_sent: u64,
     pub total_bytes_received: u64,
     pub protocol: IpNextHeaderProtocol,
-    pub state: T,
+    pub state: TrackerState,
 }
 
-impl<T: PacketTracker> Tracker<T> {
+impl Tracker<TrackerState> {
     pub fn new(timestamp: SystemTime, protocol: IpNextHeaderProtocol) -> Self {
         Tracker {
             last_registered: timestamp,
             total_bytes_sent: 0,
             total_bytes_received: 0,
             protocol,
-            state: T::default(),
+            state: TrackerState::default(protocol),
         }
     }
 
@@ -46,39 +71,48 @@ impl<T: PacketTracker> Tracker<T> {
     }
 }
 
-impl PacketTracker for TcpTracker {
-    fn register_packet(&mut self, packet: &ParsedPacket) {
-        match packet.direction {
-            Direction::Incoming => {
-                self.handle_incoming_packet(packet);
-            }
-            Direction::Outgoing => {
-                self.handle_outgoing_packet(packet);
-            }
-        }
-    }
+// impl PacketTracker for TcpTracker {
+//     fn register_packet(&mut self, packet: &ParsedPacket) {
+//         match packet.direction {
+//             Direction::Incoming => {
+//                 self.handle_incoming_packet(packet);
+//             }
+//             Direction::Outgoing => {
+//                 self.handle_outgoing_packet(packet);
+//             }
+//         }
+//     }
 
-    fn default() -> Self {
-        TcpTracker::new()
-    }
-}
+//     fn default() -> Self {
+//         TcpTracker::new()
+//     }
+// }
 
-impl PacketTracker for UdpTracker {
-    fn register_packet(&mut self, _packet: &ParsedPacket) {}
-    fn default() -> Self {
-        UdpTracker { state: Some(UdpState::Established) }
-    }
-}
+// impl PacketTracker for UdpTracker {
+//     fn register_packet(&mut self, _packet: &ParsedPacket) {}
+//     fn default() -> Self {
+//         UdpTracker { state: Some(UdpState::Established) }
+//     }
+// }
+
+// impl PacketTracker for GenericTracker {
+//     fn register_packet(&mut self, _packet: &ParsedPacket) {}
+//     fn default() -> Self {
+//         GenericTracker {}
+//     }
+// }
 
 #[derive(Debug)]
 pub struct GenericTracker {}
-
-impl PacketTracker for GenericTracker {
-    fn register_packet(&mut self, _packet: &ParsedPacket) {}
-    fn default() -> Self {
+impl GenericTracker {
+    pub fn new() -> Self {
         GenericTracker {}
     }
+
+    pub fn register_packet(&mut self, _packet: &ParsedPacket) {}
 }
+
+
 
 /// Represents a sent TCP packet with its sequence number, length, send time, and retransmission count.
 #[derive(Debug)]
@@ -102,6 +136,14 @@ pub struct TcpTracker {
 #[derive(Debug)]
 pub struct UdpTracker {
     pub state: Option<UdpState>,
+}
+
+impl UdpTracker {
+    pub fn new() -> Self {
+        UdpTracker { state: Some(UdpState::Established) }
+    }
+
+    pub fn register_packet(&mut self, _packet: &ParsedPacket) {}
 }
 
 /// Wrap-around aware comparison
@@ -153,6 +195,29 @@ impl TcpStats {
     pub fn set_state(&mut self, state: TcpState) {
         self.state = Some(state);
     }
+
+    pub fn estimate_bandwidth(&self) -> Option<f64> {
+        if self.rtts.is_empty() {
+            return None;
+        }
+
+        let mut min_rtt = Duration::MAX;
+        let mut max_throughput: f64 = 0.0;
+
+        for rtt in &self.rtts {
+            min_rtt = min_rtt.min(rtt.rtt);
+            let throughput = (rtt.packet_size as f64) / rtt.rtt.as_secs_f64();
+            max_throughput = max_throughput.max(throughput);
+        }
+
+        // Get the most recent RTT for estimation or use a moving average
+        let current_rtt = self.rtts.last()?.rtt;
+
+        // Estimate bandwidth using the formula
+        let bandwidth = max_throughput * min_rtt.as_secs_f64() / current_rtt.as_secs_f64();
+
+        Some(bandwidth)
+    }
 }
 
 impl TcpTracker {
@@ -166,6 +231,17 @@ impl TcpTracker {
         }
     }
 
+    fn register_packet(&mut self, packet: &ParsedPacket) {
+        match packet.direction {
+            Direction::Incoming => {
+                self.handle_incoming_packet(packet);
+            }
+            Direction::Outgoing => {
+                self.handle_outgoing_packet(packet);
+            }
+        }
+    }
+
     pub fn handle_outgoing_packet(
         &mut self,
         packet: &ParsedPacket,
@@ -173,10 +249,11 @@ impl TcpTracker {
         if let TransportPacket::TCP {
             sequence,
             payload_len,
+            flags,
             ..
         } = &packet.transport
         {
-            if packet.transport.is_syn() && !packet.transport.is_ack() {
+            if flags.is_syn() && !flags.is_ack() {
                 self.initial_sequence_local = Some(*sequence);
             }
 
@@ -187,7 +264,7 @@ impl TcpTracker {
 
                 // Calculate the length considering SYN and FIN flags.
                 let mut len = *payload_len as u32;
-                if packet.transport.is_syn() || packet.transport.is_fin() {
+                if flags.is_syn() || flags.is_fin() {
                     // SYN or FIN flag
                     len += 1;
                 }
@@ -222,10 +299,11 @@ impl TcpTracker {
     pub fn handle_incoming_packet(&mut self, packet: &ParsedPacket) {
         if let TransportPacket::TCP {
             acknowledgment,
+            flags,
             ..
         } = &packet.transport
         {
-            if !packet.transport.is_ack() {
+            if !flags.is_ack() {
                 return;
             }
 

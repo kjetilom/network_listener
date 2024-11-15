@@ -3,21 +3,24 @@ use std::net::IpAddr;
 use std::hash::Hash;
 
 use procfs::net::{TcpNetEntry, UdpNetEntry};
+use pnet::packet::ip::IpNextHeaderProtocol;
 
 use super::parser::{ParsedPacket, TransportPacket};
 
 /// Represents a key for identifying connections, which can be either:
 /// - `StreamId`: Includes local and remote IPs and ports.
 /// - `IpPair`: Includes only local and remote IPs.
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
 pub enum ConnectionKey {
     StreamId{
+        protocol: IpNextHeaderProtocol,
         local_ip: IpAddr,
         local_port: u16,
         remote_ip: IpAddr,
         remote_port: u16
     },
     IpPair{
+        protocol: IpNextHeaderProtocol,
         local_ip: IpAddr,
         remote_ip: IpAddr
     }
@@ -26,8 +29,9 @@ pub enum ConnectionKey {
 // Trying out a macro to reduce code duplication
 macro_rules! from_net_entry {
     ($type:ty, $name:ident) => {
-        pub fn $name(entry: &$type) -> Self {
+        pub fn $name(entry: &$type, protocol: IpNextHeaderProtocol) -> Self {
             ConnectionKey::StreamId {
+                protocol: protocol,
                 local_ip: entry.local_address.ip(),
                 local_port: entry.local_address.port(),
                 remote_ip: entry.remote_address.ip(),
@@ -64,6 +68,7 @@ impl ConnectionKey {
             TransportPacket::TCP { src_port, dst_port, .. }
             | TransportPacket::UDP { src_port, dst_port, .. } => {
                 ConnectionKey::StreamId {
+                    protocol: packet.transport.get_ip_proto(),
                     local_ip,
                     local_port: if outgoing { *src_port } else { *dst_port },
                     remote_ip,
@@ -72,7 +77,11 @@ impl ConnectionKey {
             }
             _ => {
                 // For other protocols or when transport info is not available
-                ConnectionKey::IpPair { local_ip, remote_ip }
+                ConnectionKey::IpPair {
+                    protocol: packet.transport.get_ip_proto(),
+                    local_ip,
+                    remote_ip
+                }
             }
         }
     }
@@ -82,16 +91,17 @@ impl Display for ConnectionKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConnectionKey::StreamId {
+                protocol,
                 local_ip,
                 local_port,
                 remote_ip,
                 remote_port,
             } => write!(
                 f,
-                "{}:{} -> {}:{}", local_ip, local_port, remote_ip, remote_port
+                "{} : {}:{} -> {}:{}", protocol, local_ip, local_port, remote_ip, remote_port
             ),
-            ConnectionKey::IpPair { local_ip, remote_ip } => {
-                write!(f, "{} -> {}", local_ip, remote_ip)
+            ConnectionKey::IpPair {protocol, local_ip, remote_ip } => {
+                write!(f, "{} : {} -> {}", protocol, local_ip, remote_ip)
             }
         }
     }

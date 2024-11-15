@@ -1,22 +1,29 @@
 use std::net::IpAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
-use super::analyzer::Analyzer;
-use super::procfs_reader::{self, get_interface, get_interface_info, NetStat};
-use super::stream_manager::StreamManager;
 use capture::OwnedPacket;
 use log::{error, info};
 use neli_wifi::{Bss, Interface, Station};
 use pcap::Device;
-use pnet::packet::ip::IpNextHeaderProtocol;
-use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::ipv6::Ipv6Packet;
-use pnet::packet::tcp::{TcpOptionIterable, TcpPacket};
-use pnet::packet::udp::UdpPacket;
-use pnet::packet::{ethernet::EthernetPacket, ip::IpNextHeaderProtocols, Packet};
-use tokio::sync::mpsc::{self, UnboundedReceiver};
-use tokio::time;
 use anyhow::{Result, Context};
-use tokio::sync::mpsc::{Receiver, Sender};
+use super:: {
+    procfs_reader::{self, get_interface, get_interface_info, NetStat},
+    stream_manager::StreamManager,
+    analyzer::Analyzer,
+};
+use pnet::packet:: {
+    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
+    Packet,
+    ipv4::Ipv4Packet,
+    ipv6::Ipv6Packet,
+    tcp::{TcpOptionIterable, TcpOptionNumbers, TcpPacket},
+    udp::UdpPacket,
+    ethernet::EthernetPacket,
+};
+use tokio:: {
+    sync::mpsc::{self, UnboundedReceiver, Receiver, Sender},
+    time,
+};
+
 
 const CHANNEL_CAPACITY: usize = 1000;
 
@@ -66,10 +73,11 @@ pub enum TransportPacket {
         flags: TcpFlags,
         // Maximum size of an IP packet is 65,535 bytes (2^16 - 1)
         payload_len: u16,
-        tsval: Option<u32>,
-        tsecr: Option<u32>,
+        // TCP options (timestamps, window scale)
+        options: TcpOptions,
         src_port: u16,
         dst_port: u16,
+        window_size: u16,
     },
     UDP {
         src_port: u16,
@@ -100,30 +108,16 @@ impl TcpFlags {
     const ACK: u8 = 0x10;
     const FIN: u8 = 0x01;
 
-    fn is_syn(&self) -> bool {
+    pub fn is_syn(&self) -> bool {
         self.0 & Self::SYN != 0
     }
 
-    fn is_ack(&self) -> bool {
+    pub fn is_ack(&self) -> bool {
         self.0 & Self::ACK != 0
     }
 
-    fn is_fin(&self) -> bool {
-        self.0 & Self::FIN != 0
-    }
-}
-
-impl TransportPacket {
-    pub fn is_syn(&self) -> bool {
-        matches!(self, TransportPacket::TCP { flags, .. } if flags.is_syn())
-    }
-
-    pub fn is_ack(&self) -> bool {
-        matches!(self, TransportPacket::TCP { flags, .. } if flags.is_ack())
-    }
-
     pub fn is_fin(&self) -> bool {
-        matches!(self, TransportPacket::TCP { flags, .. } if flags.is_fin())
+        self.0 & Self::FIN != 0
     }
 }
 
@@ -149,6 +143,74 @@ pub struct ParsedPacket {
     pub total_length: u32,
     pub timestamp: SystemTime,
     pub direction: Direction,
+}
+
+#[derive(Debug)]
+pub struct TcpOptions {
+    pub tsval: Option<u32>,
+    pub tsecr: Option<u32>,
+    pub scale: Option<u8>,
+    pub mss: Option<u16>,
+}
+
+impl TcpOptions {
+    pub fn new() -> Self {
+        TcpOptions {
+            tsval: None,
+            tsecr: None,
+            scale: None,
+            mss: None,
+        }
+    }
+
+    /// Parse TCP options from a TCP packet
+    /// Returns a `TcpOptions` struct
+    /// # Arguments
+    /// * `tcp_options` - An iterator over the TCP options
+    pub fn from_bytes(tcp_options: TcpOptionIterable) -> Self {
+        let mut options = TcpOptions::new();
+        for option in tcp_options {
+            match option.get_number() {
+                TcpOptionNumbers::TIMESTAMPS => {
+                    let timestamp_bytes = option.payload();
+                    if timestamp_bytes.len() != 8 {
+                        log::warn!("Invalid timestamp length: expected 8, got {}", timestamp_bytes.len());
+                        continue;
+                    }
+                    options.tsval = Some(u32::from_be_bytes([
+                        timestamp_bytes[0],
+                        timestamp_bytes[1],
+                        timestamp_bytes[2],
+                        timestamp_bytes[3],
+                    ]));
+                    options.tsecr = Some(u32::from_be_bytes([
+                        timestamp_bytes[4],
+                        timestamp_bytes[5],
+                        timestamp_bytes[6],
+                        timestamp_bytes[7],
+                    ]));
+                }
+                TcpOptionNumbers::WSCALE => {
+                    let scale_bytes = option.payload();
+                    if scale_bytes.len() != 1 {
+                        log::warn!("Invalid window scale length: expected 1, got {}", scale_bytes.len());
+                        continue;
+                    }
+                    options.scale = Some(scale_bytes[0]);
+                }
+                TcpOptionNumbers::MSS => {
+                    let mss_bytes = option.payload();
+                    if mss_bytes.len() != 2 {
+                        log::warn!("Invalid MSS length: expected 2, got {}", mss_bytes.len());
+                        continue;
+                    }
+                    options.mss = Some(u16::from_be_bytes([mss_bytes[0], mss_bytes[1]]));
+                }
+                _ => {}
+            }
+        }
+        options
+    }
 }
 
 
@@ -409,34 +471,6 @@ impl Parser {
         )
     }
 
-    fn parse_timestamp(&self, tcp_options: TcpOptionIterable) -> Option<(u32, u32)> {
-        for option in tcp_options {
-            if option.get_number() == pnet::packet::tcp::TcpOptionNumbers::TIMESTAMPS {
-                let timestamp_bytes = option.payload();
-
-                if timestamp_bytes.len() != 8 {
-                    log::warn!("Invalid timestamp length: expected 8, got {}", timestamp_bytes.len());
-                    continue;
-                }
-                let tsval = u32::from_be_bytes([
-                    timestamp_bytes[0],
-                    timestamp_bytes[1],
-                    timestamp_bytes[2],
-                    timestamp_bytes[3],
-                ]);
-                let tsecr = u32::from_be_bytes([
-                    timestamp_bytes[4],
-                    timestamp_bytes[5],
-                    timestamp_bytes[6],
-                    timestamp_bytes[7],
-                ]);
-
-                return Some((tsval, tsecr));
-            }
-        }
-        None
-    }
-
     fn parse_tcp_packet(
         &self,
         payload: &[u8],
@@ -447,11 +481,7 @@ impl Parser {
         direction: Direction,
     ) -> Option<ParsedPacket> {
         let tcp = TcpPacket::new(payload)?;
-        // Print timestamp if TCP timestamp option is present
-        let (tsval, tsecr) = match self.parse_timestamp(tcp.get_options_iter()) {
-            Some((tsval, tsecr)) => (tsval, tsecr),
-            None => (0, 0),
-        };
+        let options = TcpOptions::from_bytes(tcp.get_options_iter());
 
         Some(ParsedPacket {
             src_ip,
@@ -461,10 +491,10 @@ impl Parser {
                 acknowledgment: tcp.get_acknowledgement(),
                 flags: TcpFlags(tcp.get_flags()),
                 payload_len: tcp.payload().len() as u16,
-                tsval: Some(tsval),
-                tsecr: Some(tsecr),
+                options: options,
                 src_port: tcp.get_source(),
                 dst_port: tcp.get_destination(),
+                window_size: tcp.get_window(),
             },
             total_length,
             timestamp,
