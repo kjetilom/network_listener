@@ -1,5 +1,6 @@
-use std::collections::HashMap;
 use std::net::IpAddr;
+use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
+use std::collections::HashMap;
 
 use super::parser::ParsedPacket;
 use super::procfs_reader::{NetEntry, NetStat};
@@ -91,4 +92,54 @@ impl StreamManager {
         self.streams.retain(|k, _| !ids_to_remove.contains(k));
     }
 
+    pub fn netstat_diff(&self, nstat: NetStat) -> Vec<ConnectionKey> {
+        let mut diff = Vec::new();
+
+        for (stream_id, _tracker) in self.streams.iter() {
+            if !nstat.tcp.contains_key(stream_id) && !nstat.udp.contains_key(stream_id) {
+                diff.push(*stream_id);
+            }
+        }
+        diff
+    }
+
+    pub fn take_streams(&mut self, keys: Vec<ConnectionKey>) -> Vec<Tracker<TrackerState>> {
+        let mut taken = Vec::new();
+
+        for key in keys {
+            if let Some(tracker) = self.streams.remove(&key) {
+                taken.push(tracker);
+            }
+        }
+        taken
+    }
+
+    pub fn get_tcp_streams(&self) -> Vec<&Tracker<TrackerState>> {
+        self.get_streams(IpNextHeaderProtocols::Tcp)
+    }
+
+    pub fn get_streams(&self, protocol: IpNextHeaderProtocol) -> Vec<&Tracker<TrackerState>> {
+        self.streams.values().filter(|t| t.protocol == protocol).collect()
+    }
+
+    /// Take all streams of a given protocol from the manager
+    pub fn take_streams_by_protocol(&mut self, protocol: IpNextHeaderProtocol) -> Vec<Tracker<TrackerState>> {
+        let mut taken = Vec::new();
+
+        // Use `drain` to take ownership of the entries in the HashMap
+        self.streams = self.streams.drain().filter_map(|(key, value)| {
+            if value.protocol == protocol {
+                taken.push(value);
+                None
+            } else {
+                Some((key, value))
+            }
+        }).collect();
+
+        taken
+    }
+
+    pub fn get_key_by_protocol(&self, protocol: IpNextHeaderProtocol) -> Vec<ConnectionKey> {
+        self.streams.keys().filter(|k| k.get_protocol() == protocol).cloned().collect()
+    }
 }

@@ -92,6 +92,13 @@ impl ConnectionKey {
             ConnectionKey::IpPair { remote_ip, .. } => *remote_ip,
         }
     }
+
+    pub fn get_protocol(&self) -> IpNextHeaderProtocol {
+        match self {
+            ConnectionKey::StreamId { protocol, .. } => *protocol,
+            ConnectionKey::IpPair { protocol, .. } => *protocol,
+        }
+    }
 }
 
 impl Display for ConnectionKey {

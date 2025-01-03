@@ -148,6 +148,10 @@ impl TcpStats {
         self.rtts.push(rtt);
     }
 
+    pub fn min_rtt(&self) -> Option<Duration> {
+        self.rtts.iter().map(|rtt| rtt.rtt).min()
+    }
+
     pub fn estimate_bandwidth(&self) -> Option<f64> {
         if self.rtts.is_empty() {
             return None;
