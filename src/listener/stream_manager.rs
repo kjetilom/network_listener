@@ -2,7 +2,7 @@ use std::net::IpAddr;
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 
-use super::parser::ParsedPacket;
+use super::packet::packet_builder::ParsedPacket;
 use super::procfs_reader::{NetEntry, NetStat};
 use super::stream_id::ConnectionKey;
 use super::tracker::{Tracker, TrackerState};
@@ -46,7 +46,7 @@ impl StreamManager {
             match tracker.state {
                 TrackerState::Tcp(ref tcp_tracker) => {
                     if let Some(bw) = tcp_tracker.stats.estimate_bandwidth() {
-                        println!("Estimated bandwidth for {} : {:?} mb/s", stream_id, bw*8.0/1_000_000.0);
+                        println!("Estimated bandwidth for {} : {:?} Mb/s", stream_id, bw*8.0/1_000_000.0);
                     }
                 }
                 _ => {

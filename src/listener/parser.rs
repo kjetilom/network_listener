@@ -1,29 +1,20 @@
-use std::net::IpAddr;
-use std::time::{SystemTime, UNIX_EPOCH};
-use capture::OwnedPacket;
-use log::{error, info};
-use neli_wifi::{Bss, Interface, Station};
-use pcap::Device;
-use anyhow::{Result, Context};
-use super:: {
+use super::packet::packet_builder::ParsedPacket;
+use super::{
+    analyzer::Analyzer,
     procfs_reader::{self, get_interface, get_interface_info, NetStat},
     stream_manager::StreamManager,
-    analyzer::Analyzer,
 };
-use pnet::packet:: {
-    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-    Packet,
-    ipv4::Ipv4Packet,
-    ipv6::Ipv6Packet,
-    tcp::{TcpOptionIterable, TcpOptionNumbers, TcpPacket},
-    udp::UdpPacket,
-    ethernet::EthernetPacket,
-};
-use tokio:: {
-    sync::mpsc::{self, UnboundedReceiver, Receiver, Sender},
+use anyhow::Result;
+use capture::OwnedPacket;
+use log::{error, info};
+use mac_address::MacAddress;
+use neli_wifi::{Bss, Interface, Station};
+use pcap::Device;
+use pnet::util::MacAddr;
+use tokio::{
+    sync::mpsc::{self, Receiver, Sender, UnboundedReceiver},
     time,
 };
-
 
 const CHANNEL_CAPACITY: usize = 1000;
 
@@ -32,7 +23,7 @@ use super::capture;
 #[derive(Debug)]
 pub struct NetlinkData {
     pub stations: Vec<Station>, // Currently connected stations
-    pub bss: Vec<Bss>, // BSS information
+    pub bss: Vec<Bss>,          // BSS information
 }
 
 #[derive(Debug)]
@@ -42,11 +33,11 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub fn from_packet(packet: &ParsedPacket, own_ip: IpAddr) -> Self {
-        if packet.src_ip == own_ip {
-            Direction::Outgoing
-        } else {
+    pub fn from_mac(mac: MacAddr, own_mac: MacAddr) -> Self {
+        if mac == own_mac {
             Direction::Incoming
+        } else {
+            Direction::Outgoing
         }
     }
 
@@ -57,7 +48,7 @@ impl Direction {
 
 pub struct Parser {
     packet_stream: UnboundedReceiver<OwnedPacket>,
-    own_ip: IpAddr,
+    own_mac: MacAddr,
     device_name: String,
     stream_manager: StreamManager,
     netlink_data: Vec<NetlinkData>,
@@ -65,171 +56,17 @@ pub struct Parser {
     analyzer: Analyzer,
 }
 
-#[derive(Debug)]
-pub enum TransportPacket {
-    TCP {
-        sequence: u32,
-        acknowledgment: u32,
-        flags: TcpFlags,
-        // Maximum size of an IP packet is 65,535 bytes (2^16 - 1)
-        payload_len: u16,
-        // TCP options (timestamps, window scale)
-        options: TcpOptions,
-        src_port: u16,
-        dst_port: u16,
-        window_size: u16,
-    },
-    UDP {
-        src_port: u16,
-        dst_port: u16,
-    },
-    ICMP,
-    OTHER {
-        protocol: u8,
-    },
-}
-
-impl TransportPacket {
-    pub fn get_ip_proto(&self) -> IpNextHeaderProtocol {
-        match self {
-            TransportPacket::TCP { .. } => IpNextHeaderProtocols::Tcp,
-            TransportPacket::UDP { .. } => IpNextHeaderProtocols::Udp,
-            TransportPacket::ICMP => IpNextHeaderProtocols::Icmp,
-            TransportPacket::OTHER { protocol } => IpNextHeaderProtocol(*protocol),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct TcpFlags(u8);
-
-impl TcpFlags {
-    const SYN: u8 = 0x02;
-    const ACK: u8 = 0x10;
-    const FIN: u8 = 0x01;
-
-    pub fn is_syn(&self) -> bool {
-        self.0 & Self::SYN != 0
-    }
-
-    pub fn is_ack(&self) -> bool {
-        self.0 & Self::ACK != 0
-    }
-
-    pub fn is_fin(&self) -> bool {
-        self.0 & Self::FIN != 0
-    }
-}
-
-/// time::Duration and SystemTime uses Nanosecond precision
-pub fn timeval_to_system_time(tv: libc::timeval) -> SystemTime {
-    match super::Settings::PRECISION {
-        pcap::Precision::Micro => {
-            let dur = time::Duration::new(tv.tv_sec as u64, tv.tv_usec as u32 * 1000);
-            UNIX_EPOCH + dur
-        }
-        pcap::Precision::Nano => {
-            let dur = time::Duration::new(tv.tv_sec as u64, tv.tv_usec as u32);
-            UNIX_EPOCH + dur
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct ParsedPacket {
-    pub src_ip: IpAddr,
-    pub dst_ip: IpAddr,
-    pub transport: TransportPacket,
-    pub total_length: u32,
-    pub timestamp: SystemTime,
-    pub direction: Direction,
-}
-
-#[derive(Debug)]
-pub struct TcpOptions {
-    pub tsval: Option<u32>,
-    pub tsecr: Option<u32>,
-    pub scale: Option<u8>,
-    pub mss: Option<u16>,
-}
-
-impl TcpOptions {
-    pub fn new() -> Self {
-        TcpOptions {
-            tsval: None,
-            tsecr: None,
-            scale: None,
-            mss: None,
-        }
-    }
-
-    /// Parse TCP options from a TCP packet
-    /// Returns a `TcpOptions` struct
-    /// # Arguments
-    /// * `tcp_options` - An iterator over the TCP options
-    pub fn from_bytes(tcp_options: TcpOptionIterable) -> Self {
-        let mut options = TcpOptions::new();
-        for option in tcp_options {
-            match option.get_number() {
-                TcpOptionNumbers::TIMESTAMPS => {
-                    let timestamp_bytes = option.payload();
-                    if timestamp_bytes.len() != 8 {
-                        log::warn!("Invalid timestamp length: expected 8, got {}", timestamp_bytes.len());
-                        continue;
-                    }
-                    options.tsval = Some(u32::from_be_bytes([
-                        timestamp_bytes[0],
-                        timestamp_bytes[1],
-                        timestamp_bytes[2],
-                        timestamp_bytes[3],
-                    ]));
-                    options.tsecr = Some(u32::from_be_bytes([
-                        timestamp_bytes[4],
-                        timestamp_bytes[5],
-                        timestamp_bytes[6],
-                        timestamp_bytes[7],
-                    ]));
-                }
-                TcpOptionNumbers::WSCALE => {
-                    let scale_bytes = option.payload();
-                    if scale_bytes.len() != 1 {
-                        log::warn!("Invalid window scale length: expected 1, got {}", scale_bytes.len());
-                        continue;
-                    }
-                    options.scale = Some(scale_bytes[0]);
-                }
-                TcpOptionNumbers::MSS => {
-                    let mss_bytes = option.payload();
-                    if mss_bytes.len() != 2 {
-                        log::warn!("Invalid MSS length: expected 2, got {}", mss_bytes.len());
-                        continue;
-                    }
-                    options.mss = Some(u16::from_be_bytes([mss_bytes[0], mss_bytes[1]]));
-                }
-                _ => {}
-            }
-        }
-        options
-    }
-}
-
-
 impl Parser {
     pub fn new(
         packet_stream: UnboundedReceiver<OwnedPacket>,
         device: Device,
+        mac_address: MacAddress,
     ) -> Result<Self> {
-        let own_ip = device.addresses.iter()
-            .filter_map(|addr| match addr.addr {
-                IpAddr::V4(ipv4) => Some(IpAddr::V4(ipv4)),
-                IpAddr::V6(ipv6) => Some(IpAddr::V6(ipv6)),
-            })
-            .next()
-            .context("Device does not have an IPv4 or IPv6 address")?;
+        let mac_addr = MacAddr::from(mac_address.bytes());
 
         Ok(Parser {
             packet_stream,
-            own_ip,
+            own_mac: mac_addr,
             device_name: device.name,
             stream_manager: StreamManager::default(),
             netlink_data: Vec::new(),
@@ -239,8 +76,6 @@ impl Parser {
     }
 
     pub async fn start(mut self) {
-
-
         let interface = match get_interface(&self.device_name).await {
             Ok(interface) => {
                 info!("Interface: {:?}", interface);
@@ -252,15 +87,12 @@ impl Parser {
             }
         };
 
-
         // Create bounded channels
-        let (netlink_tx, mut netlink_rx):
-            (Sender<NetlinkData>, Receiver<NetlinkData>)
-            = mpsc::channel(CHANNEL_CAPACITY);
+        let (netlink_tx, mut netlink_rx): (Sender<NetlinkData>, Receiver<NetlinkData>) =
+            mpsc::channel(CHANNEL_CAPACITY);
 
-        let (netstat_tx, mut netstat_rx):
-            (Sender<NetStat>, Receiver<_>)
-            = mpsc::channel(CHANNEL_CAPACITY);
+        let (netstat_tx, mut netstat_rx): (Sender<NetStat>, Receiver<_>) =
+            mpsc::channel(CHANNEL_CAPACITY);
 
         // Spawn netlink_comms and pass the sender
         let netlink_handle = tokio::spawn(async move {
@@ -302,9 +134,7 @@ impl Parser {
         // Stop the parser
     }
 
-    async fn periodic_netstat(
-        netstat_tx: Sender<NetStat>,
-    ) {
+    async fn periodic_netstat(netstat_tx: Sender<NetStat>) {
         loop {
             let netstat = procfs_reader::proc_net().await;
 
@@ -345,7 +175,7 @@ impl Parser {
         // Handle the captured packet
         self.analyzer.process_packet(&packet);
 
-        let parsed_packet = match self.parse_packet(&packet) {
+        let parsed_packet = match self.parse_packet(packet) {
             Some(packet) => packet,
             None => return,
         };
@@ -356,173 +186,7 @@ impl Parser {
     /* Parses an `OwnedPacket` into a `ParsedPacket`.
      * Returns `Some(ParsedPacket)` if parsing is successful, otherwise `None`.
      */
-    pub fn parse_packet(&self, packet: &OwnedPacket) -> Option<ParsedPacket> {
-        // Parse the Ethernet frame
-        let total_length = packet.header.len;
-        let eth = EthernetPacket::new(&packet.data)?;
-
-        match eth.get_ethertype() {
-            pnet::packet::ethernet::EtherTypes::Ipv4 => {
-                self.parse_ipv4_packet(eth.payload(), total_length, timeval_to_system_time(packet.header.ts))
-            }
-            pnet::packet::ethernet::EtherTypes::Ipv6 => {
-                self.parse_ipv6_packet(eth.payload(), total_length, timeval_to_system_time(packet.header.ts))
-            }
-            _ => None,
-        }
-    }
-
-    fn parse_ip_packet (
-        &self,
-        payload: &[u8],
-        src_ip: IpAddr,
-        dst_ip: IpAddr,
-        total_length: u32,
-        timestamp: SystemTime,
-        protocol: pnet::packet::ip::IpNextHeaderProtocol,
-    ) -> Option<ParsedPacket> {
-        let direction = if src_ip == self.own_ip {
-            Direction::Outgoing
-        } else {
-            Direction::Incoming
-        };
-        match protocol {
-            IpNextHeaderProtocols::Tcp => {
-                self.parse_tcp_packet(
-                    payload,
-                    src_ip,
-                    dst_ip,
-                    total_length,
-                    timestamp,
-                    direction,
-                )
-            }
-            IpNextHeaderProtocols::Udp => {
-                self.parse_udp_packet(
-                    payload,
-                    src_ip,
-                    dst_ip,
-                    total_length,
-                    timestamp,
-                    direction,
-                )
-            }
-            IpNextHeaderProtocols::Icmp => {
-                Some(ParsedPacket {
-                    src_ip,
-                    dst_ip,
-                    transport: TransportPacket::ICMP,
-                    total_length,
-                    timestamp,
-                    direction,
-                })
-            }
-            _ => {
-                Some(ParsedPacket {
-                    src_ip,
-                    dst_ip,
-                    transport: TransportPacket::OTHER {
-                        protocol: protocol.0,
-                    },
-                    total_length,
-                    timestamp,
-                    direction,
-                })
-            },
-        }
-    }
-
-
-    fn parse_ipv4_packet(
-        &self,
-        payload: &[u8],
-        total_length: u32,
-        timestamp: SystemTime,
-    ) -> Option<ParsedPacket> {
-        let ipv4 = Ipv4Packet::new(payload)?;
-        let protocol = ipv4.get_next_level_protocol();
-
-        self.parse_ip_packet(
-            ipv4.payload(),
-            IpAddr::V4(ipv4.get_source()),
-            IpAddr::V4(ipv4.get_destination()),
-            total_length,
-            timestamp,
-            protocol,
-        )
-    }
-
-    fn parse_ipv6_packet(
-        &self,
-        payload: &[u8],
-        total_length: u32,
-        timestamp: SystemTime,
-    ) -> Option<ParsedPacket> {
-        let ipv6 = Ipv6Packet::new(payload)?;
-        let protocol = ipv6.get_next_header();
-
-        self.parse_ip_packet(
-            ipv6.payload(),
-            IpAddr::V6(ipv6.get_source()),
-            IpAddr::V6(ipv6.get_destination()),
-            total_length,
-            timestamp,
-            protocol,
-        )
-    }
-
-    fn parse_tcp_packet(
-        &self,
-        payload: &[u8],
-        src_ip: IpAddr,
-        dst_ip: IpAddr,
-        total_length: u32,
-        timestamp: SystemTime,
-        direction: Direction,
-    ) -> Option<ParsedPacket> {
-        let tcp = TcpPacket::new(payload)?;
-        let options = TcpOptions::from_bytes(tcp.get_options_iter());
-
-        Some(ParsedPacket {
-            src_ip,
-            dst_ip,
-            transport: TransportPacket::TCP {
-                sequence: tcp.get_sequence(),
-                acknowledgment: tcp.get_acknowledgement(),
-                flags: TcpFlags(tcp.get_flags()),
-                payload_len: tcp.payload().len() as u16,
-                options: options,
-                src_port: tcp.get_source(),
-                dst_port: tcp.get_destination(),
-                window_size: tcp.get_window(),
-            },
-            total_length,
-            timestamp,
-            direction,
-        })
-    }
-
-    fn parse_udp_packet(
-        &self,
-        payload: &[u8],
-        src_ip: IpAddr,
-        dst_ip: IpAddr,
-        total_length: u32,
-        timestamp: SystemTime,
-        direction: Direction,
-    ) -> Option<ParsedPacket> {
-        let udp = UdpPacket::new(payload)?;
-
-        Some(ParsedPacket {
-            src_ip,
-            dst_ip,
-            transport: TransportPacket::UDP {
-                src_port: udp.get_source(),
-                dst_port: udp.get_destination(),
-            },
-            total_length,
-            timestamp,
-            direction,
-        })
+    pub fn parse_packet(&self, packet: OwnedPacket) -> Option<ParsedPacket> {
+        ParsedPacket::from_packet(&packet, self.own_mac)
     }
 }

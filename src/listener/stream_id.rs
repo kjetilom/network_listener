@@ -5,7 +5,8 @@ use std::hash::Hash;
 use procfs::net::{TcpNetEntry, UdpNetEntry};
 use pnet::packet::ip::IpNextHeaderProtocol;
 
-use super::parser::{ParsedPacket, TransportPacket};
+use super::packet::packet_builder::ParsedPacket;
+use super::packet::transport_packet::TransportPacket;
 
 /// Represents a key for identifying connections, which can be either:
 /// - `StreamId`: Includes local and remote IPs and ports.

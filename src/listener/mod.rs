@@ -13,7 +13,7 @@ impl Settings {
     pub const FIN_WAIT_TIMEOUT: Duration = Duration::from_secs(675);
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(10); // 900
 }
-
+pub mod packet;
 pub mod parser;
 pub mod analyzer;
 pub mod capture;

@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
-use super::parser::{Direction, ParsedPacket, TransportPacket};
+use super::packet::packet_builder::ParsedPacket;
+use super::parser::Direction;
+use super::packet::transport_packet::{TransportPacket, TcpFlags};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use procfs::net::{TcpState, UdpState};
 
@@ -132,6 +134,7 @@ pub struct TcpStats {
     pub total_unique_packets: u32,
     pub rtts: Vec<RTT>,
     pub state: Option<TcpState>,
+    pub initial_rtt: Option<RTT>,
 }
 
 impl TcpStats {
@@ -141,11 +144,19 @@ impl TcpStats {
             total_unique_packets: 0,
             rtts: Vec::new(),
             state: None,
+            initial_rtt: None,
         }
     }
 
-    pub fn register_rtt(&mut self, rtt: RTT) {
-        self.rtts.push(rtt);
+    pub fn register_rtt(&mut self, rtt: RTT, flags: &TcpFlags) {
+        if flags.is_syn() {
+            self.initial_rtt = Some(rtt);
+        } else if flags.is_fin() {
+            self.initial_rtt = None;
+            self.rtts.clear();
+        } else {
+            self.rtts.push(rtt);
+        }
     }
 
     pub fn min_rtt(&self) -> Option<Duration> {
@@ -279,7 +290,9 @@ impl TcpTracker {
                                     rtt,
                                     packet_size: sent_packet.total_packet_size,
                                     timestamp: packet.timestamp,
-                                });
+                                },
+                                flags
+                                );
                             }
                         }
                         keys_to_remove.push(seq);

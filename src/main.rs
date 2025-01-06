@@ -16,14 +16,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // let _ = tokio::spawn(network_listener::grafana::client::start_client());
 
     info!("Starting packet capture");
-    let (pcap, receiver, device)
+    let (pcap, receiver, device, _mac_addr)
         = PacketCapturer::new()?;
 
 
 
     let cap_h = pcap.start_capture_loop();
 
-    let parser = Parser::new(receiver, device)?;
+    let parser = Parser::new(receiver, device, _mac_addr)?;
 
     if DO_WIRELESS {
         let (mon, mon_recv, _)
