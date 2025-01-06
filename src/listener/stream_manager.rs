@@ -61,15 +61,20 @@ impl StreamManager {
         let mut ids_to_remove: Vec<ConnectionKey> = Vec::new();
 
         for (stream_id, tracker) in self.streams.iter_mut() {
+            if tracker.last_registered.elapsed().unwrap().as_secs() > 60 {
+                ids_to_remove.push(*stream_id);
+                continue;
+            }
             match tracker.state {
                 TrackerState::Tcp(ref mut tcp_tracker) => {
                     match nstat.tcp.get(stream_id) {
                         Some(NetEntry::Tcp { entry }) => {
                             tcp_tracker.stats.state = Some(entry.state.clone());
                         }
-                        _ => {
-                            ids_to_remove.push(*stream_id);
-                        }
+                        _ => {}
+                    }
+                    if !matches!(tcp_tracker.stats.state, Some(procfs::net::TcpState::Established)) {
+                        ids_to_remove.push(*stream_id)
                     }
                 }
                 TrackerState::Udp(ref mut udp_tracker) => {
@@ -77,19 +82,17 @@ impl StreamManager {
                         Some(NetEntry::Udp { entry }) => {
                             udp_tracker.state = Some(entry.state.clone());
                         }
-                        _ => {
-                            ids_to_remove.push(*stream_id);
-                        }
+                        _ => {}
+                    }
+                    if !matches!(udp_tracker.state, Some(procfs::net::UdpState::Established)) {
+                        ids_to_remove.push(*stream_id)
                     }
                 }
-                TrackerState::Other(ref mut _t) => {
-                    if tracker.last_registered.elapsed().unwrap().as_secs() > 60 {
-                        ids_to_remove.push(*stream_id);
-                    }
-                }
+                _ => {}
             }
         }
         self.streams.retain(|k, _| !ids_to_remove.contains(k));
+
     }
 
     pub fn netstat_diff(&self, nstat: NetStat) -> Vec<ConnectionKey> {

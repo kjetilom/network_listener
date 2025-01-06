@@ -223,6 +223,13 @@ impl TcpTracker {
             if flags.is_syn() && !flags.is_ack() {
                 self.initial_sequence_local = Some(*sequence);
             }
+            // Simple state machine
+            if flags.is_fin() || flags.is_rst() {
+                self.initial_sequence_local = None;
+                self.stats.state = Some(TcpState::Close);
+            } else {
+                self.stats.state = Some(TcpState::Established);
+            }
 
             self.total_bytes_sent += packet.total_length as u64;
 

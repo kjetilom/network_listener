@@ -91,6 +91,7 @@ impl TcpFlags {
     pub const SYN: u8 = 0x02;
     pub const ACK: u8 = 0x10;
     pub const FIN: u8 = 0x01;
+    pub const RST: u8 = 0x04;
 
     pub fn is_syn(&self) -> bool {
         self.0 & Self::SYN != 0
@@ -102,6 +103,10 @@ impl TcpFlags {
 
     pub fn is_fin(&self) -> bool {
         self.0 & Self::FIN != 0
+    }
+
+    pub fn is_rst(&self) -> bool {
+        self.0 & Self::RST != 0
     }
 }
 
