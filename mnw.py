@@ -17,6 +17,7 @@ from mininet.term import tunnelX11
 import os
 import signal
 import time
+import mgen
 
 terms = []
 
@@ -60,14 +61,14 @@ class WirelessExample(Mininet_wifi):
         sta1 = self.add_node("sta1", pos="40,40,0", range=50)
         sta2 = self.add_node("sta2", pos="80,40,0", range=50)
         sta3 = self.add_node("sta3", pos="120,40,0", range=50)
-        #sta4 = self.add_node("sta4", pos="40,80,0", range=50)
+        sta4 = self.add_node("sta4", pos="40,80,0", range=50)
         self.configureNodes()
 
         info("*** Adding links\n")
         self.add_link(sta1)
         self.add_link(sta2)
         self.add_link(sta3)
-        #self.add_link(sta4)
+        self.add_link(sta4)
 
     def _plot(self):
         info("*** Plotting graph!\n")
@@ -108,16 +109,18 @@ def run(self, line):
 
 
 def do_open(self: CLI, line):
-    mn: WirelessExample = self.mn
-    for i, node in enumerate(mn.stations):
-        y = 0
+    _mn: WirelessExample = self.mn
+    y = 0 if len(terms) == 0 else 300
+    x = 0
+    for i, node in enumerate(_mn.stations):
         if i%4 == 0 and i >1:
             y += 300
+        x = (550*i)%(550*4)
         terms.append(opern_terminal(
             self,
             node=node,
             title=node.name,
-            geometry=f"80x20+{(550*i)%(550*3)}+{y}",
+            geometry=f"80x20+{x}+{y}",
             cmd="bash",
         ))
 

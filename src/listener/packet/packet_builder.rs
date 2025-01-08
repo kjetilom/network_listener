@@ -8,7 +8,7 @@ use pnet::util::MacAddr;
 
 use crate::listener::capture::OwnedPacket;
 use crate::listener::packet::transport_packet::TransportPacket;
-use crate::listener::parser::Direction;
+use super::direction::Direction;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocol;
 
@@ -57,7 +57,6 @@ impl<'a> ParsedPacket {
         // Build the transport struct from the raw payload reference
         let transport = TransportPacket::from_data(payload, protocol);
 
-        // 4) Construct the final zero-copy ParsedPacket
         Some(ParsedPacket {
             src_ip,
             dst_ip,

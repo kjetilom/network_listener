@@ -22,7 +22,6 @@ libc = "0.2.169"
 bitflags = "2.6.0"
 procfs = "0.17.0"
 rtnetlink = "0.14.1"
-nix = { version = "0.29.0", features = ["socket"] }
 neli-wifi = { version = "0.6.0", features = ["async"] }
 mac_address = "1.1.7"
 # neli = { version = "0.6.4", features = ["async"] }

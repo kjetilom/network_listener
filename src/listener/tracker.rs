@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 use super::packet::packet_builder::ParsedPacket;
-use super::parser::Direction;
+use super::packet::direction::Direction;
 use super::packet::transport_packet::{TransportPacket, TcpFlags};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use procfs::net::{TcpState, UdpState};
@@ -301,9 +301,6 @@ impl TcpTracker {
                                 },
                                 flags
                                 );
-                                dbg!(rtt);
-                                dbg!(relative_bytes_acked);
-                                dbg!((rtt.as_millis() / relative_bytes_acked as u128) as f64);
                             }
                         }
                         keys_to_remove.push(seq);

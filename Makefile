@@ -3,6 +3,8 @@
 # The name of the binary
 BINARY_NAME := network_listener
 
+MININET_WIFI := mnw.py
+
 # The directory containing the source code
 SRC_DIR := src
 
@@ -23,8 +25,11 @@ run: build
 runbin:
 	sudo ./target/release/$(BINARY_NAME)
 
+mnw:
+	sudo -E python $(MININET_WIFI)
+
 # Clean the project
 clean:
 	cargo clean
 
-.PHONY: all build run clean
+.PHONY: all build run clean runbin

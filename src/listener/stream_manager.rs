@@ -1,5 +1,7 @@
 use std::net::IpAddr;
+use neli_wifi::Station;
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
+use tokio::time::Instant;
 use std::collections::HashMap;
 
 use super::packet::packet_builder::ParsedPacket;
@@ -15,6 +17,37 @@ pub struct StreamManager {
     streams: HashMap<ConnectionKey, Tracker<TrackerState>>,
 }
 
+/// Device
+///
+/// Used to store information about a seen network device
+pub struct Device {
+    pub addr: IpAddr,
+    pub streams: HashMap<ConnectionKey, Tracker<TrackerState>>,
+    pub last_seen: Instant,
+    pub last_station: Option<Station>,
+}
+
+impl Device {
+    pub fn new(addr: IpAddr, last_seen: Instant) -> Self {
+        Device {
+            addr,
+            streams: HashMap::new(),
+            last_seen,
+            last_station: None,
+        }
+    }
+
+    pub fn record_packet(&mut self, packet: &ParsedPacket) {
+        let stream_id = ConnectionKey::from_pcap(&packet);
+
+        self.streams.entry(stream_id)
+            .or_insert_with(|| Tracker::new(
+                packet.timestamp,
+                packet.transport.get_ip_proto()
+            ))
+            .register_packet(packet);
+    }
+}
 
 impl StreamManager {
     pub fn default() -> Self {
