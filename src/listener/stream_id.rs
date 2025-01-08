@@ -4,7 +4,10 @@ use std::hash::Hash;
 
 use procfs::net::{TcpNetEntry, UdpNetEntry};
 use pnet::packet::ip::IpNextHeaderProtocol;
+use prometheus::local;
 
+use super::capture::PCAPMeta;
+use super::packet::direction::Direction;
 use super::packet::packet_builder::ParsedPacket;
 use super::packet::transport_packet::TransportPacket;
 
@@ -58,22 +61,28 @@ impl ConnectionKey {
     /// # Returns
     ///
     /// A ConnectionKey representing the connection
-    pub fn from_pcap(packet: &ParsedPacket) -> Self {
-        // Determine if the packet is outgoing or incoming
-        let outgoing = packet.direction.is_outgoing();
+    pub fn from_pcap(packet: &ParsedPacket, pcap_meta: &PCAPMeta) -> Self {
+        // If this machine is a middlebox, the local IP is the one that is not the middlebox IP
+        // This could cause issues when calculating the RTTs
 
-        let local_ip = if outgoing { packet.src_ip } else { packet.dst_ip };
-        let remote_ip = if outgoing { packet.dst_ip } else { packet.src_ip };
+        let (local_ip, remote_ip) = match packet.direction {
+            Direction::Incoming => (packet.dst_ip, packet.src_ip),
+            Direction::Outgoing => (packet.src_ip, packet.dst_ip),
+        };
 
         match &packet.transport {
             TransportPacket::TCP { src_port, dst_port, .. }
             | TransportPacket::UDP { src_port, dst_port, .. } => {
+                let (local_port, remote_port) = match packet.direction {
+                    Direction::Incoming => (*dst_port, *src_port),
+                    Direction::Outgoing => (*src_port, *dst_port),
+                };
                 ConnectionKey::StreamId {
                     protocol: packet.transport.get_ip_proto(),
                     local_ip,
-                    local_port: if outgoing { *src_port } else { *dst_port },
+                    local_port,
                     remote_ip,
-                    remote_port: if outgoing { *dst_port } else { *src_port },
+                    remote_port,
                 }
             }
             _ => {

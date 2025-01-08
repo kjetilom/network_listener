@@ -1,4 +1,8 @@
+use std::net::IpAddr;
+
 use pnet::datalink::MacAddr;
+
+use crate::listener::capture::PCAPMeta;
 
 #[derive(Debug)]
 pub enum Direction {
@@ -9,6 +13,14 @@ pub enum Direction {
 impl Direction {
     pub fn from_mac(mac: MacAddr, own_mac: MacAddr) -> Self {
         if mac == own_mac {
+            Direction::Incoming
+        } else {
+            Direction::Outgoing
+        }
+    }
+
+    pub fn from_ip_mac(ip: IpAddr, mac: MacAddr, device_meta: PCAPMeta) -> Self {
+        if device_meta.matches(mac, Some(ip)) {
             Direction::Incoming
         } else {
             Direction::Outgoing

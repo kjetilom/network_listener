@@ -4,6 +4,7 @@ use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use tokio::time::Instant;
 use std::collections::HashMap;
 
+use super::capture::PCAPMeta;
 use super::packet::packet_builder::ParsedPacket;
 use super::procfs_reader::{NetEntry, NetStat};
 use super::stream_id::ConnectionKey;
@@ -37,16 +38,16 @@ impl Device {
         }
     }
 
-    pub fn record_packet(&mut self, packet: &ParsedPacket) {
-        let stream_id = ConnectionKey::from_pcap(&packet);
+    // pub fn record_packet(&mut self, packet: &ParsedPacket) {
+    //     let stream_id = ConnectionKey::from_pcap(&packet);
 
-        self.streams.entry(stream_id)
-            .or_insert_with(|| Tracker::new(
-                packet.timestamp,
-                packet.transport.get_ip_proto()
-            ))
-            .register_packet(packet);
-    }
+    //     self.streams.entry(stream_id)
+    //         .or_insert_with(|| Tracker::new(
+    //             packet.timestamp,
+    //             packet.transport.get_ip_proto()
+    //         ))
+    //         .register_packet(packet);
+    // }
 }
 
 impl StreamManager {
@@ -56,16 +57,29 @@ impl StreamManager {
         }
     }
 
-    pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
+    pub fn record_ip_packet(&mut self, packet: &ParsedPacket, pcap_meta: &PCAPMeta) {
 
-        let stream_id = ConnectionKey::from_pcap(&packet);
-
-        self.streams.entry(stream_id)
-            .or_insert_with(|| Tracker::new(
+        let stream_id = ConnectionKey::from_pcap(&packet, pcap_meta);
+        if self.streams.contains_key(&stream_id) {
+            self.streams.get_mut(&stream_id).unwrap().register_packet(packet);
+        }
+        else {
+            let mut tracker = Tracker::new(
                 packet.timestamp,
                 packet.transport.get_ip_proto()
-            ))
-            .register_packet(packet);
+            );
+            let register = tracker.register_packet(packet);
+            if register {
+                self.streams.insert(stream_id, tracker);
+            }
+        }
+
+        // self.streams.entry(stream_id)
+        //     .or_insert_with(|| Tracker::new(
+        //         packet.timestamp,
+        //         packet.transport.get_ip_proto()
+        //     ))
+        //     .register_packet(packet);
     }
 
     pub fn periodic(&mut self, proc_map: Option<NetStat>) {
@@ -80,6 +94,8 @@ impl StreamManager {
                 TrackerState::Tcp(ref tcp_tracker) => {
                     if let Some(bw) = tcp_tracker.stats.estimate_bandwidth() {
                         println!("Estimated bandwidth for {} : {:?} Mb/s", stream_id, bw*8.0/1_000_000.0);
+                    } else {
+                        println!("No bandwidth estimate for {}", stream_id);
                     }
                 }
                 _ => {

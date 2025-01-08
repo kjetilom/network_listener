@@ -39,6 +39,20 @@ impl PCAPMeta {
         }
     }
 
+    pub fn matches_ip(&self, ip_addr: IpAddr) -> bool {
+        match ip_addr {
+            IpAddr::V4(ip) => ip == self.ipv4,
+            IpAddr::V6(ip) => ip == self.ipv6,
+        }
+    }
+
+    pub fn get_match(&self, ip_addr: IpAddr) -> Option<IpAddr> {
+        match ip_addr {
+            IpAddr::V4(_) => Some(IpAddr::V4(self.ipv4)),
+            IpAddr::V6(_) => Some(IpAddr::V6(self.ipv6)),
+        }
+    }
+
     pub fn matches(&self, mac_addr: MacAddr, ip_addr: Option<IpAddr>) -> bool {
         if mac_addr == self.mac_addr {
             if let Some(ip) = ip_addr {

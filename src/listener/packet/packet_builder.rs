@@ -6,9 +6,9 @@ use tokio::time;
 use std::time::{SystemTime, UNIX_EPOCH};
 use pnet::util::MacAddr;
 
-use crate::listener::capture::OwnedPacket;
+use crate::listener::capture::{OwnedPacket, PCAPMeta};
 use crate::listener::packet::transport_packet::TransportPacket;
-use super::direction::Direction;
+use super::direction::{self, Direction};
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocol;
 
@@ -41,11 +41,12 @@ pub struct ParsedPacket {
     pub total_length: u32,
     pub timestamp: SystemTime,
     pub direction: Direction,
+    pub intercepted: bool,
 }
 
 impl<'a> ParsedPacket {
     /// Convert an OwnedPacket into a borrowed ParsedPacket without copying the payload
-    pub fn from_packet(packet: &'a OwnedPacket, own_mac: MacAddr) -> Option<ParsedPacket> {
+    pub fn from_packet(packet: &'a OwnedPacket, pcap_meta: &PCAPMeta) -> Option<ParsedPacket> {
         // Parse Ethernet frame in place
         let eth = EthernetPacket::new(&packet.data)?;
         let total_length = packet.header.len;
@@ -57,6 +58,13 @@ impl<'a> ParsedPacket {
         // Build the transport struct from the raw payload reference
         let transport = TransportPacket::from_data(payload, protocol);
 
+        let direction = direction::Direction::from_mac(eth.get_destination(), pcap_meta.mac_addr);
+        // The packet is intercepted if A <-> B <-> C and the packet is marked A <-> C
+        let intercepted = !pcap_meta.matches_ip(src_ip) && !pcap_meta.matches_ip(dst_ip);
+        // if direction.is_outgoing() && !pcap_meta.matches_ip(src_ip) {
+        //     return None;
+        // }
+
         Some(ParsedPacket {
             src_ip,
             dst_ip,
@@ -65,7 +73,8 @@ impl<'a> ParsedPacket {
             transport,
             total_length,
             timestamp,
-            direction: Direction::from_mac(eth.get_destination(), own_mac),
+            direction,
+            intercepted,
         })
     }
 

@@ -138,13 +138,13 @@ impl Parser {
             None => return,
         };
 
-        self.stream_manager.record_ip_packet(&parsed_packet);
+        self.stream_manager.record_ip_packet(&parsed_packet, &self.pcap_meta);
     }
 
     /* Parses an `OwnedPacket` into a `ParsedPacket`.
      * Returns `Some(ParsedPacket)` if parsing is successful, otherwise `None`.
      */
     pub fn parse_packet(&self, packet: OwnedPacket) -> Option<ParsedPacket> {
-        ParsedPacket::from_packet(&packet, self.pcap_meta.mac_addr)
+        ParsedPacket::from_packet(&packet, &self.pcap_meta)
     }
 }

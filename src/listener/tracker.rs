@@ -15,7 +15,7 @@ pub enum TrackerState {
 }
 
 impl TrackerState {
-    fn register_packet(&mut self, packet: &ParsedPacket) {
+    fn register_packet(&mut self, packet: &ParsedPacket) -> bool{
         match self {
             TrackerState::Tcp(tracker) => tracker.register_packet(packet),
             TrackerState::Udp(tracker) => tracker.register_packet(packet),
@@ -52,7 +52,7 @@ impl Tracker<TrackerState> {
         }
     }
 
-    pub fn register_packet(&mut self, packet: &ParsedPacket) {
+    pub fn register_packet(&mut self, packet: &ParsedPacket) -> bool {
         match packet.direction {
             Direction::Incoming => {
                 self.total_bytes_received += packet.total_length as u64;
@@ -64,7 +64,7 @@ impl Tracker<TrackerState> {
         self.last_registered = packet.timestamp;
 
         // Call register_packet on state if it exists
-        self.state.register_packet(packet);
+        self.state.register_packet(packet)
     }
 }
 
@@ -75,10 +75,8 @@ impl GenericTracker {
         GenericTracker {}
     }
 
-    pub fn register_packet(&mut self, _packet: &ParsedPacket) {}
+    pub fn register_packet(&mut self, _packet: &ParsedPacket) -> bool {true}
 }
-
-
 
 /// Represents a sent TCP packet with its sequence number, length, send time, and retransmission count.
 #[derive(Debug)]
@@ -109,7 +107,7 @@ impl UdpTracker {
         UdpTracker { state: Some(UdpState::Established) }
     }
 
-    pub fn register_packet(&mut self, _packet: &ParsedPacket) {}
+    pub fn register_packet(&mut self, _packet: &ParsedPacket) -> bool {true}
 }
 
 /// Wrap-around aware comparison
@@ -170,18 +168,20 @@ impl TcpStats {
 
         let mut min_rtt = Duration::MAX;
         let mut max_throughput: f64 = 0.0;
+        let mut avg_rtt = 0.0;
 
         for rtt in &self.rtts {
             min_rtt = min_rtt.min(rtt.rtt);
             let throughput = (rtt.packet_size as f64) / rtt.rtt.as_secs_f64();
             max_throughput = max_throughput.max(throughput);
+            avg_rtt += rtt.rtt.as_secs_f64();
         }
 
         // Get the most recent RTT for estimation or use a moving average
-        let current_rtt = self.rtts.last()?.rtt;
+        avg_rtt /= self.rtts.len() as f64;
 
         // Estimate bandwidth using the formula
-        let bandwidth = max_throughput * min_rtt.as_secs_f64() / current_rtt.as_secs_f64();
+        let bandwidth = max_throughput * min_rtt.as_secs_f64() / avg_rtt;
 
         Some(bandwidth)
     }
@@ -198,13 +198,13 @@ impl TcpTracker {
         }
     }
 
-    fn register_packet(&mut self, packet: &ParsedPacket) {
+    fn register_packet(&mut self, packet: &ParsedPacket) -> bool {
         match packet.direction {
             Direction::Incoming => {
-                self.handle_incoming_packet(packet);
+                self.handle_incoming_packet(packet)
             }
             Direction::Outgoing => {
-                self.handle_outgoing_packet(packet);
+                self.handle_outgoing_packet(packet)
             }
         }
     }
@@ -212,7 +212,7 @@ impl TcpTracker {
     pub fn handle_outgoing_packet(
         &mut self,
         packet: &ParsedPacket,
-    ) {
+    ) -> bool {
         if let TransportPacket::TCP {
             sequence,
             payload_len,
@@ -220,9 +220,25 @@ impl TcpTracker {
             ..
         } = &packet.transport
         {
+            // Lets say we have a network like:
+            // A <-> B <-> C
+            // If the packet is marked A <-> C, it is intercepted
+            //
+            // This means that a stream will be registered twice for the same packet
+            //
+            // How do we handle this?
+            //
+            // If the packet is intercepted, we only care about outgoing packets where we expect an ACK
+            // Ignore packets where: ACK && intercepted && data is not being sent
+
+            if flags.is_ack() && *payload_len == 0 {
+                return false;
+            }
+
             if flags.is_syn() && !flags.is_ack() {
                 self.initial_sequence_local = Some(*sequence);
             }
+
             // Simple state machine
             if flags.is_fin() || flags.is_rst() {
                 self.initial_sequence_local = None;
@@ -238,6 +254,7 @@ impl TcpTracker {
 
                 // Calculate the length considering SYN and FIN flags.
                 let mut len = *payload_len as u32;
+
                 if flags.is_syn() || flags.is_fin() {
                     // SYN or FIN flag
                     len += 1;
@@ -268,35 +285,42 @@ impl TcpTracker {
                 self.initial_sequence_local = Some(*sequence);
             }
         }
+        true
     }
 
-    pub fn handle_incoming_packet(&mut self, packet: &ParsedPacket) {
+    pub fn handle_incoming_packet(&mut self, packet: &ParsedPacket) -> bool {
         if let TransportPacket::TCP {
             acknowledgment,
             flags,
+            payload_len,
             ..
         } = &packet.transport
         {
-            if !flags.is_ack() {
-                return;
+            // Ignore non ack packets if
+            if !flags.is_ack() || *payload_len != 0 {
+                return false;
             }
 
             if let Some(initial_seq_local) = self.initial_sequence_local {
                 let ack = acknowledgment.wrapping_sub(initial_seq_local);
 
                 let bytes_acked = ack as u64;
-                let relative_bytes_acked = bytes_acked - self.total_bytes_acked;
                 self.total_bytes_acked = bytes_acked;
 
                 let mut keys_to_remove = Vec::new();
 
+                if self.sent_packets.contains_key(&(acknowledgment - 1)) {
+                    dbg!(acknowledgment);
+                }
+
                 for (&seq, sent_packet) in &self.sent_packets {
-                    if seq_less_equal(seq + sent_packet.len - 1, ack - 1) {
+                    //dbg!(seq, acknowledgment, sent_packet);
+                    if seq_less_equal(seq + sent_packet.len - 1, acknowledgment - 1) {
                         if sent_packet.retransmissions == 0 {
                             if let Ok(rtt) = packet.timestamp.duration_since(sent_packet.sent_time) {
                                 self.stats.register_rtt(RTT {
                                     rtt,
-                                    packet_size: sent_packet.total_packet_size,
+                                    packet_size: acknowledgment-seq,
                                     timestamp: packet.timestamp,
                                 },
                                 flags
@@ -312,5 +336,6 @@ impl TcpTracker {
                 }
             }
         }
+        true
     }
 }
