@@ -73,7 +73,8 @@ impl StreamManager {
                         }
                         _ => {}
                     }
-                    if !matches!(tcp_tracker.stats.state, Some(procfs::net::TcpState::Established)) {
+                    if matches!(tcp_tracker.stats.state, Some(procfs::net::TcpState::Close)) {
+                        dbg!(&tcp_tracker.stats.state);
                         ids_to_remove.push(*stream_id)
                     }
                 }
@@ -84,7 +85,7 @@ impl StreamManager {
                         }
                         _ => {}
                     }
-                    if !matches!(udp_tracker.state, Some(procfs::net::UdpState::Established)) {
+                    if matches!(udp_tracker.state, Some(procfs::net::UdpState::Close)) {
                         ids_to_remove.push(*stream_id)
                     }
                 }

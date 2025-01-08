@@ -285,6 +285,7 @@ impl TcpTracker {
                 let ack = acknowledgment.wrapping_sub(initial_seq_local);
 
                 let bytes_acked = ack as u64;
+                let relative_bytes_acked = bytes_acked - self.total_bytes_acked;
                 self.total_bytes_acked = bytes_acked;
 
                 let mut keys_to_remove = Vec::new();
@@ -300,6 +301,9 @@ impl TcpTracker {
                                 },
                                 flags
                                 );
+                                dbg!(rtt);
+                                dbg!(relative_bytes_acked);
+                                dbg!((rtt.as_millis() / relative_bytes_acked as u128) as f64);
                             }
                         }
                         keys_to_remove.push(seq);

@@ -5,6 +5,7 @@
 import sys
 
 from mininet.log import setLogLevel, info
+from mn_wifi.topo import Topo
 from mn_wifi.cli import CLI
 from mn_wifi.net import Mininet_wifi
 from mn_wifi.manetRoutingProtocols import batmand
@@ -12,94 +13,122 @@ from mn_wifi.link import wmediumd, adhoc
 from mn_wifi.wmediumdConnector import interference
 from typing import Dict
 from mn_wifi.node import Station
+from mininet.term import tunnelX11
+import os
+import signal
+import time
 
-class WirelessNode:
-    def __init__(self, name):
-        pass
-
-class WirelessMesh:
-    def __init__(self, net: Mininet_wifi):
-        self.net = net
-        self.stations: Dict[str, Station] = {}
-
-    def set_default(self, **kwargs):
-        self.default = kwargs
-
-    def set_link_default(self, **kwargs):
-        self.link_default = kwargs
-
-    def add_station(self, name, cls=None, **kwargs):
-        return self.net.addStation(name, cls, **kwargs, **self.default)
-
-    def add_link(self, ):
-        pass
+terms = []
 
 
+def opern_terminal(self, node, title, geometry, cmd="bash"):
+    display, tunnel = tunnelX11(node)
 
+    return node.popen(
+        ["xterm",
+         "-hold",
+         "-title", f" {title} ",
+         "-geometry", geometry,
+         "-display", display,
+         "-e", 'env TERM=ansi %s' % cmd
+         ])
 
-def topology():
+class WirelessExample(Mininet_wifi):
+    "Simple wireless topo for example usage"
+
+    def __init__(self,):
+        Mininet_wifi.__init__(self, link=wmediumd, wmediumd_mode=interference)
+        self.is_configured = False
+        self.setPropagationModel(model="logDistance", exp=4)
+        self.sta_args = {
+            "mode": "g",
+            "channel": 5,
+            "ssid": "adhocNet",
+            "client_isolation": True,
+        }
+        self.link_args = {
+            "cls": adhoc,
+            "ssid": "adhocNet",
+            "proto": "batmand",
+            "mode": "g",
+            "channel": 5,
+        }
+
+    def _configure(self):
+        info("*** Creating nodes\n")
+
+        sta1 = self.add_node("sta1", pos="40,40,0", range=50)
+        sta2 = self.add_node("sta2", pos="80,40,0", range=50)
+        sta3 = self.add_node("sta3", pos="120,40,0", range=50)
+        #sta4 = self.add_node("sta4", pos="40,80,0", range=50)
+        self.configureNodes()
+
+        info("*** Adding links\n")
+        self.add_link(sta1)
+        self.add_link(sta2)
+        self.add_link(sta3)
+        #self.add_link(sta4)
+
+    def _plot(self):
+        info("*** Plotting graph!\n")
+        self.plotGraph(max_x=200, max_y=200)
+
+    def run_all(self):
+        self._configure()
+        self._plot()
+        self.build()
+
+    def add_node(self, name, pos, range):
+        return self.addStation(name, position=pos, range=range, **self.sta_args)
+
+    def add_link(self, node):
+        return self.addLink(node, intf=f"{node.name}-wlan0", **self.link_args)
+
+def add_node(self, line):
+    info(line)
+    net: WirelessExample = self.mn
+    sta4 = net.addStation(
+        "sta4",
+        position="90,100,0",
+        ssid="adhocNet",
+        channel=5,
+        mode="g",
+        range=50,
+        client_isolation=True
+    )
+    net.addLink(sta4, cls=adhoc, intf='sta4-wlan0',
+                ssid='adhocNet', proto="batmand",
+                mode='g', channel=5)
+
+def run(self, line):
     "Create a network."
-    net = Mininet_wifi(link=wmediumd, wmediumd_mode=interference)
 
-    mesh = WirelessMesh(net=net)
-    mesh.set_default()
-
-    info("*** Creating nodes\n")
-    sta_args = {
-        "mode": "g",
-        "channel": 5,
-        "ssid": "adhocNet"
-    }
-
-    # if '-v' in sys.argv:
-    #     sta_arg = {'nvif': 2}
-    # else:
-    #     # isolate_clientes: Client isolation can be used to prevent low-level
-    #     # bridging of frames between associated stations in the BSS.
-    #     # By default, this bridging is allowed.
-    #     # OpenFlow rules are required to allow communication among nodes
-    #     ap_arg = {'client_isolation': True}
-
-    sta1 = net.addStation('sta1', position="10,10,0", **sta_args, range=50, client_isolation=True)
-    sta2 = net.addStation("sta2", position="50,10,0", **sta_args, range=50, client_isolation=True)
-    sta3 = net.addStation("sta3", position="90,10,0", **sta_args, range=50, client_isolation=True)
-    # sta4 = net.addStation("sta4", position="90,50,0", **sta_args, range=50)
-    # sta5 = net.addStation("sta5", position="90,90,0", **sta_args, range=50)
-
-    net.setPropagationModel(model="logDistance", exp=4)
-
-    info("*** Configuring nodes\n")
-    net.configureNodes()
-
-    info("*** Associating Stations\n")
-    net.addLink(sta1, cls=adhoc, intf='sta1-wlan0',
-            ssid='adhocNet', proto="batmand",
-            mode='g', channel=5)
-    net.addLink(sta2, cls=adhoc, intf='sta2-wlan0',
-            ssid='adhocNet', proto="batmand",
-            mode='g', channel=5)
-    net.addLink(sta3, cls=adhoc, intf='sta3-wlan0',
-            ssid='adhocNet', proto="batmand",
-            mode='g', channel=5)
-    # net.addLink(sta4, cls=adhoc, intf='sta4-wlan0',
-    #         ssid='adhocNet', proto="batmand",
-    #         mode='g', channel=5, ht_cap='HT40+')
-    # net.addLink(sta5, cls=adhoc, intf='sta5-wlan0',
-    #         ssid='adhocNet', proto="batmand",
-    #         mode='g', channel=5, ht_cap='HT40+')
-
-    net.plotGraph(max_x=200, max_y=200)
-
-    info("*** Starting network\n")
-    net.build()
-
-    info("*** Running CLI\n")
-    CLI(net)
-
-    info("*** Stopping network\n")
-    net.stop()
+    info("*** Starting network!\n")
+    self.mn.run_all()
 
 
-if __name__ == '__main__':
-    setLogLevel('info')
-    topology()
+def do_open(self: CLI, line):
+    mn: WirelessExample = self.mn
+    for i, node in enumerate(mn.stations):
+        y = 0
+        if i%4 == 0 and i >1:
+            y += 300
+        terms.append(opern_terminal(
+            self,
+            node=node,
+            title=node.name,
+            geometry=f"80x20+{(550*i)%(550*3)}+{y}",
+            cmd="bash",
+        ))
+
+setLogLevel('info')
+CLI.do_add_node = add_node
+CLI.do_open = do_open
+
+mn = WirelessExample()
+info("*** Starting network!\n")
+mn.run_all()
+CLI(mn)
+for t in terms:
+    os.kill(t.pid, signal.SIGKILL)
+mn.stop()
