@@ -8,10 +8,11 @@ impl Settings {
     pub const TIMEOUT: i32 = 0;
     pub const TSTAMP_TYPE: pcap::TimestampType = pcap::TimestampType::Adapter;
     pub const PRECISION: pcap::Precision = pcap::Precision::Nano;
-    pub const TCP_STREAM_TIMEOUT: Duration = Duration::from_secs(900);
+    pub const TCP_STREAM_TIMEOUT: Duration = Duration::from_secs(30); //from_secs(900);
     pub const SYN_ACK_TIMEOUT: Duration = Duration::from_secs(10); // 75
     pub const FIN_WAIT_TIMEOUT: Duration = Duration::from_secs(675);
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(10); // 900
+    pub const SNAPLEN: i32 = 150; // Max header size = 120 with tcp ipv4
 }
 pub mod packet;
 pub mod parser;

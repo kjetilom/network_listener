@@ -100,6 +100,7 @@ impl PacketCapturer {
             .timeout(Settings::TIMEOUT) // Timeout in milliseconds
             .tstamp_type(Settings::TSTAMP_TYPE)
             .precision(Settings::PRECISION)
+            .snaplen(256)
             .open()?;
 
         let mac_addr = match get_mac_address() {

@@ -6,6 +6,8 @@ use super::packet::direction::Direction;
 use super::packet::transport_packet::{TransportPacket, TcpFlags};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use procfs::net::{TcpState, UdpState};
+// Use circular buffer to store RTTs
+use std::collections::VecDeque;
 
 #[derive(Debug)]
 pub enum TrackerState {
@@ -119,7 +121,7 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
     seq_cmp(a, b) <= 0
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RTT {
     pub rtt: Duration,
     pub packet_size: u32,
@@ -130,7 +132,7 @@ pub struct RTT {
 pub struct TcpStats {
     pub total_retransmissions: u32,
     pub total_unique_packets: u32,
-    pub rtts: Vec<RTT>,
+    pub rtts: VecDeque<RTT>,
     pub state: Option<TcpState>,
     pub initial_rtt: Option<RTT>,
 }
@@ -140,7 +142,7 @@ impl TcpStats {
         TcpStats {
             total_retransmissions: 0,
             total_unique_packets: 0,
-            rtts: Vec::new(),
+            rtts: VecDeque::with_capacity(1000),
             state: None,
             initial_rtt: None,
         }
@@ -148,12 +150,14 @@ impl TcpStats {
 
     pub fn register_rtt(&mut self, rtt: RTT, flags: &TcpFlags) {
         if flags.is_syn() {
-            self.initial_rtt = Some(rtt);
+            self.initial_rtt = Some(rtt.clone());
+            self.rtts.clear();
+            self.rtts.push_front(rtt);
         } else if flags.is_fin() {
             self.initial_rtt = None;
             self.rtts.clear();
         } else {
-            self.rtts.push(rtt);
+            self.rtts.push_front(rtt);
         }
     }
 
@@ -181,7 +185,8 @@ impl TcpStats {
         avg_rtt /= self.rtts.len() as f64;
 
         // Estimate bandwidth using the formula
-        let bandwidth = max_throughput * min_rtt.as_secs_f64() / avg_rtt;
+        let bandwidth = max_throughput * (avg_rtt / min_rtt.as_secs_f64());
+        dbg!(min_rtt, max_throughput, avg_rtt, bandwidth);
 
         Some(bandwidth)
     }
@@ -309,13 +314,9 @@ impl TcpTracker {
 
                 let mut keys_to_remove = Vec::new();
 
-                if self.sent_packets.contains_key(&(acknowledgment - 1)) {
-                    dbg!(acknowledgment);
-                }
-
                 for (&seq, sent_packet) in &self.sent_packets {
                     //dbg!(seq, acknowledgment, sent_packet);
-                    if seq_less_equal(seq + sent_packet.len - 1, acknowledgment - 1) {
+                    if seq_less_equal(seq + sent_packet.len, *acknowledgment) {
                         if sent_packet.retransmissions == 0 {
                             if let Ok(rtt) = packet.timestamp.duration_since(sent_packet.sent_time) {
                                 self.stats.register_rtt(RTT {
@@ -328,6 +329,11 @@ impl TcpTracker {
                             }
                         }
                         keys_to_remove.push(seq);
+
+                    } else {
+                        // Since sent packets are ordered by sequence number
+                        // After reaching this point, we can break the loop
+                        break;
                     }
                 }
 

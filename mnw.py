@@ -9,8 +9,9 @@ from mn_wifi.topo import Topo
 from mn_wifi.cli import CLI
 from mn_wifi.net import Mininet_wifi
 from mn_wifi.manetRoutingProtocols import batmand
-from mn_wifi.link import wmediumd, adhoc
+from mn_wifi.link import wmediumd, adhoc, mesh, WirelessLink
 from mn_wifi.wmediumdConnector import interference
+from mn_wifi.wmediumdConnector import snr
 from typing import Dict
 from mn_wifi.node import Station
 from mininet.term import tunnelX11
@@ -40,39 +41,39 @@ class WirelessExample(Mininet_wifi):
     def __init__(self,):
         Mininet_wifi.__init__(self, link=wmediumd, wmediumd_mode=interference)
         self.is_configured = False
-        self.setPropagationModel(model="logDistance", exp=4)
+
         self.sta_args = {
             "mode": "g",
-            "channel": 5,
             "ssid": "adhocNet",
             "client_isolation": True,
+            #"freq": 0.9,
         }
         self.link_args = {
             "cls": adhoc,
             "ssid": "adhocNet",
             "proto": "batmand",
             "mode": "g",
-            "channel": 5,
         }
 
     def _configure(self):
         info("*** Creating nodes\n")
 
-        sta1 = self.add_node("sta1", pos="40,40,0", range=50)
-        sta2 = self.add_node("sta2", pos="80,40,0", range=50)
-        sta3 = self.add_node("sta3", pos="120,40,0", range=50)
-        sta4 = self.add_node("sta4", pos="40,80,0", range=50)
+        sta1 = self.add_node("sta1", pos="100,150,0", range=300)
+        sta2 = self.add_node("sta2", pos="399,150,0", range=300)
+        sta3 = self.add_node("sta3", pos="499,350,0", range=300)
+        #sta4 = self.add_node("sta4", pos="40,80,0", range=50)
+        self.setPropagationModel(model="logDistance", exp=4)
         self.configureNodes()
 
         info("*** Adding links\n")
         self.add_link(sta1)
         self.add_link(sta2)
-        self.add_link(sta3)
-        self.add_link(sta4)
+        link = self.add_link(sta3)
+        #self.add_link(sta4)
 
     def _plot(self):
         info("*** Plotting graph!\n")
-        self.plotGraph(max_x=200, max_y=200)
+        self.plotGraph(max_x=1000, max_y=1000)
 
     def run_all(self):
         self._configure()
@@ -82,24 +83,9 @@ class WirelessExample(Mininet_wifi):
     def add_node(self, name, pos, range):
         return self.addStation(name, position=pos, range=range, **self.sta_args)
 
+
     def add_link(self, node):
         return self.addLink(node, intf=f"{node.name}-wlan0", **self.link_args)
-
-def add_node(self, line):
-    info(line)
-    net: WirelessExample = self.mn
-    sta4 = net.addStation(
-        "sta4",
-        position="90,100,0",
-        ssid="adhocNet",
-        channel=5,
-        mode="g",
-        range=50,
-        client_isolation=True
-    )
-    net.addLink(sta4, cls=adhoc, intf='sta4-wlan0',
-                ssid='adhocNet', proto="batmand",
-                mode='g', channel=5)
 
 def run(self, line):
     "Create a network."
@@ -125,7 +111,6 @@ def do_open(self: CLI, line):
         ))
 
 setLogLevel('info')
-CLI.do_add_node = add_node
 CLI.do_open = do_open
 
 mn = WirelessExample()

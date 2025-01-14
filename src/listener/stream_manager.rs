@@ -1,15 +1,14 @@
-use std::net::IpAddr;
 use neli_wifi::Station;
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
-use tokio::time::Instant;
 use std::collections::HashMap;
+use std::net::IpAddr;
+use tokio::time::Instant;
 
 use super::capture::PCAPMeta;
 use super::packet::packet_builder::ParsedPacket;
 use super::procfs_reader::{NetEntry, NetStat};
 use super::stream_id::ConnectionKey;
 use super::tracker::{Tracker, TrackerState};
-
 
 // Replace HashMap with DashMap
 #[derive(Debug)]
@@ -58,16 +57,14 @@ impl StreamManager {
     }
 
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket, pcap_meta: &PCAPMeta) {
-
         let stream_id = ConnectionKey::from_pcap(&packet, pcap_meta);
         if self.streams.contains_key(&stream_id) {
-            self.streams.get_mut(&stream_id).unwrap().register_packet(packet);
-        }
-        else {
-            let mut tracker = Tracker::new(
-                packet.timestamp,
-                packet.transport.get_ip_proto()
-            );
+            self.streams
+                .get_mut(&stream_id)
+                .unwrap()
+                .register_packet(packet);
+        } else {
+            let mut tracker = Tracker::new(packet.timestamp, packet.transport.get_ip_proto());
             let register = tracker.register_packet(packet);
             if register {
                 self.streams.insert(stream_id, tracker);
@@ -85,7 +82,11 @@ impl StreamManager {
     pub fn periodic(&mut self, proc_map: Option<NetStat>) {
         proc_map.map(|proc_map| self.update_states(proc_map));
 
-        let seen_remote_ips: Vec<IpAddr> = self.streams.iter().map(|(k, _)| k.get_remote_ip()).collect();
+        let seen_remote_ips: Vec<IpAddr> = self
+            .streams
+            .iter()
+            .map(|(k, _)| k.get_remote_ip())
+            .collect();
 
         println!("Seen remote IPs: {:?}", seen_remote_ips);
 
@@ -93,7 +94,11 @@ impl StreamManager {
             match tracker.state {
                 TrackerState::Tcp(ref tcp_tracker) => {
                     if let Some(bw) = tcp_tracker.stats.estimate_bandwidth() {
-                        println!("Estimated bandwidth for {} : {:?} Mb/s", stream_id, bw*8.0/1_000_000.0);
+                        println!(
+                            "Estimated bandwidth for {} : {:?} Mb/s",
+                            stream_id,
+                            bw * 8.0 / 1_000_000.0
+                        );
                     } else {
                         println!("No bandwidth estimate for {}", stream_id);
                     }
@@ -105,15 +110,17 @@ impl StreamManager {
         }
     }
 
-    fn update_states(&mut self, nstat: NetStat){
-
+    fn update_states(&mut self, nstat: NetStat) {
         let mut ids_to_remove: Vec<ConnectionKey> = Vec::new();
 
         for (stream_id, tracker) in self.streams.iter_mut() {
-            if tracker.last_registered.elapsed().unwrap().as_secs() > 60 {
+            if tracker.last_registered.elapsed().unwrap().as_secs()
+                >= super::Settings::TCP_STREAM_TIMEOUT.as_secs()
+            {
                 ids_to_remove.push(*stream_id);
                 continue;
             }
+
             match tracker.state {
                 TrackerState::Tcp(ref mut tcp_tracker) => {
                     match nstat.tcp.get(stream_id) {
@@ -142,7 +149,6 @@ impl StreamManager {
             }
         }
         self.streams.retain(|k, _| !ids_to_remove.contains(k));
-
     }
 
     pub fn netstat_diff(&self, nstat: NetStat) -> Vec<ConnectionKey> {
@@ -172,27 +178,41 @@ impl StreamManager {
     }
 
     pub fn get_streams(&self, protocol: IpNextHeaderProtocol) -> Vec<&Tracker<TrackerState>> {
-        self.streams.values().filter(|t| t.protocol == protocol).collect()
+        self.streams
+            .values()
+            .filter(|t| t.protocol == protocol)
+            .collect()
     }
 
     /// Take all streams of a given protocol from the manager
-    pub fn take_streams_by_protocol(&mut self, protocol: IpNextHeaderProtocol) -> Vec<Tracker<TrackerState>> {
+    pub fn take_streams_by_protocol(
+        &mut self,
+        protocol: IpNextHeaderProtocol,
+    ) -> Vec<Tracker<TrackerState>> {
         let mut taken = Vec::new();
 
         // Use `drain` to take ownership of the entries in the HashMap
-        self.streams = self.streams.drain().filter_map(|(key, value)| {
-            if value.protocol == protocol {
-                taken.push(value);
-                None
-            } else {
-                Some((key, value))
-            }
-        }).collect();
+        self.streams = self
+            .streams
+            .drain()
+            .filter_map(|(key, value)| {
+                if value.protocol == protocol {
+                    taken.push(value);
+                    None
+                } else {
+                    Some((key, value))
+                }
+            })
+            .collect();
 
         taken
     }
 
     pub fn get_key_by_protocol(&self, protocol: IpNextHeaderProtocol) -> Vec<ConnectionKey> {
-        self.streams.keys().filter(|k| k.get_protocol() == protocol).cloned().collect()
+        self.streams
+            .keys()
+            .filter(|k| k.get_protocol() == protocol)
+            .cloned()
+            .collect()
     }
 }
