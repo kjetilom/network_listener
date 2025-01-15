@@ -24,7 +24,7 @@ pub struct NetlinkData {
 }
 
 pub struct PeriodicData {
-    pub netlink_data: NetlinkData,
+    pub netlink_data: Option<NetlinkData>,
     pub netstat_data: NetStat,
 }
 
@@ -57,14 +57,17 @@ impl Parser {
         let interface = match get_interface(&self.pcap_meta.name).await {
             Ok(interface) => {
                 info!("Interface: {:?}", interface);
-                interface
+                Some(interface)
             }
             Err(e) => {
                 error!("Error getting interface: {:?}", e);
-                return;
+                None
             }
         };
-        let idx = interface.index.unwrap();
+        let idx = match interface {
+            Some(interface) => Some(interface.index.unwrap()),
+            None => None,
+        };
 
         let (ptx, mut prx): (Sender<PeriodicData>, Receiver<PeriodicData>) =
             mpsc::channel(CHANNEL_CAPACITY);
@@ -102,10 +105,13 @@ impl Parser {
         }
     }
 
-    async fn periodic(tx: Sender<PeriodicData>, idx: i32) {
+    async fn periodic(tx: Sender<PeriodicData>, idx: Option<i32>) {
         loop {
             let netstat = procfs_reader::proc_net().await;
-            let interface = get_interface_info(idx).await.unwrap();
+            let interface = match idx {
+                Some(idx) => Some(get_interface_info(idx).await.unwrap()),
+                None => None,
+            };
 
             let data = PeriodicData {
                 netlink_data: interface,
@@ -121,7 +127,10 @@ impl Parser {
     }
 
     fn handle_periodic(&mut self, data: PeriodicData) {
-        self.netlink_data.push(data.netlink_data);
+        match data.netlink_data {
+            Some(data) => self.netlink_data.push(data),
+            _ => (),
+        }
         if self.netlink_data.len() > 10 {
             self.netlink_data.remove(0);
         }
