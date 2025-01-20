@@ -26,6 +26,8 @@ neli-wifi = { version = "0.6.0", features = ["async"] }
 mac_address = "1.1.7"
 # neli = { version = "0.6.4", features = ["async"] }
 radiotap = "1.3.0"
+prost = "0.13.4"
+prost-types = "0.13.4"
 
 # Grafana
 prometheus = { version = "0.13.4" }
@@ -33,3 +35,6 @@ hyper = { version = "0.14.31", features = ["full"] }
 lazy_static = "1.4"
 rand = "0.8"
 anyhow = "1.0.95"
+
+[build-dependencies]
+prost-build = "0.13.4"

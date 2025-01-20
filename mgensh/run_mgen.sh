@@ -1,25 +1,51 @@
-# Get a list of IP addresses for the current machine
-addrs=$(ifconfig | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1')
+#!/usr/bin/env bash
+OUTPUT="mgen.log"
+MGEN_SCRIPTS="mgen_scripts"
+IPADDRS=()
+# chdir to relative script location
+cd $(dirname "$0")
+echo $0
 
-# The list is currently a string, turn it into a list of ip addrs:
-addrs=($addrs)
-echo "IP addresses: ${addrs[@]}"
 
 
-# Define function
-run_mgen() {
-    echo "Running mgen on $1"
-    # if mgen_scripts/mgen_script_$2.txt exists, run it
-    if [ -f mgen_scripts/$2.mgn ]; then
-        echo "Running mgen script mgen_scripts/$2.mgn"
-    else
-        echo "No mgen script mgen_scripts/$2.mgn"
-        return
-    fi
-    mgen input mgen_scripts/$2.mgn
-}
+
+while (( "$#" )); do
+    case "$1" in
+        -o)
+            OUTPUT="$2"
+            shift 2
+            ;;
+        -*)
+            echo "ERROR: Unknown option: $1"
+            exit 1
+            ;;
+        *)
+            IPADDRS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+pids=()
 
 # Define a functions to be run based on the IP address
-for addr in ${addrs[@]}; do
-    run_mgen $addr $addr
+for addr in ${IPADDRS[@]}; do
+    script="$MGEN_SCRIPTS/$addr.mgn"
+    if ! test -f $script; then
+        echo "No mgen script $script exists"
+        exit 1
+    fi
+    mgen input $script output $OUTPUT & >> $OUTPUT
+    pids+=($!)
 done
+
+do_exit () {
+    echo ${pids[@]}
+    for pid in ${pids[@]}; do
+        kill -2 $pid
+    done
+    exit 0
+}
+trap do_exit INT
+
+sleep infinity

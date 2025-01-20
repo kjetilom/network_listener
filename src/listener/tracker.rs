@@ -186,7 +186,7 @@ impl TcpStats {
 
         // Estimate bandwidth using the formula
         let bandwidth = max_throughput * (avg_rtt / min_rtt.as_secs_f64());
-        dbg!(min_rtt, max_throughput, avg_rtt, bandwidth);
+        println!("{:?} {:?} {:?} {:?}", min_rtt, max_throughput, avg_rtt, bandwidth);
 
         Some(bandwidth)
     }

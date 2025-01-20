@@ -11,7 +11,6 @@ static DO_WIRELESS: bool = false;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-
     logger::setup_logging()?;
     // let _ = tokio::spawn(network_listener::grafana::client::start_client());
 
