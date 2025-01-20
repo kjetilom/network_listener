@@ -3,8 +3,6 @@
 # The name of the binary
 BINARY_NAME := network_listener
 
-MININET_WIFI := archive/mnw.py
-
 # The directory containing the source code
 SRC_DIR := src
 
@@ -18,6 +16,9 @@ all: build
 build:
 	cargo build --release
 
+build_debug:
+	cargo build
+
 # Run the project
 run: build
 	sudo ./target/release/$(BINARY_NAME)
@@ -25,11 +26,11 @@ run: build
 runbin:
 	sudo ./target/release/$(BINARY_NAME)
 
-mnw:
-	sudo -E python $(MININET_WIFI)
+run_debug: build_debug
+	sudo ./target/debug/$(BINARY_NAME)
 
-start_core:
-	./start_core
+run_debugbin:
+	sudo ./target/debug/$(BINARY_NAME)
 
 # Clean the project
 clean:
