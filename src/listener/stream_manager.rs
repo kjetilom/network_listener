@@ -57,7 +57,7 @@ impl StreamManager {
     }
 
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket, pcap_meta: &PCAPMeta) {
-        let stream_id = ConnectionKey::from_pcap(&packet, pcap_meta);
+        let stream_id = ConnectionKey::from_pcap(&packet);
         if self.streams.contains_key(&stream_id) {
             self.streams
                 .get_mut(&stream_id)

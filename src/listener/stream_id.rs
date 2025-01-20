@@ -61,7 +61,7 @@ impl ConnectionKey {
     /// # Returns
     ///
     /// A ConnectionKey representing the connection
-    pub fn from_pcap(packet: &ParsedPacket, pcap_meta: &PCAPMeta) -> Self {
+    pub fn from_pcap(packet: &ParsedPacket) -> Self {
         // If this machine is a middlebox, the local IP is the one that is not the middlebox IP
         // This could cause issues when calculating the RTTs
 

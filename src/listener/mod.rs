@@ -12,7 +12,13 @@ impl Settings {
     pub const SYN_ACK_TIMEOUT: Duration = Duration::from_secs(10); // 75
     pub const FIN_WAIT_TIMEOUT: Duration = Duration::from_secs(675);
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(10); // 900
-    pub const SNAPLEN: i32 = 150; // Max header size = 120 with tcp ipv4
+    pub const TCPHDR: i32 = 60;
+    pub const IPHDR: i32 = 60;
+    pub const ETHDR: i32 = 14;
+    // TCP header without options: 20 bytes
+    pub const TCPHDR_NOOPT: i32 = 20;
+    pub const SNAPLEN_NOOPT: i32 = Self::TCPHDR_NOOPT+Self::ETHDR+Self::IPHDR; // Max header size=94 bytes.
+    pub const SNAPLEN: i32 = Self::TCPHDR+Self::ETHDR+Self::IPHDR; // Max header size=134 bytes.
 }
 pub mod packet;
 pub mod parser;
