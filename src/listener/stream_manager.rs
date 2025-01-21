@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use tokio::time::Instant;
 
-use super::capture::PCAPMeta;
 use super::packet::packet_builder::ParsedPacket;
 use super::procfs_reader::{NetEntry, NetStat};
 use super::stream_id::ConnectionKey;
@@ -17,38 +16,6 @@ pub struct StreamManager {
     streams: HashMap<ConnectionKey, Tracker<TrackerState>>,
 }
 
-/// Device
-///
-/// Used to store information about a seen network device
-pub struct Device {
-    pub addr: IpAddr,
-    pub streams: HashMap<ConnectionKey, Tracker<TrackerState>>,
-    pub last_seen: Instant,
-    pub last_station: Option<Station>,
-}
-
-impl Device {
-    pub fn new(addr: IpAddr, last_seen: Instant) -> Self {
-        Device {
-            addr,
-            streams: HashMap::new(),
-            last_seen,
-            last_station: None,
-        }
-    }
-
-    // pub fn record_packet(&mut self, packet: &ParsedPacket) {
-    //     let stream_id = ConnectionKey::from_pcap(&packet);
-
-    //     self.streams.entry(stream_id)
-    //         .or_insert_with(|| Tracker::new(
-    //             packet.timestamp,
-    //             packet.transport.get_ip_proto()
-    //         ))
-    //         .register_packet(packet);
-    // }
-}
-
 impl StreamManager {
     pub fn default() -> Self {
         StreamManager {
@@ -56,7 +23,7 @@ impl StreamManager {
         }
     }
 
-    pub fn record_ip_packet(&mut self, packet: &ParsedPacket, pcap_meta: &PCAPMeta) {
+    pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
         let stream_id = ConnectionKey::from_pcap(&packet);
         if self.streams.contains_key(&stream_id) {
             self.streams

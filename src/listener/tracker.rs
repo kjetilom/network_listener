@@ -89,6 +89,13 @@ struct SentPacket {
     total_packet_size: u32,
 }
 
+// Represents a packet after registration.
+// Smaller than a parsed packet, but contains information for bw estimation.
+// Is linked to a
+struct RegPacket {
+    direction: Direction,
+}
+
 /// Tracks TCP streams and their state.
 #[derive(Debug)]
 pub struct TcpTracker {
@@ -102,14 +109,50 @@ pub struct TcpTracker {
 #[derive(Debug)]
 pub struct UdpTracker {
     pub state: Option<UdpState>,
+    outgoing_packets: Vec<SentPacket>,
+    incoming_packets: Vec<SentPacket>,
 }
 
 impl UdpTracker {
     pub fn new() -> Self {
-        UdpTracker { state: Some(UdpState::Established) }
+        UdpTracker {
+            state: Some(UdpState::Established),
+            outgoing_packets: Vec::new(),
+            incoming_packets: Vec::new(),
+        }
     }
 
-    pub fn register_packet(&mut self, _packet: &ParsedPacket) -> bool {true}
+    fn register_packet(&mut self, packet: &ParsedPacket) -> bool {
+        if let TransportPacket::UDP { .. } = &packet.transport {
+            match packet.direction {
+                Direction::Incoming => {
+                    self.incoming_packets.push(SentPacket {
+                        len: packet.total_length as u32,
+                        sent_time: packet.timestamp,
+                        retransmissions: 0,
+                        total_packet_size: packet.total_length,
+                    });
+                }
+                Direction::Outgoing => {
+                    self.outgoing_packets.push(SentPacket {
+                        len: packet.total_length as u32,
+                        sent_time: packet.timestamp,
+                        retransmissions: 0,
+                        total_packet_size: packet.total_length,
+                    });
+                }
+            }
+            // while any packet is older than n seconds, remove it
+            while let Some(packet) = self.incoming_packets.last() {
+                if packet.sent_time.elapsed().unwrap().as_secs() > 10 { // Change this to a constant
+                    self.incoming_packets.pop();
+                } else {
+                    break;
+                }
+            }
+        }
+        true
+    }
 }
 
 /// Wrap-around aware comparison
@@ -236,6 +279,7 @@ impl TcpTracker {
             // If the packet is intercepted, we only care about outgoing packets where we expect an ACK
             // Ignore packets where: ACK && intercepted && data is not being sent
 
+            // Ignore ACK packets with no payload (We are sending an ACK.)
             if flags.is_ack() && *payload_len == 0 {
                 return false;
             }

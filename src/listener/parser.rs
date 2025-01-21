@@ -147,7 +147,7 @@ impl Parser {
             None => return,
         };
 
-        self.stream_manager.record_ip_packet(&parsed_packet, &self.pcap_meta);
+        self.stream_manager.record_ip_packet(&parsed_packet);
     }
 
     /* Parses an `OwnedPacket` into a `ParsedPacket`.

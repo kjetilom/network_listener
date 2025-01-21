@@ -1,97 +1,126 @@
 use std::fmt::{self, Display};
 use std::net::IpAddr;
+use std::cmp::Ordering;
 use std::hash::Hash;
 
 use procfs::net::{TcpNetEntry, UdpNetEntry};
 use pnet::packet::ip::IpNextHeaderProtocol;
-use prometheus::local;
 
-use super::capture::PCAPMeta;
-use super::packet::direction::Direction;
 use super::packet::packet_builder::ParsedPacket;
 use super::packet::transport_packet::TransportPacket;
 
-/// Represents a key for identifying connections, which can be either:
-/// - `StreamId`: Includes local and remote IPs and ports.
-/// - `IpPair`: Includes only local and remote IPs.
+/// Represents a key for identifying connections
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
 pub enum ConnectionKey {
-    StreamId{
+    StreamId {
         protocol: IpNextHeaderProtocol,
         local_ip: IpAddr,
         local_port: u16,
         remote_ip: IpAddr,
-        remote_port: u16
+        remote_port: u16,
     },
-    IpPair{
+    IpPair {
         protocol: IpNextHeaderProtocol,
         local_ip: IpAddr,
-        remote_ip: IpAddr
+        remote_ip: IpAddr,
+    },
+}
+
+/// Sort (ip1, port1) and (ip2, port2) so the smaller is considered "local".
+/// If ports are None, we fall back to an IpPair.
+fn symmetrical_key(
+    protocol: IpNextHeaderProtocol,
+    ip1: IpAddr,
+    port1: Option<u16>,
+    ip2: IpAddr,
+    port2: Option<u16>,
+) -> ConnectionKey {
+    // Compare two (IpAddr, Option<u16>) tuples.
+    // For convenience, define a small comparator inline:
+    let cmp = match ip1.cmp(&ip2) {
+        Ordering::Less => Ordering::Less,
+        Ordering::Greater => Ordering::Greater,
+        Ordering::Equal => port1.cmp(&port2),
+    };
+
+    match (port1, port2) {
+        (Some(lport), Some(rport)) => {
+            // Both sides have ports => StreamId
+            match cmp {
+                Ordering::Less | Ordering::Equal => ConnectionKey::StreamId {
+                    protocol,
+                    local_ip: ip1,
+                    local_port: lport,
+                    remote_ip: ip2,
+                    remote_port: rport,
+                },
+                Ordering::Greater => ConnectionKey::StreamId {
+                    protocol,
+                    local_ip: ip2,
+                    local_port: rport,
+                    remote_ip: ip1,
+                    remote_port: lport,
+                },
+            }
+        }
+        _ => {
+            // At least one side has no port => IpPair
+            if cmp == Ordering::Greater {
+                ConnectionKey::IpPair {
+                    protocol,
+                    local_ip: ip2,
+                    remote_ip: ip1,
+                }
+            } else {
+                ConnectionKey::IpPair {
+                    protocol,
+                    local_ip: ip1,
+                    remote_ip: ip2,
+                }
+            }
+        }
     }
 }
 
-// Trying out a macro to reduce code duplication
 macro_rules! from_net_entry {
-    ($type:ty, $name:ident) => {
-        pub fn $name(entry: &$type, protocol: IpNextHeaderProtocol) -> Self {
-            ConnectionKey::StreamId {
-                protocol: protocol,
-                local_ip: entry.local_address.ip(),
-                local_port: entry.local_address.port(),
-                remote_ip: entry.remote_address.ip(),
-                remote_port: entry.remote_address.port(),
-            }
+    ($func_name:ident, $net_type:ty) => {
+        pub fn $func_name(entry: &$net_type, protocol: IpNextHeaderProtocol) -> Self {
+            symmetrical_key(
+                protocol,
+                entry.local_address.ip(),
+                Some(entry.local_address.port()),
+                entry.remote_address.ip(),
+                Some(entry.remote_address.port()),
+            )
         }
     };
 }
 
 impl ConnectionKey {
-    from_net_entry!(TcpNetEntry, from_tcp_net_entry);
-    from_net_entry!(UdpNetEntry, from_udp_net_entry);
-}
+    from_net_entry!(from_tcp_net_entry, TcpNetEntry);
+    from_net_entry!(from_udp_net_entry, UdpNetEntry);
 
-impl ConnectionKey {
-    /// Create a ConnectionKey from a ParsedPacket
-    ///
-    /// # Arguments
-    ///
-    /// * `packet` - The ParsedPacket to create the ConnectionKey from
-    /// * `own_ip` - The IP address of the local machine
-    ///
-    /// # Returns
-    ///
-    /// A ConnectionKey representing the connection
+    /// Create a symmetrical ConnectionKey from a ParsedPacket
     pub fn from_pcap(packet: &ParsedPacket) -> Self {
-        // If this machine is a middlebox, the local IP is the one that is not the middlebox IP
-        // This could cause issues when calculating the RTTs
-
-        let (local_ip, remote_ip) = match packet.direction {
-            Direction::Incoming => (packet.dst_ip, packet.src_ip),
-            Direction::Outgoing => (packet.src_ip, packet.dst_ip),
-        };
-
         match &packet.transport {
             TransportPacket::TCP { src_port, dst_port, .. }
             | TransportPacket::UDP { src_port, dst_port, .. } => {
-                let (local_port, remote_port) = match packet.direction {
-                    Direction::Incoming => (*dst_port, *src_port),
-                    Direction::Outgoing => (*src_port, *dst_port),
-                };
-                ConnectionKey::StreamId {
-                    protocol: packet.transport.get_ip_proto(),
-                    local_ip,
-                    local_port,
-                    remote_ip,
-                    remote_port,
-                }
+                symmetrical_key(
+                    packet.transport.get_ip_proto(),
+                    packet.src_ip,
+                    Some(*src_port),
+                    packet.dst_ip,
+                    Some(*dst_port),
+                )
             }
             _ => {
-                // For other protocols or when transport info is not available
-                ConnectionKey::IpPair {
-                    protocol: packet.transport.get_ip_proto(),
-                    local_ip,
-                    remote_ip
-                }
+                symmetrical_key(
+                    packet.transport.get_ip_proto(),
+                    packet.src_ip,
+                    None,
+                    packet.dst_ip,
+                    None,
+                )
             }
         }
     }
@@ -120,13 +149,18 @@ impl Display for ConnectionKey {
                 local_port,
                 remote_ip,
                 remote_port,
-            } => write!(
-                f,
-                "{} : {}:{} -> {}:{}", protocol, local_ip, local_port, remote_ip, remote_port
-            ),
-            ConnectionKey::IpPair {protocol, local_ip, remote_ip } => {
-                write!(f, "{} : {} -> {}", protocol, local_ip, remote_ip)
+            } => {
+                write!(
+                    f,
+                    "{} : {}:{} -> {}:{}",
+                    protocol, local_ip, local_port, remote_ip, remote_port
+                )
             }
+            ConnectionKey::IpPair {
+                protocol,
+                local_ip,
+                remote_ip,
+            } => write!(f, "{} : {} -> {}", protocol, local_ip, remote_ip),
         }
     }
 }
