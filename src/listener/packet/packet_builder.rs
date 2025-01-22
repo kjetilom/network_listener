@@ -53,17 +53,16 @@ impl<'a> ParsedPacket {
         let timestamp = timeval_to_system_time(packet.header.ts);
 
         // Extract IP info & payload references
-        let (src_ip, dst_ip, payload, protocol) = Self::get_ip_info(&eth)?;
+        let (src_ip, dst_ip, payload, protocol, hdrlen) = Self::get_ip_info(&eth)?;
 
         // Build the transport struct from the raw payload reference
-        let transport = TransportPacket::from_data(payload, protocol);
+        let transport = TransportPacket::from_data(payload, protocol, total_length as u16 - (hdrlen+14));
 
         let direction = direction::Direction::from_mac(eth.get_destination(), pcap_meta.mac_addr);
+
         // The packet is intercepted if A <-> B <-> C and the packet is marked A <-> C
         let intercepted = !pcap_meta.matches_ip(src_ip) && !pcap_meta.matches_ip(dst_ip);
-        // if direction.is_outgoing() && !pcap_meta.matches_ip(src_ip) {
-        //     return None;
-        // }
+
 
         Some(ParsedPacket {
             src_ip,
@@ -81,7 +80,7 @@ impl<'a> ParsedPacket {
     /// Returns (src_ip, dst_ip, payload, protocol)
     fn get_ip_info(
         eth: &'a EthernetPacket
-    ) -> Option<(IpAddr, IpAddr, &'a [u8], IpNextHeaderProtocol)> {
+    ) -> Option<(IpAddr, IpAddr, &'a [u8], IpNextHeaderProtocol, u16)> {
         match eth.get_ethertype() {
             EtherTypes::Ipv4 => Self::parse_ipv4_packet(eth.payload()),
             EtherTypes::Ipv6 => Self::parse_ipv6_packet(eth.payload()),
@@ -91,25 +90,27 @@ impl<'a> ParsedPacket {
 
     fn parse_ipv4_packet(
         payload: &'a [u8],
-    ) -> Option<(IpAddr, IpAddr, &'a [u8], IpNextHeaderProtocol)> {
+    ) -> Option<(IpAddr, IpAddr, &'a [u8], IpNextHeaderProtocol, u16)> {
         let ipv4 = Ipv4Packet::new(payload)?;
         Some((
             IpAddr::V4(ipv4.get_source()),
             IpAddr::V4(ipv4.get_destination()),
             &payload[ipv4.get_header_length() as usize * 4..], // reference to the rest of the IPv4 payload
             ipv4.get_next_level_protocol(),
+            ipv4.get_header_length() as u16 * 4,
         ))
     }
 
     fn parse_ipv6_packet(
         payload: &'a [u8],
-    ) -> Option<(IpAddr, IpAddr, &'a [u8], IpNextHeaderProtocol)> {
+    ) -> Option<(IpAddr, IpAddr, &'a [u8], IpNextHeaderProtocol, u16)> {
         let ipv6 = Ipv6Packet::new(payload)?;
         Some((
             IpAddr::V6(ipv6.get_source()),
             IpAddr::V6(ipv6.get_destination()),
             &payload[40..], // reference to the rest of the IPv6 payload
             ipv6.get_next_header(),
+            40,
         ))
     }
 }

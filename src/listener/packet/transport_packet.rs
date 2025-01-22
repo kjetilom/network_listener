@@ -36,7 +36,7 @@ impl TransportPacket {
         }
     }
 
-    pub fn from_data(payload: &[u8], protocol: IpNextHeaderProtocol) -> Self {
+    pub fn from_data(payload: &[u8], protocol: IpNextHeaderProtocol, payload_len: u16) -> Self {
         match protocol {
             IpNextHeaderProtocols::Tcp => {
                 let tcp = match TcpPacket::new(payload) {
@@ -47,11 +47,15 @@ impl TransportPacket {
                     }
                 };
 
+                let hdr_size = tcp.get_data_offset() as u16 * 4;
+                let payload_len = payload_len - hdr_size as u16;
+                // total size - header size
+
                 TransportPacket::TCP {
                     sequence: tcp.get_sequence(),
                     acknowledgment: tcp.get_acknowledgement(),
                     flags: TcpFlags::new(tcp.get_flags()),
-                    payload_len: tcp.payload().len() as u16,
+                    payload_len: payload_len,
                     options: TcpOptions::from_bytes(tcp.get_options_iter()),
                     src_port: tcp.get_source(),
                     dst_port: tcp.get_destination(),

@@ -1,8 +1,6 @@
-use neli_wifi::Station;
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 use std::net::IpAddr;
-use tokio::time::Instant;
 
 use super::packet::packet_builder::ParsedPacket;
 use super::procfs_reader::{NetEntry, NetStat};
@@ -25,31 +23,18 @@ impl StreamManager {
 
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
         let stream_id = ConnectionKey::from_pcap(&packet);
-        if self.streams.contains_key(&stream_id) {
-            self.streams
-                .get_mut(&stream_id)
-                .unwrap()
-                .register_packet(packet);
-        } else {
-            let mut tracker = Tracker::new(packet.timestamp, packet.transport.get_ip_proto());
-            let register = tracker.register_packet(packet);
-            if register {
-                self.streams.insert(stream_id, tracker);
-            }
-        }
-
-        // self.streams.entry(stream_id)
-        //     .or_insert_with(|| Tracker::new(
-        //         packet.timestamp,
-        //         packet.transport.get_ip_proto()
-        //     ))
-        //     .register_packet(packet);
+        self.streams.entry(stream_id)
+            .or_insert_with(|| Tracker::new(
+                packet.timestamp,
+                packet.transport.get_ip_proto()
+            ))
+            .register_packet(packet);
     }
 
     pub fn periodic(&mut self, proc_map: Option<NetStat>) {
         proc_map.map(|proc_map| self.update_states(proc_map));
 
-        let seen_remote_ips: Vec<IpAddr> = self
+        let seen_remote_ips: std::collections::HashSet<IpAddr> = self
             .streams
             .iter()
             .map(|(k, _)| k.get_remote_ip())
