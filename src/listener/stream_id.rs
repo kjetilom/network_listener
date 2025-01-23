@@ -164,3 +164,44 @@ impl Display for ConnectionKey {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+    use pnet::packet::ip::IpNextHeaderProtocols;
+
+    #[test]
+    fn test_symmetrical_key() {
+        let ip1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
+        let ip2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+
+        let key1 = symmetrical_key(IpNextHeaderProtocols::Tcp, ip1, Some(80), ip2, Some(8080));
+        let key2 = symmetrical_key(IpNextHeaderProtocols::Tcp, ip2, Some(8080), ip1, Some(80));
+
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_symmetrical_key_no_ports() {
+        let ip1 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
+        let ip2 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+
+        let key1 = symmetrical_key(IpNextHeaderProtocols::Tcp, ip1, None, ip2, None);
+        let key2 = symmetrical_key(IpNextHeaderProtocols::Tcp, ip2, None, ip1, None);
+
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_symmetrical_key_ipv6() {
+        let ip1 = IpAddr::V6("2001:db8::1".parse().unwrap());
+        let ip2 = IpAddr::V6("2001:db8::2".parse().unwrap());
+
+        let key1 = symmetrical_key(IpNextHeaderProtocols::Tcp, ip1, Some(80), ip2, Some(8080));
+        let key2 = symmetrical_key(IpNextHeaderProtocols::Tcp, ip2, Some(8080), ip1, Some(80));
+
+        assert_eq!(key1, key2);
+    }
+}

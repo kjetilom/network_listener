@@ -14,6 +14,7 @@ impl Settings {
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(10); // 900
     pub const TCPHDR: i32 = 60;
     pub const IPHDR: i32 = 60;
+    pub const IPV6HDR: i32 = 40;
     pub const ETHDR: i32 = 14;
     // TCP header without options: 20 bytes
     pub const TCPHDR_NOOPT: i32 = 20;
