@@ -10,7 +10,7 @@ use super::{
 };
 
 /// Single struct to represent a sent or received packet with optional RTT.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct SentPacket {
     pub len: u32,
     pub sent_time: SystemTime,
@@ -18,7 +18,7 @@ pub struct SentPacket {
     pub rtt: Option<RTT>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RTT {
     pub rtt: Duration,
     pub packet_size: u32,

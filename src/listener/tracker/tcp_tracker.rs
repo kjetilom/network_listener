@@ -44,15 +44,15 @@ impl TcpStats {
     }
 
     pub fn register_data_received(&mut self, p: SentPacket) {
-        self.recv.push_front(p);
+        self.recv.push_back(p);
     }
 
     pub fn register_data_sent(&mut self, p: SentPacket) {
-        self.sent.push_front(p);
+        self.sent.push_back(p);
     }
 
     pub fn estimate_bandwidth(&self) -> Option<f64> {
-        // Not implemented in this snippet
+        dbg!(&self.sent);
         Some(0.0)
     }
 }
@@ -79,11 +79,6 @@ impl TcpTracker {
     }
 
     pub fn register_packet(&mut self, packet: &ParsedPacket) {
-        self.handle_packet(packet);
-    }
-
-    /// Handles both incoming and outgoing logic here.
-    fn handle_packet(&mut self, packet: &ParsedPacket) {
         if let TransportPacket::TCP {
             sequence,
             acknowledgment,

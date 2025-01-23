@@ -1,5 +1,5 @@
 use std::net::IpAddr;
-use libc::{ETH_HLEN, IPV6_HDRINCL, IPV6_RECVRTHDR, IPV6_RTHDR, TPACKET_HDRLEN};
+use libc::ETH_HLEN;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::Packet;
