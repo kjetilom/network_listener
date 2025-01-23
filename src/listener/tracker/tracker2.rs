@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
-use super::packet::packet_builder::ParsedPacket;
-use super::packet::direction::Direction;
-use super::packet::transport_packet::TransportPacket;
+use super::super::packet::packet_builder::ParsedPacket;
+use super::super::packet::direction::Direction;
+use super::super::packet::transport_packet::TransportPacket;
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use procfs::net::{TcpState, UdpState};
 // Use circular buffer to store RTTs
@@ -194,17 +194,6 @@ impl TcpStats {
     }
 
     pub fn estimate_bandwidth(&self) -> Option<f64> {
-
-        // for p in self.sent.iter() {
-        //     if let Some(rtt) = &p.rtt {
-        //         dbg!(p);
-        //     }
-        // }
-
-        // if self.rtts.is_empty() {
-        //     return None;
-        // }
-
         Some(0.0)
     }
 }

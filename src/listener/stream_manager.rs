@@ -5,7 +5,7 @@ use std::net::IpAddr;
 use super::packet::packet_builder::ParsedPacket;
 use super::procfs_reader::{NetEntry, NetStat};
 use super::stream_id::ConnectionKey;
-use super::tracker::{Tracker, TrackerState};
+use super::tracker::tracker::{Tracker, TrackerState};
 
 // Replace HashMap with DashMap
 #[derive(Debug)]
@@ -24,7 +24,7 @@ impl StreamManager {
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
         let stream_id = ConnectionKey::from_pcap(&packet);
         self.streams.entry(stream_id)
-            .or_insert_with(|| Tracker::new(
+            .or_insert_with(|| Tracker::<TrackerState>::new(
                 packet.timestamp,
                 packet.transport.get_ip_proto()
             ))
