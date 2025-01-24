@@ -54,10 +54,10 @@ impl StreamManager {
                 TrackerState::Tcp(ref mut tcp_tracker) => {
                     // let ret = tcp_tracker.stats.estimate_bandwidth();
                     // dbg!(ret);
-                    let ret2 = tcp_tracker.stats.estimate_available_bandwidth();
-                    if let Some(ret2) = ret2 {
-                        println!("{}: Available bandwidth: {}", stream_id, ret2);
-                    }
+                    // let ret2 = tcp_tracker.stats.estimate_available_bandwidth();
+                    // if let Some(ret2) = ret2 {
+                    //     println!("{}: Available bandwidth: {}", stream_id, ret2);
+                    // }
                 }
                 _ => {
                     //println!("{}: Not a TCP stream", stream_id);
@@ -86,7 +86,6 @@ impl StreamManager {
                         _ => {}
                     }
                     if matches!(tcp_tracker.stats.state, Some(procfs::net::TcpState::Close)) {
-                        dbg!(&tcp_tracker.stats.state);
                         ids_to_remove.push(*stream_id)
                     }
                 }

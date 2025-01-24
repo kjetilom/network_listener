@@ -31,6 +31,13 @@ pub struct TcpStats {
     pub received_seqs: HashSet<u32>,
     pub state: Option<TcpState>,
     pub initial_rtt: Option<Duration>,
+    pub alpha: f64,
+    pub smoothed_rtt: Option<f64>,
+    pub prev_smoothed_rtt: Option<f64>,
+    pub threshold_factor: f64,
+    pub increse_count: u32,
+    pub min_rtt: Option<Duration>,
+    pub min_rtt_pkt_size: Option<u32>,
 }
 
 impl TcpStats {
@@ -43,6 +50,13 @@ impl TcpStats {
             received_seqs: HashSet::new(),
             state: None,
             initial_rtt: None,
+            alpha: 0.125, // 2/(15+1)
+            smoothed_rtt: None,
+            prev_smoothed_rtt: None,
+            threshold_factor: 1.2,
+            increse_count: 0,
+            min_rtt: None,
+            min_rtt_pkt_size: None,
         }
     }
 
@@ -50,13 +64,13 @@ impl TcpStats {
         if let Some(seq) = self.received_seqs.get(seq) {
             dbg!("RETRANSMISSION", seq);
             // Now look at the recv buffer. Iterate through the buffer and print each sent time relative to the current packet.
-            let first_sent_time = self.recv.front().unwrap().sent_time;
-            for packet in self.recv.iter().rev() {
-                let time_diff = packet.sent_time.duration_since(first_sent_time);
-                if let Ok(time_diff) = time_diff {
-                    dbg!(time_diff.as_micros(), packet.len);
-                }
-            }
+            // let first_sent_time = self.recv.front().unwrap().sent_time;
+            // for packet in self.recv.iter().rev() {
+            //     let time_diff = packet.sent_time.duration_since(first_sent_time);
+            //     if let Ok(time_diff) = time_diff {
+            //         dbg!(time_diff.as_micros(), packet.len);
+            //     }
+            // }
         }
         // Assumption 1: If a retransmission has occurred, the link is possibly congested.
         self.received_seqs.insert(*seq);
@@ -65,7 +79,58 @@ impl TcpStats {
     }
 
     pub fn register_data_sent(&mut self, p: SentPacket) {
+        if let Some(rtt) = p.rtt {
+            if let Some(min_rtt) = self.min_rtt {
+                if rtt < min_rtt {
+                    self.min_rtt = Some(rtt);
+                    self.min_rtt_pkt_size = Some(p.len);
+                }
+            } else {
+                self.min_rtt = Some(rtt);
+                self.min_rtt_pkt_size = Some(p.len);
+            }
+            let is_increasing = self.update_rtt(rtt);
+            if let Some(true) = is_increasing {
+                self.increse_count += 1;
+                if self.increse_count > 3 {
+                    // Assumption 2: If the smoothed RTT increases by more than 50% for 3 consecutive packets, the link is congested.
+                    dbg!("CONGESTION DETECTED" , self.smoothed_rtt.unwrap()*1000.0);
+                    dbg!(rtt.as_secs_f64() - self.smoothed_rtt.unwrap());
+                    dbg!(self.min_rtt.unwrap().as_micros(), self.min_rtt_pkt_size.unwrap());
+                    dbg!(self.smoothed_rtt.unwrap() - self.prev_smoothed_rtt.unwrap());
+                    let bytes_acked = p.len;
+                    dbg!(bytes_acked as f64/(self.smoothed_rtt.unwrap() - self.prev_smoothed_rtt.unwrap()));
+                }
+            } else {
+                self.increse_count = 0;
+            }
+        }
         self.sent.push_back(p);
+    }
+
+    /// Updates the smoothed RTT with a new sample and
+    /// returns `Some(true)` if there's a significant increase.
+    /// Otherwise, returns `Some(false)` or `None` if the measurement is invalid.
+    pub fn update_rtt(&mut self, new_sample: Duration) -> Option<bool> {
+        let new_rtt = new_sample.as_secs_f64();
+
+        // Initialize the EWMA on the first valid sample
+        if self.smoothed_rtt.is_none() {
+            self.smoothed_rtt = Some(new_rtt);
+            return Some(false); // first sample, no basis for 'increase' yet
+        }
+
+        // Calculate updated EWMA
+        let old_rtt = self.smoothed_rtt.unwrap();
+        let updated_rtt = old_rtt + self.alpha * (new_rtt - old_rtt);
+        self.prev_smoothed_rtt = self.smoothed_rtt;
+        self.smoothed_rtt = Some(updated_rtt);
+
+        // Check if the new sample crosses a threshold above the smoothed RTT
+        // e.g., threshold_factor = 1.3 means >130% of the smoothed RTT
+        let threshold = self.threshold_factor * updated_rtt;
+
+        Some(new_rtt > threshold)
     }
 
     pub fn estimate_available_bandwidth(&self) -> Option<f64> {
