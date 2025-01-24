@@ -100,6 +100,10 @@ impl TcpStats {
                     dbg!(self.smoothed_rtt.unwrap() - self.prev_smoothed_rtt.unwrap());
                     let bytes_acked = p.len;
                     dbg!(bytes_acked as f64/(self.smoothed_rtt.unwrap() - self.prev_smoothed_rtt.unwrap()));
+                    dbg!(self.total_retransmissions);
+                    if let Some(bandwidth) = self.estimate_bandwidth() {
+                        dbg!(bandwidth);
+                    }
                 }
             } else {
                 self.increse_count = 0;
