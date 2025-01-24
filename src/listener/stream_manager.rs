@@ -2,22 +2,29 @@ use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 use std::net::IpAddr;
 
+use crate::listener::tracker::tracker::DefaultState;
+
 use super::packet::packet_builder::ParsedPacket;
 use super::procfs_reader::{NetEntry, NetStat};
 use super::stream_id::ConnectionKey;
 use super::tracker::tracker::{Tracker, TrackerState};
+use super::tracker::link::{DataPoint, LinkManager};
 
 // Replace HashMap with DashMap
 #[derive(Debug)]
 pub struct StreamManager {
     // HashMap for all streams
     streams: HashMap<ConnectionKey, Tracker<TrackerState>>,
+    links: LinkManager,
+    start_time: std::time::SystemTime,
 }
 
 impl StreamManager {
     pub fn default() -> Self {
         StreamManager {
             streams: HashMap::new(),
+            links: LinkManager::new(),
+            start_time: std::time::SystemTime::now(),
         }
     }
 
@@ -32,31 +39,28 @@ impl StreamManager {
     }
 
     pub fn periodic(&mut self, proc_map: Option<NetStat>) {
-        proc_map.map(|proc_map| self.update_states(proc_map));
+        // proc_map.map(|proc_map| self.update_states(proc_map));
 
-        let seen_remote_ips: std::collections::HashSet<IpAddr> = self
-            .streams
-            .iter()
-            .map(|(k, _)| k.get_remote_ip())
-            .collect();
+        // let seen_remote_ips: std::collections::HashSet<IpAddr> = self
+        //     .streams
+        //     .iter()
+        //     .map(|(k, _)| k.get_remote_ip())
+        //     .collect();
 
-        println!("Seen remote IPs: {:?}", seen_remote_ips);
+        // println!("Seen remote IPs: {:?}", seen_remote_ips);
 
-        for (stream_id, tracker) in self.streams.iter() {
+        for (stream_id, tracker) in self.streams.iter_mut() {
             match tracker.state {
-                TrackerState::Tcp(ref tcp_tracker) => {
-                    if let Some(bw) = tcp_tracker.stats.estimate_bandwidth() {
-                        println!(
-                            "Estimated bandwidth for {} : {:?} Mb/s",
-                            stream_id,
-                            bw * 8.0 / 1_000_000.0
-                        );
-                    } else {
-                        println!("No bandwidth estimate for {}", stream_id);
+                TrackerState::Tcp(ref mut tcp_tracker) => {
+                    // let ret = tcp_tracker.stats.estimate_bandwidth();
+                    // dbg!(ret);
+                    let ret2 = tcp_tracker.stats.estimate_available_bandwidth();
+                    if let Some(ret2) = ret2 {
+                        println!("{}: Available bandwidth: {}", stream_id, ret2);
                     }
                 }
                 _ => {
-                    println!("{}: Not a TCP stream", stream_id);
+                    //println!("{}: Not a TCP stream", stream_id);
                 }
             }
         }

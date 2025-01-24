@@ -11,7 +11,7 @@ impl Settings {
     pub const TCP_STREAM_TIMEOUT: Duration = Duration::from_secs(30); //from_secs(900);
     pub const SYN_ACK_TIMEOUT: Duration = Duration::from_secs(10); // 75
     pub const FIN_WAIT_TIMEOUT: Duration = Duration::from_secs(675);
-    pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(10); // 900
+    pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(8); // 900
     pub const TCPHDR: i32 = 60;
     pub const IPHDR: i32 = 60;
     pub const IPV6HDR: i32 = 40;

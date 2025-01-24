@@ -20,4 +20,8 @@ impl DefaultState for GenericTracker {
     fn register_packet(&mut self, packet: &ParsedPacket) {
         self.register_packet(packet);
     }
+
+    fn extract_data(&mut self) -> Vec<super::link::DataPoint> {
+        Vec::new()
+    }
 }

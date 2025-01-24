@@ -4,10 +4,12 @@ use std::cmp::Ordering;
 use std::hash::Hash;
 
 use procfs::net::{TcpNetEntry, UdpNetEntry};
-use pnet::packet::ip::IpNextHeaderProtocol;
+use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 
 use super::packet::packet_builder::ParsedPacket;
 use super::packet::transport_packet::TransportPacket;
+
+use std::result::Result;
 
 /// Represents a key for identifying connections
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
@@ -125,6 +127,14 @@ impl ConnectionKey {
         }
     }
 
+    pub fn as_generic(self) -> ConnectionKey {
+        ConnectionKey::IpPair {
+            protocol: IpNextHeaderProtocols::Reserved,
+            local_ip: self.get_local_ip(),
+            remote_ip: self.get_remote_ip(),
+        }
+    }
+
     pub fn get_remote_ip(&self) -> IpAddr {
         match self {
             ConnectionKey::StreamId { remote_ip, .. } => *remote_ip,
@@ -132,10 +142,28 @@ impl ConnectionKey {
         }
     }
 
+    pub fn get_local_ip(&self) -> IpAddr {
+        match self {
+            ConnectionKey::StreamId { local_ip, .. } => *local_ip,
+            ConnectionKey::IpPair { local_ip, .. } => *local_ip,
+        }
+    }
+
     pub fn get_protocol(&self) -> IpNextHeaderProtocol {
         match self {
             ConnectionKey::StreamId { protocol, .. } => *protocol,
             ConnectionKey::IpPair { protocol, .. } => *protocol,
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            ConnectionKey::IpPair { protocol, local_ip, remote_ip } => {
+                format!("{} {} {}", protocol, local_ip, remote_ip)
+            }
+            ConnectionKey::StreamId { protocol, local_ip, local_port, remote_ip, remote_port } => {
+                format!("{} {}:{} {}:{}", protocol, local_ip, local_port, remote_ip, remote_port)
+            }
         }
     }
 }
