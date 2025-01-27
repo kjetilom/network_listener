@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, HashSet, VecDeque};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::TcpState;
@@ -10,8 +10,10 @@ use super::super::packet::{
     transport_packet::{TcpFlags, TransportPacket},
 };
 
-use super::link::DataPoint;
 use super::tracker::{DefaultState, SentPacket};
+
+static ALPHA: f64 = 0.125; // 2/(15+1)
+static THRESHOLD_FACTOR: f64 = 1.1;
 
 /// Wrap-around aware comparison
 fn seq_cmp(a: u32, b: u32) -> i32 {
@@ -23,21 +25,46 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
 }
 
 #[derive(Debug)]
+struct ThroughputEstimator {
+    start: SystemTime,
+    bytes: u32,
+}
+
+impl ThroughputEstimator {
+    fn new(p: SentPacket) -> Self {
+        ThroughputEstimator {
+            start: p.sent_time,
+            bytes: p.len,
+        }
+    }
+
+    pub fn update(&mut self, bytes: u32) {
+        self.bytes += bytes;
+    }
+
+    pub fn estimate(&mut self, now: SystemTime, rtt: Duration, bytes: u32) -> f64 {
+        let elapsed = now.duration_since(self.start).unwrap().as_secs_f64() + (rtt.as_secs_f64() / (THRESHOLD_FACTOR.powi(3)));
+        let bytes_per_sec = self.bytes as f64 / elapsed;
+        self.bytes = bytes;
+        self.start = now;
+        bytes_per_sec * 8.0 / 1_000_000.0
+    }
+}
+
+#[derive(Debug)]
 pub struct TcpStats {
-    pub total_retransmissions: u32,
-    pub total_unique_packets: u32,
+    total_retransmissions: u32,
+    total_unique_packets: u32,
+    congestion_events: u32,
     pub recv: VecDeque<SentPacket>,
     pub sent: VecDeque<SentPacket>,
-    pub received_seqs: HashSet<u32>,
+    received_seqs: HashSet<u32>,
     pub state: Option<TcpState>,
-    pub initial_rtt: Option<Duration>,
-    pub alpha: f64,
-    pub smoothed_rtt: Option<f64>,
-    pub prev_smoothed_rtt: Option<f64>,
-    pub threshold_factor: f64,
-    pub increse_count: u32,
-    pub min_rtt: Option<Duration>,
-    pub min_rtt_pkt_size: Option<u32>,
+    smoothed_rtt: Option<f64>,
+    prev_smoothed_rtt: Option<f64>,
+    increse_count: u32,
+    throughput_estimator: Option<ThroughputEstimator>,
+
 }
 
 impl TcpStats {
@@ -45,32 +72,23 @@ impl TcpStats {
         TcpStats {
             total_retransmissions: 0,
             total_unique_packets: 0,
+            congestion_events: 0,
             recv: VecDeque::with_capacity(1000),
             sent: VecDeque::with_capacity(1000),
             received_seqs: HashSet::new(),
             state: None,
-            initial_rtt: None,
-            alpha: 0.125, // 2/(15+1)
             smoothed_rtt: None,
             prev_smoothed_rtt: None,
-            threshold_factor: 1.2,
             increse_count: 0,
-            min_rtt: None,
-            min_rtt_pkt_size: None,
+            throughput_estimator: None,
+
         }
     }
 
-    pub fn register_data_received(&mut self, p: SentPacket, seq: &u32) {
+    pub fn register_data_received(&mut self, mut p: SentPacket, seq: &u32) {
         if let Some(seq) = self.received_seqs.get(seq) {
-            dbg!("RETRANSMISSION", seq);
-            // Now look at the recv buffer. Iterate through the buffer and print each sent time relative to the current packet.
-            // let first_sent_time = self.recv.front().unwrap().sent_time;
-            // for packet in self.recv.iter().rev() {
-            //     let time_diff = packet.sent_time.duration_since(first_sent_time);
-            //     if let Ok(time_diff) = time_diff {
-            //         dbg!(time_diff.as_micros(), packet.len);
-            //     }
-            // }
+            p.retransmissions += 1;
+            self.total_retransmissions += 1;
         }
         // Assumption 1: If a retransmission has occurred, the link is possibly congested.
         self.received_seqs.insert(*seq);
@@ -80,29 +98,20 @@ impl TcpStats {
 
     pub fn register_data_sent(&mut self, p: SentPacket) {
         if let Some(rtt) = p.rtt {
-            if let Some(min_rtt) = self.min_rtt {
-                if rtt < min_rtt {
-                    self.min_rtt = Some(rtt);
-                    self.min_rtt_pkt_size = Some(p.len);
-                }
+            if let Some(ref mut estimator) = self.throughput_estimator {
+                estimator.update(p.len);
             } else {
-                self.min_rtt = Some(rtt);
-                self.min_rtt_pkt_size = Some(p.len);
+                self.throughput_estimator = Some(ThroughputEstimator::new(p));
             }
+
             let is_increasing = self.update_rtt(rtt);
             if let Some(true) = is_increasing {
                 self.increse_count += 1;
                 if self.increse_count > 3 {
-                    // Assumption 2: If the smoothed RTT increases by more than 50% for 3 consecutive packets, the link is congested.
-                    dbg!("CONGESTION DETECTED" , self.smoothed_rtt.unwrap()*1000.0);
-                    dbg!(rtt.as_secs_f64() - self.smoothed_rtt.unwrap());
-                    dbg!(self.min_rtt.unwrap().as_micros(), self.min_rtt_pkt_size.unwrap());
-                    dbg!(self.smoothed_rtt.unwrap() - self.prev_smoothed_rtt.unwrap());
-                    let bytes_acked = p.len;
-                    dbg!(bytes_acked as f64/(self.smoothed_rtt.unwrap() - self.prev_smoothed_rtt.unwrap()));
-                    dbg!(self.total_retransmissions);
-                    if let Some(bandwidth) = self.estimate_bandwidth() {
-                        dbg!(bandwidth);
+                    self.congestion_events += 1;
+                    if self.congestion_events % 10 == 0 {
+                        let estimate = self.throughput_estimator.as_mut().unwrap().estimate(p.sent_time, p.rtt.unwrap(), p.len);
+                        dbg!(estimate);
                     }
                 }
             } else {
@@ -126,84 +135,15 @@ impl TcpStats {
 
         // Calculate updated EWMA
         let old_rtt = self.smoothed_rtt.unwrap();
-        let updated_rtt = old_rtt + self.alpha * (new_rtt - old_rtt);
+        let updated_rtt = old_rtt + ALPHA * (new_rtt - old_rtt);
         self.prev_smoothed_rtt = self.smoothed_rtt;
         self.smoothed_rtt = Some(updated_rtt);
 
         // Check if the new sample crosses a threshold above the smoothed RTT
         // e.g., threshold_factor = 1.3 means >130% of the smoothed RTT
-        let threshold = self.threshold_factor * updated_rtt;
+        let threshold = THRESHOLD_FACTOR * updated_rtt;
 
         Some(new_rtt > threshold)
-    }
-
-    pub fn estimate_available_bandwidth(&self) -> Option<f64> {
-        // Try to find a section of RTT measurements where there is an increase in RTT
-        let mut packets_with_rtt: Vec<&SentPacket> = self.sent
-            .iter()
-            .filter(|p| p.rtt.is_some())
-            .collect();
-
-        Some(0.0)
-    }
-
-    pub fn estimate_bandwidth(&self) -> Option<f64> {
-        // Gather all packets with a valid RTT
-        let mut acked_packets: Vec<&SentPacket> = self.sent
-            .iter()
-            .filter(|p| p.rtt.is_some())
-            .collect();
-
-        // If fewer than 2 packets have RTT, we can't form a time interval
-        if acked_packets.len() < 2 {
-            return None;
-        }
-
-        // Sort by ACK reception time (sent_time + rtt)
-        acked_packets.sort_by_key(|p| {
-            let ack_time = p.sent_time + p.rtt.unwrap();
-            ack_time
-        });
-
-        // Earliest ACK time
-        let first_ack_time = acked_packets[0].sent_time + acked_packets[0].rtt.unwrap();
-        // Latest ACK time
-        let last_ack_time = acked_packets.last().unwrap().sent_time
-                            + acked_packets.last().unwrap().rtt.unwrap();
-
-        // Convert times to seconds since epoch for a continuous timescale
-        let first_ack_secs = first_ack_time.duration_since(UNIX_EPOCH).ok()?.as_secs_f64();
-        let last_ack_secs = last_ack_time.duration_since(UNIX_EPOCH).ok()?.as_secs_f64();
-
-        let elapsed = last_ack_secs - first_ack_secs;
-        if elapsed <= 0.0 {
-            return None;
-        }
-
-        // Sum up the byte lengths of all acked packets
-        let total_bytes: u64 = acked_packets.iter().map(|p| p.len as u64).sum();
-
-        // Bandwidth in bytes per second
-        let bandwidth_bps = total_bytes as f64 / elapsed;
-
-        Some(bandwidth_bps)
-    }
-
-    pub fn consume_to_vec(&mut self) -> Vec<DataPoint> {
-        let ret = self.sent
-            .iter()
-            .filter_map(|p| {
-                <Option<Duration> as Clone>::clone(&p.rtt).map(|rtt| {
-                    DataPoint::new(
-                        p.len as u16,
-                        p.sent_time,
-                        Some(rtt.as_micros() as u32),
-                    )
-                })
-            })
-            .collect();
-        self.sent.clear();
-        ret
     }
 }
 
@@ -213,9 +153,6 @@ pub struct TcpTracker {
     sent_packets: BTreeMap<u32, SentPacket>,
     initial_sequence_local: Option<u32>,
     pub stats: TcpStats,
-    total_bytes_sent: u64,
-    total_bytes_acked: u64,
-    pub data: Vec<DataPoint>,
 }
 
 impl TcpTracker {
@@ -224,14 +161,7 @@ impl TcpTracker {
             sent_packets: BTreeMap::new(),
             initial_sequence_local: None,
             stats: TcpStats::new(),
-            total_bytes_sent: 0,
-            total_bytes_acked: 0,
-            data: Vec::new(),
         }
-    }
-
-    pub fn store_data(&mut self) {
-        self.data.extend(self.stats.consume_to_vec());
     }
 
     pub fn register_packet(&mut self, packet: &ParsedPacket) {
@@ -259,9 +189,7 @@ impl TcpTracker {
                     }
 
                     // Update acked packets if possible.
-                    if let Some(initial_seq_local) = self.initial_sequence_local {
-                        let ack = acknowledgment.wrapping_sub(initial_seq_local);
-                        self.total_bytes_acked = ack as u64;
+                    if let Some(_) = self.initial_sequence_local {
                         self.update_acked_packets(*acknowledgment, packet.timestamp);
                     }
                 }
@@ -282,8 +210,6 @@ impl TcpTracker {
                     } else {
                         self.stats.state = Some(TcpState::Established);
                     }
-
-                    self.total_bytes_sent += packet.total_length as u64;
                     self.track_outgoing_packet(*sequence, *payload_len, packet.timestamp, flags);
                 }
             }
@@ -312,7 +238,6 @@ impl TcpTracker {
                 match self.sent_packets.get_mut(&sequence) {
                     Some(existing) => {
                         existing.retransmissions += 1;
-                        dbg!("RETRANSMISSION", sequence);
                         self.stats.total_retransmissions += 1;
                     }
                     None => {
@@ -338,10 +263,6 @@ impl TcpTracker {
                 // If packet is fully acked, calculate RTT
                 if let Ok(rtt_duration) = ack_timestamp.duration_since(sent_packet.sent_time) {
                     sent_packet.rtt = Some(rtt_duration);
-                    // Optionally store first RTT for future usage
-                    if self.stats.initial_rtt.is_none() {
-                        self.stats.initial_rtt = sent_packet.rtt.clone();
-                    }
                 }
 
                 keys_to_remove.push(seq);
@@ -366,9 +287,5 @@ impl DefaultState for TcpTracker {
 
     fn register_packet(&mut self, packet: &ParsedPacket) {
         self.register_packet(packet);
-    }
-
-    fn extract_data(&mut self) -> Vec<DataPoint> {
-        self.data.clone()
     }
 }

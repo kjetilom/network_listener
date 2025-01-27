@@ -1,30 +1,21 @@
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
-use std::net::IpAddr;
 
-use crate::listener::tracker::tracker::DefaultState;
-
-use super::packet::packet_builder::ParsedPacket;
-use super::procfs_reader::{NetEntry, NetStat};
-use super::stream_id::ConnectionKey;
-use super::tracker::tracker::{Tracker, TrackerState};
-use super::tracker::link::{DataPoint, LinkManager};
-
+use super::super::packet::packet_builder::ParsedPacket;
+use super::super::procfs_reader::{NetEntry, NetStat};
+use super::super::tracker::stream_id::ConnectionKey;
+use super::super::tracker::tracker::{Tracker, TrackerState};
 // Replace HashMap with DashMap
 #[derive(Debug)]
 pub struct StreamManager {
     // HashMap for all streams
     streams: HashMap<ConnectionKey, Tracker<TrackerState>>,
-    links: LinkManager,
-    start_time: std::time::SystemTime,
 }
 
 impl StreamManager {
     pub fn default() -> Self {
         StreamManager {
             streams: HashMap::new(),
-            links: LinkManager::new(),
-            start_time: std::time::SystemTime::now(),
         }
     }
 
@@ -39,19 +30,10 @@ impl StreamManager {
     }
 
     pub fn periodic(&mut self, proc_map: Option<NetStat>) {
-        // proc_map.map(|proc_map| self.update_states(proc_map));
-
-        // let seen_remote_ips: std::collections::HashSet<IpAddr> = self
-        //     .streams
-        //     .iter()
-        //     .map(|(k, _)| k.get_remote_ip())
-        //     .collect();
-
-        // println!("Seen remote IPs: {:?}", seen_remote_ips);
-
-        for (stream_id, tracker) in self.streams.iter_mut() {
+        proc_map.map(|proc_map| self.update_states(proc_map));
+        for (_stream_id, tracker) in self.streams.iter_mut() {
             match tracker.state {
-                TrackerState::Tcp(ref mut tcp_tracker) => {
+                TrackerState::Tcp(ref mut _tcp_tracker) => {
                     // let ret = tcp_tracker.stats.estimate_bandwidth();
                     // dbg!(ret);
                     // let ret2 = tcp_tracker.stats.estimate_available_bandwidth();
@@ -71,7 +53,7 @@ impl StreamManager {
 
         for (stream_id, tracker) in self.streams.iter_mut() {
             if tracker.last_registered.elapsed().unwrap().as_secs()
-                >= super::Settings::TCP_STREAM_TIMEOUT.as_secs()
+                >= super::super::Settings::TCP_STREAM_TIMEOUT.as_secs()
             {
                 ids_to_remove.push(*stream_id);
                 continue;

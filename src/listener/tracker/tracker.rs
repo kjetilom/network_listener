@@ -3,11 +3,14 @@ use std::time::{Duration, SystemTime};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 
 use super::{
-    super::packet::{direction::Direction, packet_builder::ParsedPacket}, generic_tracker::GenericTracker, link::DataPoint, tcp_tracker::TcpTracker, udp_tracker::UdpTracker
+    super::packet::{direction::Direction, packet_builder::ParsedPacket},
+    generic_tracker::GenericTracker,
+    tcp_tracker::TcpTracker,
+    udp_tracker::UdpTracker,
 };
 
 /// Single struct to represent a sent or received packet with optional RTT.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct SentPacket {
     pub len: u32,
     pub sent_time: SystemTime,
@@ -25,7 +28,6 @@ pub struct RTT {
 pub trait DefaultState {
     fn default(protocol: IpNextHeaderProtocol) -> Self;
     fn register_packet(&mut self, packet: &ParsedPacket);
-    fn extract_data(&mut self) -> Vec<DataPoint>;
 }
 
 #[derive(Debug)]
@@ -49,14 +51,6 @@ impl DefaultState for TrackerState {
             IpNextHeaderProtocols::Tcp => TrackerState::Tcp(TcpTracker::new()),
             IpNextHeaderProtocols::Udp => TrackerState::Udp(UdpTracker::new()),
             _ => TrackerState::Other(GenericTracker::new()),
-        }
-    }
-
-    fn extract_data(&mut self) -> Vec<DataPoint> {
-        match self {
-            TrackerState::Tcp(tracker) => tracker.extract_data(),
-            TrackerState::Udp(tracker) => tracker.extract_data(),
-            TrackerState::Other(tracker) => tracker.extract_data(),
         }
     }
 }

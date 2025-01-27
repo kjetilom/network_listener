@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use neli_wifi::{AsyncSocket, Interface};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use std::error::Error;
-use super::{parser::NetlinkData, stream_id::ConnectionKey};
+use super::{parser::NetlinkData, tracker::stream_id::ConnectionKey};
 use procfs::net::{TcpNetEntry, UdpNetEntry};
 
 pub enum NetEntry {

@@ -2,7 +2,7 @@ use super::packet::packet_builder::ParsedPacket;
 use super::{
     analyzer::Analyzer,
     procfs_reader::{self, get_interface, get_interface_info, NetStat},
-    stream_manager::StreamManager,
+    tracker::stream_manager::StreamManager,
 };
 use anyhow::Result;
 use capture::OwnedPacket;

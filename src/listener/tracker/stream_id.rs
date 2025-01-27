@@ -6,10 +6,8 @@ use std::hash::Hash;
 use procfs::net::{TcpNetEntry, UdpNetEntry};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 
-use super::packet::packet_builder::ParsedPacket;
-use super::packet::transport_packet::TransportPacket;
-
-use std::result::Result;
+use super::super::packet::packet_builder::ParsedPacket;
+use super::super::packet::transport_packet::TransportPacket;
 
 /// Represents a key for identifying connections
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]

@@ -3,10 +3,10 @@ use std::time::SystemTime;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::UdpState;
 
-use super::{super::packet::{
+use super::super::packet::{
     direction::Direction,
     transport_packet::TransportPacket,
-}, link::DataPoint};
+};
 use crate::listener::packet::packet_builder::ParsedPacket;
 
 use super::tracker::{DefaultState, SentPacket};
@@ -57,9 +57,5 @@ impl DefaultState for UdpTracker {
             });
             self.remove_outdated_packets();
         }
-    }
-
-    fn extract_data(&mut self) -> Vec<DataPoint> {
-        Vec::new()
     }
 }
