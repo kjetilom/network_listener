@@ -43,6 +43,11 @@ impl LinkManager {
                     "Link: {} - In: {:.2} KB/s, Out: {:.2} KB/s, Latency: {:.2} ms, rts in({}) out({})",
                     ip_pair, in_, out, latency*1000.0, rt_in_out.0, rt_in_out.1
                 );
+            } else {
+                println!(
+                    "Link: {} - In: {:.2} KB/s, Out: {:.2} KB/s",
+                    ip_pair, in_, out
+                );
             }
             stream_manager.periodic();
         }
