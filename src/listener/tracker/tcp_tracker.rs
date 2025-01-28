@@ -38,6 +38,7 @@ pub struct TcpStats {
     pub smoothed_rtt: Option<f64>,
     prev_smoothed_rtt: Option<f64>,
     bytes_acked: u32,
+    counter: u16,
 }
 
 impl TcpStats {
@@ -51,6 +52,7 @@ impl TcpStats {
             smoothed_rtt: None,
             prev_smoothed_rtt: None,
             bytes_acked: 0,
+            counter: 0,
         }
     }
 
@@ -68,12 +70,17 @@ impl TcpStats {
         if let Some(rtt) = p.rtt {
             self.update_rtt(rtt);
             self.bytes_acked += p.len + 60;
+            self.counter += 1;
 
             // Update throughput
+            if self.counter % 10 == 0 {
+                return;
+            }
             if let Some(prev_rtt) = self.prev_smoothed_rtt {
                 let bdp = (self.bytes_acked as f64 ) / prev_rtt;
                 let throughput = bdp / 125_000.0;
                 println!("Throughput: {:.2} Mbps", throughput);
+                self.bytes_acked = 0;
             }
         }
         self.sent.push_back(p);
