@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 
 use super::{
-    super::packet::{direction::Direction, packet_builder::ParsedPacket},
+    super::packet::packet_builder::ParsedPacket,
     generic_tracker::GenericTracker,
     tcp_tracker::TcpTracker,
     udp_tracker::UdpTracker,
@@ -58,8 +58,6 @@ impl DefaultState for TrackerState {
 #[derive(Debug)]
 pub struct Tracker<TState> {
     pub last_registered: SystemTime,
-    pub total_bytes_sent: u64,
-    pub total_bytes_received: u64,
     pub protocol: IpNextHeaderProtocol,
     pub state: TState,
 }
@@ -68,23 +66,12 @@ impl<TState: DefaultState> Tracker<TState> {
     pub fn new(timestamp: SystemTime, protocol: IpNextHeaderProtocol) -> Self {
         Self {
             last_registered: timestamp,
-            total_bytes_sent: 0,
-            total_bytes_received: 0,
             protocol,
             state: TState::default(protocol),
         }
     }
 
     pub fn register_packet(&mut self, packet: &ParsedPacket) {
-        match packet.direction {
-            Direction::Incoming => {
-                self.total_bytes_received += packet.total_length as u64;
-            }
-            Direction::Outgoing => {
-                self.total_bytes_sent += packet.total_length as u64;
-            }
-        }
-        self.last_registered = packet.timestamp;
         self.state.register_packet(packet);
     }
 

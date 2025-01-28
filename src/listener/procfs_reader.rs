@@ -20,6 +20,15 @@ pub struct NetStat {
     pub udp: HashMap<ConnectionKey, NetEntry>,
 }
 
+impl Default for NetStat {
+    fn default() -> Self {
+        NetStat {
+            tcp: HashMap::new(),
+            udp: HashMap::new(),
+        }
+    }
+}
+
 
 pub async fn proc_net() -> NetStat {
 

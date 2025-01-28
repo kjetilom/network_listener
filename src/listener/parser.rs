@@ -1,8 +1,8 @@
 use super::packet::packet_builder::ParsedPacket;
+use super::tracker::link::LinkManager;
 use super::{
     analyzer::Analyzer,
     procfs_reader::{self, get_interface, get_interface_info, NetStat},
-    tracker::stream_manager::StreamManager,
 };
 use anyhow::Result;
 use capture::OwnedPacket;
@@ -31,7 +31,7 @@ pub struct PeriodicData {
 pub struct Parser {
     packet_stream: UnboundedReceiver<OwnedPacket>,
     pcap_meta: PCAPMeta,
-    stream_manager: StreamManager,
+    link_manager: LinkManager,
     netlink_data: Vec<NetlinkData>,
     netstat_data: Option<NetStat>,
     analyzer: Analyzer,
@@ -46,7 +46,7 @@ impl Parser {
         Ok(Parser {
             packet_stream,
             pcap_meta,
-            stream_manager: StreamManager::default(),
+            link_manager: LinkManager::new(),
             netlink_data: Vec::new(),
             netstat_data: None,
             analyzer: Analyzer::new(),
@@ -87,7 +87,7 @@ impl Parser {
                     self.handle_periodic(periodic_data);
                 },
                 _ = interval.tick() => {
-                    self.stream_manager.periodic(self.netstat_data.take());
+                    self.link_manager.periodic();
                 },
                 else => {
                     // Both streams have ended
@@ -147,7 +147,7 @@ impl Parser {
             None => return,
         };
 
-        self.stream_manager.record_ip_packet(&parsed_packet);
+        self.link_manager.insert(parsed_packet);
     }
 
     /* Parses an `OwnedPacket` into a `ParsedPacket`.

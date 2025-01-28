@@ -9,6 +9,97 @@ use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use super::super::packet::packet_builder::ParsedPacket;
 use super::super::packet::transport_packet::TransportPacket;
 
+
+#[derive(Debug, Hash, Eq, PartialEq)]
+pub struct IpPair {
+    pair: (IpAddr, IpAddr),
+}
+
+impl IpPair {
+    pub fn new(ip1: IpAddr, ip2: IpAddr) -> Self {
+        IpPair {
+            pair:
+             if ip1 < ip2 {
+                (ip1, ip2)
+            } else {
+                (ip2, ip1)
+            },
+        }
+    }
+
+    pub fn from_packet(packet: &ParsedPacket) -> Self {
+        IpPair::new(packet.dst_ip, packet.src_ip)
+    }
+
+    pub fn get_pair(&self) -> (IpAddr, IpAddr) {
+        self.pair
+    }
+}
+
+impl Display for IpPair {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} -> {}", self.pair.0, self.pair.1)
+    }
+}
+
+// #[derive(Debug, Hash, Eq, PartialEq, Clone, Copy)]
+// pub struct StreamKey {
+//     pub protocol: IpNextHeaderProtocol,
+// }
+
+// impl StreamKey {
+//     pub fn new(protocol: IpNextHeaderProtocol) -> Self {
+//         StreamKey {
+//             protocol,
+//         }
+//     }
+
+//     pub fn from_packet(packet: &ParsedPacket) -> Self {
+//         StreamKey::new(packet.transport.get_ip_proto())
+//     }
+// }
+
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Copy)]
+pub struct StreamKey {
+    pub ports: (Option<u16>, Option<u16>),
+    pub protocol: IpNextHeaderProtocol,
+}
+
+impl StreamKey {
+    pub fn new(protocol: IpNextHeaderProtocol, port1: Option<u16>, port2: Option<u16>) -> Self {
+        StreamKey {
+            ports: if port1 < port2 {
+                (port1, port2)
+            } else {
+                (port2, port1)
+            },
+            protocol,
+        }
+    }
+
+    pub fn from_packet(packet: &ParsedPacket) -> Self {
+        match &packet.transport {
+            TransportPacket::TCP { src_port, dst_port, .. }
+            | TransportPacket::UDP { src_port, dst_port, .. } => {
+                StreamKey::new(packet.transport.get_ip_proto(), Some(*src_port), Some(*dst_port))
+            }
+            _ => StreamKey::new(packet.transport.get_ip_proto(), None, None),
+        }
+    }
+}
+
+impl Display for StreamKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.protocol)
+        // match self.ports {
+        //     (Some(port1), Some(port2)) => {
+        //         write!(f, "{} : {} -> {}", self.protocol, port1, port2)
+        //     }
+        //     _ => write!(f, "{} : ?", self.protocol),
+        // }
+    }
+}
+
 /// Represents a key for identifying connections
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
 pub enum ConnectionKey {

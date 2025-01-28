@@ -24,73 +24,39 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
     seq_cmp(a, b) <= 0
 }
 
-#[derive(Debug)]
-struct ThroughputEstimator {
-    start: SystemTime,
-    bytes: u32,
-}
-
-impl ThroughputEstimator {
-    fn new(p: SentPacket) -> Self {
-        ThroughputEstimator {
-            start: p.sent_time,
-            bytes: p.len,
-        }
-    }
-
-    pub fn update(&mut self, bytes: u32) {
-        self.bytes += bytes;
-    }
-
-    pub fn estimate(&mut self, now: SystemTime, rtt: Duration, bytes: u32) -> f64 {
-        let elapsed = now.duration_since(self.start).unwrap().as_secs_f64() + (rtt.as_secs_f64() / (THRESHOLD_FACTOR.powi(3)));
-        let bytes_per_sec = self.bytes as f64 / elapsed;
-        self.bytes = bytes;
-        self.start = now;
-        bytes_per_sec * 8.0 / 1_000_000.0
-    }
+fn smoothed_value(old: f64, new: f64) -> f64 {
+    old + ALPHA * (new - old)
 }
 
 #[derive(Debug)]
 pub struct TcpStats {
     total_retransmissions: u32,
-    total_unique_packets: u32,
-    congestion_events: u32,
     pub recv: VecDeque<SentPacket>,
     pub sent: VecDeque<SentPacket>,
     received_seqs: HashSet<u32>,
     pub state: Option<TcpState>,
-    smoothed_rtt: Option<f64>,
+    pub smoothed_rtt: Option<f64>,
     prev_smoothed_rtt: Option<f64>,
-    increse_count: u32,
-    throughput_estimator: Option<ThroughputEstimator>,
-
 }
 
 impl TcpStats {
     pub fn new() -> Self {
         TcpStats {
             total_retransmissions: 0,
-            total_unique_packets: 0,
-            congestion_events: 0,
             recv: VecDeque::with_capacity(1000),
             sent: VecDeque::with_capacity(1000),
             received_seqs: HashSet::new(),
             state: None,
             smoothed_rtt: None,
             prev_smoothed_rtt: None,
-            increse_count: 0,
-            throughput_estimator: None,
-
         }
     }
 
     pub fn register_data_received(&mut self, mut p: SentPacket, seq: &u32) {
-        if let Some(seq) = self.received_seqs.get(seq) {
+        if self.received_seqs.contains(seq) {
             p.retransmissions += 1;
             self.total_retransmissions += 1;
         }
-        // Assumption 1: If a retransmission has occurred, the link is possibly congested.
         self.received_seqs.insert(*seq);
         self.recv.push_back(p);
 
@@ -98,25 +64,7 @@ impl TcpStats {
 
     pub fn register_data_sent(&mut self, p: SentPacket) {
         if let Some(rtt) = p.rtt {
-            if let Some(ref mut estimator) = self.throughput_estimator {
-                estimator.update(p.len);
-            } else {
-                self.throughput_estimator = Some(ThroughputEstimator::new(p));
-            }
-
-            let is_increasing = self.update_rtt(rtt);
-            if let Some(true) = is_increasing {
-                self.increse_count += 1;
-                if self.increse_count > 3 {
-                    self.congestion_events += 1;
-                    if self.congestion_events % 10 == 0 {
-                        let estimate = self.throughput_estimator.as_mut().unwrap().estimate(p.sent_time, p.rtt.unwrap(), p.len);
-                        dbg!(estimate);
-                    }
-                }
-            } else {
-                self.increse_count = 0;
-            }
+            self.update_rtt(rtt);
         }
         self.sent.push_back(p);
     }
@@ -152,6 +100,9 @@ impl TcpStats {
 pub struct TcpTracker {
     sent_packets: BTreeMap<u32, SentPacket>,
     initial_sequence_local: Option<u32>,
+    bytes_in_flight: u32,
+    max_bytes_in_flight: u32,
+    mss: u32,
     pub stats: TcpStats,
 }
 
@@ -160,6 +111,9 @@ impl TcpTracker {
         TcpTracker {
             sent_packets: BTreeMap::new(),
             initial_sequence_local: None,
+            bytes_in_flight: 0,
+            max_bytes_in_flight: 0xFFFF,
+            mss: 0,
             stats: TcpStats::new(),
         }
     }
@@ -175,6 +129,7 @@ impl TcpTracker {
         {
             match packet.direction {
                 Direction::Incoming => {
+
                     // Record data if it’s not just a pure ACK.
                     if !flags.is_ack() || *payload_len != 0 {
 
@@ -235,10 +190,12 @@ impl TcpTracker {
             }
 
             if len > 0 {
+
                 match self.sent_packets.get_mut(&sequence) {
                     Some(existing) => {
                         existing.retransmissions += 1;
                         self.stats.total_retransmissions += 1;
+                        self.max_bytes_in_flight /= 2;
                     }
                     None => {
                         let new_packet = SentPacket {
@@ -247,7 +204,15 @@ impl TcpTracker {
                             retransmissions: 0,
                             rtt: None,
                         };
-                        self.stats.total_unique_packets += 1;
+                        self.bytes_in_flight += len;
+                        if self.bytes_in_flight > self.max_bytes_in_flight {
+                            self.max_bytes_in_flight = self.bytes_in_flight;
+                        }
+                        if self.stats.smoothed_rtt.is_some() {
+                            let bdp = self.max_bytes_in_flight as f64 / self.stats.smoothed_rtt.unwrap();
+                            let throughput = 8.0 * bdp / 1_000_000.0;
+                            println!("Throughput: {:.2} Mbps", throughput);
+                        }
                         self.sent_packets.insert(sequence, new_packet);
                     }
                 }
@@ -260,9 +225,12 @@ impl TcpTracker {
 
         for (&seq, sent_packet) in self.sent_packets.iter_mut() {
             if seq_less_equal(seq + sent_packet.len, ack) {
+                self.bytes_in_flight -= sent_packet.len;
                 // If packet is fully acked, calculate RTT
                 if let Ok(rtt_duration) = ack_timestamp.duration_since(sent_packet.sent_time) {
                     sent_packet.rtt = Some(rtt_duration);
+                    // We got an RTT
+                    self.max_bytes_in_flight += self.mss;
                 }
 
                 keys_to_remove.push(seq);

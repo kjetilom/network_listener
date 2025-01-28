@@ -2,14 +2,13 @@ use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 
 use super::super::packet::packet_builder::ParsedPacket;
-use super::super::procfs_reader::{NetEntry, NetStat};
-use super::super::tracker::stream_id::ConnectionKey;
+use super::super::tracker::stream_id::StreamKey;
 use super::super::tracker::tracker::{Tracker, TrackerState};
 // Replace HashMap with DashMap
 #[derive(Debug)]
 pub struct StreamManager {
     // HashMap for all streams
-    streams: HashMap<ConnectionKey, Tracker<TrackerState>>,
+    streams: HashMap<StreamKey, Tracker<TrackerState>>,
 }
 
 impl StreamManager {
@@ -20,7 +19,7 @@ impl StreamManager {
     }
 
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
-        let stream_id = ConnectionKey::from_pcap(&packet);
+        let stream_id = StreamKey::from_packet(&packet);
         self.streams.entry(stream_id)
             .or_insert_with(|| Tracker::<TrackerState>::new(
                 packet.timestamp,
@@ -29,27 +28,41 @@ impl StreamManager {
             .register_packet(packet);
     }
 
-    pub fn periodic(&mut self, proc_map: Option<NetStat>) {
-        proc_map.map(|proc_map| self.update_states(proc_map));
-        for (_stream_id, tracker) in self.streams.iter_mut() {
+    pub fn get_latency_avg(&self) -> Option<f64> {
+        let mut latencies = Vec::new();
+        for (_stream_id, tracker) in self.streams.iter() {
             match tracker.state {
-                TrackerState::Tcp(ref mut _tcp_tracker) => {
-                    // let ret = tcp_tracker.stats.estimate_bandwidth();
-                    // dbg!(ret);
-                    // let ret2 = tcp_tracker.stats.estimate_available_bandwidth();
-                    // if let Some(ret2) = ret2 {
-                    //     println!("{}: Available bandwidth: {}", stream_id, ret2);
-                    // }
+                TrackerState::Tcp(ref tcp_tracker) => {
+                    if let Some(rtt) = tcp_tracker.stats.smoothed_rtt {
+                        latencies.push(rtt);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if latencies.is_empty() {
+            None
+        } else {
+            Some(latencies.iter().sum::<f64>() / latencies.len() as f64)
+        }
+    }
+
+    pub fn periodic(&mut self) {
+        self.update_states();
+        for (stream_id, tracker) in self.streams.iter_mut() {
+            match tracker.state {
+                TrackerState::Tcp(ref mut tcp_tracker) => {
+                    println!("{}: {}", stream_id, tcp_tracker.stats.smoothed_rtt.unwrap_or(0.0));
                 }
                 _ => {
-                    //println!("{}: Not a TCP stream", stream_id);
+                    println!("{}", stream_id);
                 }
             }
         }
     }
 
-    fn update_states(&mut self, nstat: NetStat) {
-        let mut ids_to_remove: Vec<ConnectionKey> = Vec::new();
+    fn update_states(&mut self) {
+        let mut ids_to_remove: Vec<StreamKey> = Vec::new();
 
         for (stream_id, tracker) in self.streams.iter_mut() {
             if tracker.last_registered.elapsed().unwrap().as_secs()
@@ -58,48 +71,11 @@ impl StreamManager {
                 ids_to_remove.push(*stream_id);
                 continue;
             }
-
-            match tracker.state {
-                TrackerState::Tcp(ref mut tcp_tracker) => {
-                    match nstat.tcp.get(stream_id) {
-                        Some(NetEntry::Tcp { entry }) => {
-                            tcp_tracker.stats.state = Some(entry.state.clone());
-                        }
-                        _ => {}
-                    }
-                    if matches!(tcp_tracker.stats.state, Some(procfs::net::TcpState::Close)) {
-                        ids_to_remove.push(*stream_id)
-                    }
-                }
-                TrackerState::Udp(ref mut udp_tracker) => {
-                    match nstat.udp.get(stream_id) {
-                        Some(NetEntry::Udp { entry }) => {
-                            udp_tracker.state = Some(entry.state.clone());
-                        }
-                        _ => {}
-                    }
-                    if matches!(udp_tracker.state, Some(procfs::net::UdpState::Close)) {
-                        ids_to_remove.push(*stream_id)
-                    }
-                }
-                _ => {}
-            }
         }
         self.streams.retain(|k, _| !ids_to_remove.contains(k));
     }
 
-    pub fn netstat_diff(&self, nstat: NetStat) -> Vec<ConnectionKey> {
-        let mut diff = Vec::new();
-
-        for (stream_id, _tracker) in self.streams.iter() {
-            if !nstat.tcp.contains_key(stream_id) && !nstat.udp.contains_key(stream_id) {
-                diff.push(*stream_id);
-            }
-        }
-        diff
-    }
-
-    pub fn take_streams(&mut self, keys: Vec<ConnectionKey>) -> Vec<Tracker<TrackerState>> {
+    pub fn take_streams(&mut self, keys: Vec<StreamKey>) -> Vec<Tracker<TrackerState>> {
         let mut taken = Vec::new();
 
         for key in keys {
@@ -118,38 +94,6 @@ impl StreamManager {
         self.streams
             .values()
             .filter(|t| t.protocol == protocol)
-            .collect()
-    }
-
-    /// Take all streams of a given protocol from the manager
-    pub fn take_streams_by_protocol(
-        &mut self,
-        protocol: IpNextHeaderProtocol,
-    ) -> Vec<Tracker<TrackerState>> {
-        let mut taken = Vec::new();
-
-        // Use `drain` to take ownership of the entries in the HashMap
-        self.streams = self
-            .streams
-            .drain()
-            .filter_map(|(key, value)| {
-                if value.protocol == protocol {
-                    taken.push(value);
-                    None
-                } else {
-                    Some((key, value))
-                }
-            })
-            .collect();
-
-        taken
-    }
-
-    pub fn get_key_by_protocol(&self, protocol: IpNextHeaderProtocol) -> Vec<ConnectionKey> {
-        self.streams
-            .keys()
-            .filter(|k| k.get_protocol() == protocol)
-            .cloned()
             .collect()
     }
 }
