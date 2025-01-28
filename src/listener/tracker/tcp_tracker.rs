@@ -39,6 +39,7 @@ pub struct TcpStats {
     prev_smoothed_rtt: Option<f64>,
     bytes_acked: u32,
     counter: u16,
+    sys_time: SystemTime,
 }
 
 impl TcpStats {
@@ -53,6 +54,7 @@ impl TcpStats {
             prev_smoothed_rtt: None,
             bytes_acked: 0,
             counter: 0,
+            sys_time: SystemTime::now(),
         }
     }
 
@@ -73,15 +75,14 @@ impl TcpStats {
             self.counter += 1;
 
             // Update throughput
-            if self.counter % 10 == 0 {
+            if self.counter % 30 != 0 {
                 return;
             }
-            if let Some(prev_rtt) = self.prev_smoothed_rtt {
-                let bdp = (self.bytes_acked as f64 ) / prev_rtt;
-                let throughput = bdp / 125_000.0;
-                println!("Throughput: {:.2} Mbps", throughput);
-                self.bytes_acked = 0;
-            }
+            let bdp = (self.bytes_acked as f64 ) / self.sys_time.elapsed().unwrap().as_secs_f64();
+            let throughput = bdp / 125_000.0;
+            println!("Throughput: {:.2} Mbps", throughput);
+            self.bytes_acked = 0;
+            self.sys_time = SystemTime::now();
         }
         self.sent.push_back(p);
     }
