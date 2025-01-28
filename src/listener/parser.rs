@@ -1,9 +1,6 @@
 use super::packet::packet_builder::ParsedPacket;
+use super::procfs_reader::{self, get_interface, get_interface_info, NetStat};
 use super::tracker::link::LinkManager;
-use super::{
-    analyzer::Analyzer,
-    procfs_reader::{self, get_interface, get_interface_info, NetStat},
-};
 use anyhow::Result;
 use capture::OwnedPacket;
 use log::{error, info};
@@ -34,7 +31,6 @@ pub struct Parser {
     link_manager: LinkManager,
     netlink_data: Vec<NetlinkData>,
     netstat_data: Option<NetStat>,
-    analyzer: Analyzer,
 }
 
 impl Parser {
@@ -49,7 +45,6 @@ impl Parser {
             link_manager: LinkManager::new(),
             netlink_data: Vec::new(),
             netstat_data: None,
-            analyzer: Analyzer::new(),
         })
     }
 
@@ -140,8 +135,6 @@ impl Parser {
 
     fn handle_capture(&mut self, packet: OwnedPacket) {
         // Handle the captured packet
-        self.analyzer.process_packet(&packet);
-
         let parsed_packet = match self.parse_packet(packet) {
             Some(packet) => packet,
             None => return,

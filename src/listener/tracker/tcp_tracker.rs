@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::iter::Sum;
 use std::time::{Duration, SystemTime};
 
 use pnet::packet::ip::IpNextHeaderProtocol;
@@ -24,44 +25,36 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
     seq_cmp(a, b) <= 0
 }
 
-fn smoothed_value(old: f64, new: f64) -> f64 {
-    old + ALPHA * (new - old)
-}
-
 #[derive(Debug)]
 pub struct TcpStats {
-    total_retransmissions: u32,
+    pub retrans_in: u32,
+    pub retrans_out: u32,
     pub recv: VecDeque<SentPacket>,
     pub sent: VecDeque<SentPacket>,
     received_seqs: HashSet<u32>,
     pub state: Option<TcpState>,
     pub smoothed_rtt: Option<f64>,
     prev_smoothed_rtt: Option<f64>,
-    bytes_acked: u32,
-    counter: u16,
-    sys_time: SystemTime,
 }
 
 impl TcpStats {
     pub fn new() -> Self {
         TcpStats {
-            total_retransmissions: 0,
+            retrans_in: 0,
+            retrans_out: 0,
             recv: VecDeque::with_capacity(1000),
             sent: VecDeque::with_capacity(1000),
             received_seqs: HashSet::new(),
             state: None,
             smoothed_rtt: None,
             prev_smoothed_rtt: None,
-            bytes_acked: 0,
-            counter: 0,
-            sys_time: SystemTime::now(),
         }
     }
 
     pub fn register_data_received(&mut self, mut p: SentPacket, seq: &u32) {
         if self.received_seqs.contains(seq) {
             p.retransmissions += 1;
-            self.total_retransmissions += 1;
+            self.retrans_in += 1;
         }
         self.received_seqs.insert(*seq);
         self.recv.push_back(p);
@@ -71,20 +64,17 @@ impl TcpStats {
     pub fn register_data_sent(&mut self, p: SentPacket) {
         if let Some(rtt) = p.rtt {
             self.update_rtt(rtt);
-            self.bytes_acked += p.len + 60;
-            self.counter += 1;
-
-            // Update throughput
-            if self.counter % 30 != 0 {
-                return;
-            }
-            let bdp = (self.bytes_acked as f64 ) / self.sys_time.elapsed().unwrap().as_secs_f64();
-            let throughput = bdp / 125_000.0;
-            println!("Throughput: {:.2} Mbps", throughput);
-            self.bytes_acked = 0;
-            self.sys_time = SystemTime::now();
         }
         self.sent.push_back(p);
+    }
+
+    pub fn input_recv_gap(&self) -> Option<f64> {
+        if let Some(first) = self.recv.front() {
+            if let Some(last) = self.recv.back() {
+                return Some(last.sent_time.duration_since(first.sent_time).unwrap().as_secs_f64() / self.recv.len() as f64);
+            }
+        }
+        None
     }
 
     /// Updates the smoothed RTT with a new sample and
@@ -106,7 +96,6 @@ impl TcpStats {
         self.smoothed_rtt = Some(updated_rtt);
 
         // Check if the new sample crosses a threshold above the smoothed RTT
-        // e.g., threshold_factor = 1.3 means >130% of the smoothed RTT
         let threshold = THRESHOLD_FACTOR * updated_rtt;
 
         Some(new_rtt > threshold)
@@ -212,7 +201,7 @@ impl TcpTracker {
                 match self.sent_packets.get_mut(&sequence) {
                     Some(existing) => {
                         existing.retransmissions += 1;
-                        self.stats.total_retransmissions += 1;
+                        self.stats.retrans_out += 1;
                     }
                     None => {
                         let new_packet = SentPacket {
@@ -227,11 +216,6 @@ impl TcpTracker {
                         } else {
                             self.max_bytes_in_flight -= self.mss/10;
                         }
-                        // if self.stats.smoothed_rtt.is_some() {
-                        //     let bdp = self.max_bytes_in_flight as f64 / self.stats.smoothed_rtt.unwrap();
-                        //     let throughput = 8.0 * bdp / 1_000_000.0;
-                        //     println!("Throughput: {:.2} Mbps", throughput);
-                        // }
                         self.sent_packets.insert(sequence, new_packet);
                     }
                 }

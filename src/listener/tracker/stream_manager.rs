@@ -9,16 +9,28 @@ use super::super::tracker::tracker::{Tracker, TrackerState};
 pub struct StreamManager {
     // HashMap for all streams
     streams: HashMap<StreamKey, Tracker<TrackerState>>,
+    data_in: u32,
+    data_out: u32,
 }
 
 impl StreamManager {
     pub fn default() -> Self {
         StreamManager {
             streams: HashMap::new(),
+            data_in: 0,
+            data_out: 0,
         }
     }
 
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
+        match packet.direction {
+            super::super::packet::direction::Direction::Incoming => {
+                self.data_in += packet.total_length;
+            }
+            super::super::packet::direction::Direction::Outgoing => {
+                self.data_out += packet.total_length;
+            }
+        }
         let stream_id = StreamKey::from_packet(&packet);
         self.streams.entry(stream_id)
             .or_insert_with(|| Tracker::<TrackerState>::new(
@@ -34,7 +46,9 @@ impl StreamManager {
             match tracker.state {
                 TrackerState::Tcp(ref tcp_tracker) => {
                     if let Some(rtt) = tcp_tracker.stats.smoothed_rtt {
-                        latencies.push(rtt);
+                        if rtt > 0.0 {
+                            latencies.push(rtt);
+                        }
                     }
                 }
                 _ => {}
@@ -47,18 +61,29 @@ impl StreamManager {
         }
     }
 
-    pub fn periodic(&mut self) {
-        self.update_states();
-        for (stream_id, tracker) in self.streams.iter_mut() {
+    pub fn get_rt_in_out(&self) -> (u32, u32) {
+        let mut rt_in = 0;
+        let mut rt_out = 0;
+        for (_stream_id, tracker) in self.streams.iter() {
             match tracker.state {
-                TrackerState::Tcp(ref mut tcp_tracker) => {
-                    println!("{}: {}", stream_id, tcp_tracker.stats.smoothed_rtt.unwrap_or(0.0));
+                TrackerState::Tcp(ref tcp_tracker) => {
+                    rt_in += tcp_tracker.stats.retrans_in;
+                    rt_out += tcp_tracker.stats.retrans_out;
                 }
-                _ => {
-                    println!("{}", stream_id);
-                }
+                _ => {}
             }
         }
+        (rt_in, rt_out)
+    }
+
+    pub fn get_in_out(&self) -> (u32, u32) {
+        (self.data_in, self.data_out)
+    }
+
+    pub fn periodic(&mut self) {
+        self.update_states();
+        self.data_in = 0;
+        self.data_out = 0;
     }
 
     fn update_states(&mut self) {

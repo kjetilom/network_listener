@@ -18,13 +18,6 @@ pub struct SentPacket {
     pub rtt: Option<Duration>, // RTT to ack the segment
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RTT {
-    pub rtt: Duration,
-    pub packet_size: u32,
-    pub timestamp: SystemTime,
-}
-
 pub trait DefaultState {
     fn default(protocol: IpNextHeaderProtocol) -> Self;
     fn register_packet(&mut self, packet: &ParsedPacket);
