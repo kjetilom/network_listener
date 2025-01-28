@@ -37,6 +37,7 @@ pub struct TcpStats {
     pub state: Option<TcpState>,
     pub smoothed_rtt: Option<f64>,
     prev_smoothed_rtt: Option<f64>,
+    bytes_acked: u32,
 }
 
 impl TcpStats {
@@ -49,6 +50,7 @@ impl TcpStats {
             state: None,
             smoothed_rtt: None,
             prev_smoothed_rtt: None,
+            bytes_acked: 0,
         }
     }
 
@@ -65,6 +67,14 @@ impl TcpStats {
     pub fn register_data_sent(&mut self, p: SentPacket) {
         if let Some(rtt) = p.rtt {
             self.update_rtt(rtt);
+            self.bytes_acked += p.len + 60;
+
+            // Update throughput
+            if let Some(prev_rtt) = self.prev_smoothed_rtt {
+                let bdp = (self.bytes_acked as f64 ) / prev_rtt;
+                let throughput = bdp / 125_000.0;
+                println!("Throughput: {:.2} Mbps", throughput);
+            }
         }
         self.sent.push_back(p);
     }
@@ -113,7 +123,7 @@ impl TcpTracker {
             initial_sequence_local: None,
             bytes_in_flight: 0,
             max_bytes_in_flight: 0xFFFF,
-            mss: 0,
+            mss: 1400,
             stats: TcpStats::new(),
         }
     }
@@ -195,7 +205,6 @@ impl TcpTracker {
                     Some(existing) => {
                         existing.retransmissions += 1;
                         self.stats.total_retransmissions += 1;
-                        self.max_bytes_in_flight /= 2;
                     }
                     None => {
                         let new_packet = SentPacket {
@@ -207,12 +216,14 @@ impl TcpTracker {
                         self.bytes_in_flight += len;
                         if self.bytes_in_flight > self.max_bytes_in_flight {
                             self.max_bytes_in_flight = self.bytes_in_flight;
+                        } else {
+                            self.max_bytes_in_flight -= self.mss/10;
                         }
-                        if self.stats.smoothed_rtt.is_some() {
-                            let bdp = self.max_bytes_in_flight as f64 / self.stats.smoothed_rtt.unwrap();
-                            let throughput = 8.0 * bdp / 1_000_000.0;
-                            println!("Throughput: {:.2} Mbps", throughput);
-                        }
+                        // if self.stats.smoothed_rtt.is_some() {
+                        //     let bdp = self.max_bytes_in_flight as f64 / self.stats.smoothed_rtt.unwrap();
+                        //     let throughput = 8.0 * bdp / 1_000_000.0;
+                        //     println!("Throughput: {:.2} Mbps", throughput);
+                        // }
                         self.sent_packets.insert(sequence, new_packet);
                     }
                 }
@@ -229,8 +240,6 @@ impl TcpTracker {
                 // If packet is fully acked, calculate RTT
                 if let Ok(rtt_duration) = ack_timestamp.duration_since(sent_packet.sent_time) {
                     sent_packet.rtt = Some(rtt_duration);
-                    // We got an RTT
-                    self.max_bytes_in_flight += self.mss;
                 }
 
                 keys_to_remove.push(seq);
