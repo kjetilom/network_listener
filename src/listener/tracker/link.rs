@@ -33,6 +33,9 @@ impl LinkManager {
     pub fn periodic(&mut self) {
         println!();
         for (ip_pair, stream_manager) in self.links.iter_mut() {
+            if !stream_manager.contains_udp_tcp() {
+                continue;
+            }
             let data_in_out = stream_manager.get_in_out();
             let latency = stream_manager.get_latency_avg();
             let rt_in_out = stream_manager.get_rt_in_out();

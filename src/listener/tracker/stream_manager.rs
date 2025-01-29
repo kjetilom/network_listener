@@ -22,6 +22,17 @@ impl StreamManager {
         }
     }
 
+    pub fn contains_udp_tcp(&self) -> bool {
+        for (_stream_id, tracker) in self.streams.iter() {
+            match tracker.protocol {
+                IpNextHeaderProtocols::Udp => return true,
+                IpNextHeaderProtocols::Tcp => return true,
+                _ => {}
+            }
+        }
+        false
+    }
+
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
         match packet.direction {
             super::super::packet::direction::Direction::Incoming => {

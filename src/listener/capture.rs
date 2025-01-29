@@ -9,6 +9,9 @@ use tokio::task;
 
 use crate::listener::Settings;
 
+pub type CaptureResult =  Result<(PacketCapturer, UnboundedReceiver<OwnedPacket>, PCAPMeta), Box<dyn Error>>;
+
+
 pub struct PacketCapturer {
     cap: Capture<Active>,
     sender: UnboundedSender<OwnedPacket>,
@@ -89,7 +92,7 @@ impl PacketCapturer {
      *  Create a new PacketCapturer instance
      */
     pub fn new(
-    ) -> Result<(Self, UnboundedReceiver<OwnedPacket>, PCAPMeta), Box<dyn Error>> {
+    ) -> CaptureResult {
         // ! Change this to select device by name maybe?
         let device = Device::lookup()?.ok_or("No device available for capture")?;
         info!("Using device: {}", device.name);

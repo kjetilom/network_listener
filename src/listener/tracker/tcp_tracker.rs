@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, HashSet, VecDeque};
-use std::iter::Sum;
 use std::time::{Duration, SystemTime};
 
 use pnet::packet::ip::IpNextHeaderProtocol;
