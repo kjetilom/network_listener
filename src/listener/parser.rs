@@ -1,18 +1,20 @@
+use crate::probe::iperf_json::IperfResponse;
+
 use super::packet::packet_builder::ParsedPacket;
 use super::procfs_reader::{self, get_interface, get_interface_info, NetStat};
 use super::tracker::link::LinkManager;
 use anyhow::Result;
 use capture::OwnedPacket;
-use log::{error, info};
+use log::{error, info, warn};
 use neli_wifi::{Bss, Station};
 use tokio::{
-    sync::mpsc::{self, Receiver, Sender, UnboundedReceiver},
+    sync::mpsc::{self, Receiver, Sender},
     time,
 };
 
 const CHANNEL_CAPACITY: usize = 1000;
 
-use super::capture::{self, PCAPMeta};
+use super::capture::{self, CapEventReceiver, PCAPMeta};
 
 #[derive(Debug)]
 pub struct NetlinkData {
@@ -26,7 +28,7 @@ pub struct PeriodicData {
 }
 
 pub struct Parser {
-    packet_stream: UnboundedReceiver<OwnedPacket>,
+    packet_stream: CapEventReceiver,
     pcap_meta: PCAPMeta,
     link_manager: LinkManager,
     netlink_data: Vec<NetlinkData>,
@@ -35,7 +37,7 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(
-        packet_stream: UnboundedReceiver<OwnedPacket>,
+        packet_stream: CapEventReceiver,
         // "Metadata" from the pcap capture, aka this devices MAC and IP addresses
         pcap_meta: PCAPMeta,
     ) -> Result<Self> {
@@ -72,11 +74,17 @@ impl Parser {
         });
 
         let mut interval = time::interval(super::Settings::CLEANUP_INTERVAL);
-
         loop {
             tokio::select! {
-                Some(packet) = self.packet_stream.recv() => {
-                    self.handle_capture(packet);
+                Some(cap_ev) = self.packet_stream.recv() => {
+                    match cap_ev {
+                        capture::CapEvent::Packet(packet) => {
+                            self.handle_capture(packet);
+                        }
+                        capture::CapEvent::IperfResponse(data) => {
+                            self.handle_iperf(data);
+                        }
+                    }
                 },
                 Some(periodic_data) = prx.recv() => {
                     self.handle_periodic(periodic_data);
@@ -135,7 +143,7 @@ impl Parser {
 
     fn handle_capture(&mut self, packet: OwnedPacket) {
         // Handle the captured packet
-        let parsed_packet = match self.parse_packet(packet) {
+        let parsed_packet = match ParsedPacket::from_packet(&packet, &self.pcap_meta) {
             Some(packet) => packet,
             None => return,
         };
@@ -143,10 +151,23 @@ impl Parser {
         self.link_manager.insert(parsed_packet);
     }
 
-    /* Parses an `OwnedPacket` into a `ParsedPacket`.
-     * Returns `Some(ParsedPacket)` if parsing is successful, otherwise `None`.
-     */
-    pub fn parse_packet(&self, packet: OwnedPacket) -> Option<ParsedPacket> {
-        ParsedPacket::from_packet(&packet, &self.pcap_meta)
+    fn handle_iperf(&mut self, iperf_data: IperfResponse) {
+        match iperf_data {
+            IperfResponse::Error(e) => {
+                warn!("Iperf error: {}", e.error);
+            }
+            IperfResponse::Success(s) => {
+                let end = s.end;
+                let recv = end.sum_received.bits_per_second;
+                let sent = end.sum_sent.bits_per_second;
+                if recv > 0.0 {
+                    info!("Iperf received: {} Mbp/s", recv / 1_000_000.0);
+                }
+                if sent > 0.0 {
+                    info!("Iperf sent: {} Mbp/s", sent / 1_000_000.0);
+                }
+            }
+        }
     }
+
 }

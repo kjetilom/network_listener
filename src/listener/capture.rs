@@ -2,19 +2,29 @@ use log::{error, info};
 use mac_address::{get_mac_address, MacAddress};
 use pnet::datalink::MacAddr;
 use pcap::{Active, Capture, Device, Packet, PacketHeader};
+use tokio::net::unix::pipe::Receiver;
 use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task;
 
 use crate::listener::Settings;
+use crate::probe::iperf_json::{IperfResponse, Success};
 
-pub type CaptureResult =  Result<(PacketCapturer, UnboundedReceiver<OwnedPacket>, PCAPMeta), Box<dyn Error>>;
+pub type CaptureResult =  Result<(PacketCapturer, PCAPMeta), Box<dyn Error>>;
+
+pub type CapEventSender = UnboundedSender<CapEvent>;
+pub type CapEventReceiver = UnboundedReceiver<CapEvent>;
+
+pub enum CapEvent {
+    Packet(OwnedPacket),
+    IperfResponse(IperfResponse),
+}
 
 
 pub struct PacketCapturer {
     cap: Capture<Active>,
-    sender: UnboundedSender<OwnedPacket>,
+    sender: CapEventSender,
 }
 
 pub struct PCAPMeta {
@@ -92,6 +102,7 @@ impl PacketCapturer {
      *  Create a new PacketCapturer instance
      */
     pub fn new(
+        sender: CapEventSender,
     ) -> CaptureResult {
         // ! Change this to select device by name maybe?
         let device = Device::lookup()?.ok_or("No device available for capture")?;
@@ -112,16 +123,14 @@ impl PacketCapturer {
             Err(e) => return Err(e.into()),
         };
 
-        let (sender, receiver) = unbounded_channel();
-
         let meta = PCAPMeta::new(device.clone(), mac_addr);
 
-        Ok((PacketCapturer { cap, sender }, receiver, meta))
+        Ok((PacketCapturer { cap, sender: sender }, meta))
     }
 
     pub fn monitor_device(
         dev_name: String,
-    ) -> Result<(Self, UnboundedReceiver<OwnedPacket>, Device), Box<dyn Error>> {
+    ) -> Result<(Self, CapEventReceiver, Device), Box<dyn Error>> {
         // Given that a monitor device exists, we can capture packets here.
         // As of now, this is not used.
         let device = Device::list()?
@@ -151,11 +160,10 @@ impl PacketCapturer {
         // Capture needs to be in a blocking task since pcap::Capture is blocking
         let handle = task::spawn_blocking(move || {
             loop {
-                self.cap.stats().unwrap();
                 match self.cap.next_packet() {
                     Ok(packet) => {
                         let packet = OwnedPacket::from(packet);
-                        if sender.send(packet).is_err() {
+                        if sender.send(CapEvent::Packet(packet)).is_err() {
                             // Receiver has been dropped
                             error!("Receiver dropped. Stopping packet capture.");
                             break;

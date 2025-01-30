@@ -2,9 +2,11 @@ use log::info;
 use network_listener::listener::{capture::PacketCapturer, parser::Parser};
 use network_listener::logging::logger;
 use network_listener::probe::iperf::IperfServer;
-use network_listener::wireless_listener;
+use network_listener::IPERF3_PORT;
+use tokio::time;
 use std::error::Error;
 use std::net::IpAddr;
+use std::time::Duration;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::task::JoinHandle;
 pub type EventSender = tokio::sync::mpsc::UnboundedSender<EventMessage>;
@@ -15,6 +17,7 @@ pub struct NetworkListener {
     event_receiver: EventReceiver,
     event_sender: EventSender,
     handles: Vec<JoinHandle<()>>,
+    result_handles: Vec<JoinHandle<anyhow::Result<()>>>,
 }
 
 pub enum EventMessage {
@@ -33,13 +36,18 @@ impl NetworkListener {
             event_receiver,
             event_sender,
             handles: vec![],
+            result_handles: vec![],
         })
     }
 
     pub fn init_modules(&mut self) -> Result<Modules, Box<dyn Error>> {
-        let (pcap, receiver, pcap_meta) = PacketCapturer::new()?;
+        let (sender, receiver) = unbounded_channel();
+        let iperf_sender = sender.clone();
+
+        let (pcap, pcap_meta) = PacketCapturer::new(sender.clone())?;
         let parser = Parser::new(receiver, pcap_meta)?;
-        let server = IperfServer::new(5001)?;
+
+        let server = IperfServer::new(IPERF3_PORT, iperf_sender)?;
         Ok((pcap, parser, server))
     }
 
@@ -49,11 +57,11 @@ impl NetworkListener {
         let (pcap, parser, server) = self.init_modules()?;
 
         let cap_h = pcap.start_capture_loop();
-        let parser_h = tokio::spawn(parser.start());
-        let server_h = tokio::spawn(server.start());
+        let parser_h = tokio::spawn(async move {parser.start().await});
+        let server_h = tokio::spawn(async move {server.start().await});
         self.handles.push(cap_h);
         self.handles.push(parser_h);
-        self.handles.push(server_h);
+        self.result_handles.push(server_h);
         Ok(())
     }
 
@@ -74,9 +82,6 @@ impl NetworkListener {
                     }
                     EventMessage::PausePCAP => {
                         info!("Pausing PCAP");
-                    }
-                    _ => {
-                        info!("Unknown event");
                     }
                 },
                 _ = tokio::signal::ctrl_c() => {
@@ -101,6 +106,12 @@ impl NetworkListener {
             }
             handle.abort();
         }
+        for handle in self.result_handles {
+            if handle.is_finished() {
+                continue;
+            }
+            handle.abort();
+        }
     }
 }
 
@@ -111,20 +122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut netlistener = NetworkListener::new()?;
     netlistener.start()?;
-
-    // tokio::signal::ctrl_c().await?;
-    info!("Shutting down network listener");
     netlistener.blocking_event_loop().await.stop().await;
     Ok(())
 }
 
-pub fn do_wireless() -> Vec<tokio::task::JoinHandle<()>> {
-    let (mon, mon_recv, _) = PacketCapturer::monitor_device(String::from("mon0")).unwrap();
-
-    let _mon_h = mon.start_capture_loop();
-
-    let mon_parser = wireless_listener::parser::Parser::new(mon_recv);
-    let mon_parse_h = tokio::spawn(mon_parser.start());
-
-    vec![mon_parse_h]
-}
