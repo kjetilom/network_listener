@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use neli_wifi::{AsyncSocket, Interface};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use std::error::Error;
-use super::{parser::NetlinkData, tracker::stream_id::ConnectionKey};
+use super::{parser::NetlinkData, tracking::stream_id::{from_tcp_net_entry, from_udp_net_entry, IpPair, StreamKey}};
 use procfs::net::{TcpNetEntry, UdpNetEntry};
 
 pub enum NetEntry {
@@ -17,8 +17,8 @@ pub enum NetEntry {
 
 #[derive(Default)]
 pub struct NetStat {
-    pub tcp: HashMap<ConnectionKey, NetEntry>,
-    pub udp: HashMap<ConnectionKey, NetEntry>,
+    pub tcp: HashMap<(StreamKey, IpPair), NetEntry>,
+    pub udp: HashMap<(StreamKey, IpPair), NetEntry>,
 }
 
 
@@ -39,7 +39,7 @@ pub async fn proc_net() -> NetStat {
 
     for tcp_entry in entries {
         nstat.tcp.insert(
-            ConnectionKey::from_tcp_net_entry(&tcp_entry, IpNextHeaderProtocols::Tcp),
+            from_tcp_net_entry(&tcp_entry, IpNextHeaderProtocols::Tcp),
             NetEntry::Tcp {
                 entry: tcp_entry
             }
@@ -47,7 +47,7 @@ pub async fn proc_net() -> NetStat {
     }
     for udp_entry in udp_entries {
         nstat.udp.insert(
-            ConnectionKey::from_udp_net_entry(&udp_entry,IpNextHeaderProtocols::Udp),
+            from_udp_net_entry(&udp_entry,IpNextHeaderProtocols::Udp),
             NetEntry::Udp {
                 entry: udp_entry
             }

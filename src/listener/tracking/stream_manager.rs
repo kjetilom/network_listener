@@ -2,8 +2,8 @@ use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 
 use super::super::packet::packet_builder::ParsedPacket;
-use super::super::tracker::stream_id::StreamKey;
-use super::super::tracker::tracker::{Tracker, TrackerState};
+use super::super::tracking::stream_id::StreamKey;
+use super::super::tracking::tracker::{Tracker, TrackerState};
 // Replace HashMap with DashMap
 #[derive(Debug)]
 pub struct StreamManager {
