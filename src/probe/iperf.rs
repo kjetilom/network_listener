@@ -56,14 +56,12 @@ impl IperfServer {
             json_buffer.push('\n');
             if line == "}" {
                 // Parse JSON
-                info!("Parsing JSON");
                 let parsed_json: IperfResponse =
                     serde_json::from_str::<IperfResponse>(&json_buffer)
                         .expect("Failed to parse JSON");
                 self.sender
                     .send(CapEvent::IperfResponse(parsed_json))
                     .expect("Failed to send iperf response");
-                println!("Clearing json");
                 json_buffer.clear();
             }
         }
@@ -95,7 +93,7 @@ pub async fn do_iperf_test(dest_ip: &str, port: u16, duration: u16) {
 
     tokio::spawn(async move {
         let status = child.wait().await.expect("Failed to wait on child");
-        info!("iperf server exited with: {}", status);
+        info!("iperf client exited with: {}", status);
     });
 
     let mut json_buffer = String::new();

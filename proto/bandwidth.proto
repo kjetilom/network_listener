@@ -1,5 +1,9 @@
 syntax = "proto3";
-package network_listener.bandwidth;
+package bandwidth;
+
+service BandwidthService {
+    rpc SayHello (HelloRequest) returns (HelloReply);
+}
 
 message BandwidthMessage {
     // An array of bandwidth messages
@@ -21,7 +25,11 @@ message BandwidthMessage {
     }
 }
 
-message Hello {
+message HelloRequest {
+    string name = 1;
+}
+
+message HelloReply {
     string greeting = 1;
 }
 

@@ -1,5 +1,4 @@
-use std::io::Result;
-fn main() -> Result<()> {
-    prost_build::compile_protos(&["src/bandwidth.proto"], &["src/"])?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tonic_build::compile_protos("proto/bandwidth.proto")?;
     Ok(())
 }
