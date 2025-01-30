@@ -3,20 +3,22 @@ use std::collections::VecDeque;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::UdpState;
 
-use super::super::packet::{
-    direction::Direction,
-    transport_packet::TransportPacket,
-};
+use super::super::packet::{direction::Direction, transport_packet::TransportPacket};
 use crate::listener::packet::packet_builder::ParsedPacket;
 
 use super::tracker::{DefaultState, SentPacket};
-
 
 #[derive(Debug)]
 pub struct UdpTracker {
     pub state: Option<UdpState>,
     outgoing_packets: VecDeque<SentPacket>,
     incoming_packets: VecDeque<SentPacket>,
+}
+
+impl Default for UdpTracker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl UdpTracker {
@@ -41,7 +43,7 @@ impl DefaultState for UdpTracker {
                 Direction::Outgoing => &mut self.outgoing_packets,
             };
             storage.push_back(SentPacket {
-                len: packet.total_length as u32,
+                len: packet.total_length,
                 sent_time: packet.timestamp,
                 retransmissions: 0,
                 rtt: None,

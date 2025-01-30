@@ -36,6 +36,12 @@ pub struct TcpStats {
     prev_smoothed_rtt: Option<f64>,
 }
 
+impl Default for TcpStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TcpStats {
     pub fn new() -> Self {
         TcpStats {
@@ -112,6 +118,12 @@ pub struct TcpTracker {
     pub stats: TcpStats,
 }
 
+impl Default for TcpTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TcpTracker {
     pub fn new() -> Self {
         TcpTracker {
@@ -150,7 +162,7 @@ impl TcpTracker {
                     }
 
                     // Update acked packets if possible.
-                    if let Some(_) = self.initial_sequence_local {
+                    if self.initial_sequence_local.is_some() {
                         self.update_acked_packets(*acknowledgment, packet.timestamp);
                     }
                 }

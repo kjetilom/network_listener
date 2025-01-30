@@ -33,7 +33,7 @@ impl IperfServer {
         info!("Starting iperf server on port {}", port);
         let mut cmd = Command::new("iperf3");
 
-        cmd.args(&["-s", "--json", "-p", &port.to_string()]);
+        cmd.args(["-s", "--json", "-p", &port.to_string()]);
         cmd.stdout(Stdio::piped());
 
         let mut child = cmd.spawn().expect("Failed to start iperf server");
@@ -53,7 +53,7 @@ impl IperfServer {
                 json_buffer.clear();
             }
             json_buffer.push_str(&line);
-            json_buffer.push_str("\n");
+            json_buffer.push('\n');
             if line == "}" {
                 // Parse JSON
                 info!("Parsing JSON");
@@ -74,7 +74,7 @@ impl IperfServer {
 pub async fn do_iperf_test(dest_ip: &str, port: u16, duration: u16) {
     // Run iperf -c $dest_ip -p $port
     let mut cmd = Command::new("iperf3");
-    cmd.args(&[
+    cmd.args([
         "-c",
         dest_ip,
         "-p",
@@ -106,7 +106,7 @@ pub async fn do_iperf_test(dest_ip: &str, port: u16, duration: u16) {
         }
 
         json_buffer.push_str(&line);
-        json_buffer.push_str("\n");
+        json_buffer.push('\n');
         if line == "}" {
             // Parse JSON
             let parsed_json =

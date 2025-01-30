@@ -42,7 +42,7 @@ impl StreamManager {
                 self.data_out += packet.total_length;
             }
         }
-        let stream_id = StreamKey::from_packet(&packet);
+        let stream_id = StreamKey::from_packet(packet);
         self.streams.entry(stream_id)
             .or_insert_with(|| Tracker::<TrackerState>::new(
                 packet.timestamp,

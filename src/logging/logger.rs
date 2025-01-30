@@ -1,7 +1,7 @@
 use fern;
 
 pub fn setup_logging() -> Result<(), fern::InitError> {
-    let _logger = fern::Dispatch::new()
+    fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",

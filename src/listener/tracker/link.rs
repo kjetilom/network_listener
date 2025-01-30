@@ -11,6 +11,12 @@ pub struct LinkManager {
     links: Streams, // Private field
 }
 
+impl Default for LinkManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LinkManager {
     pub fn new() -> Self {
         LinkManager {

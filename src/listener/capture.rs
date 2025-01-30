@@ -1,17 +1,16 @@
 use log::{error, info};
 use mac_address::{get_mac_address, MacAddress};
-use pnet::datalink::MacAddr;
 use pcap::{Active, Capture, Device, Packet, PacketHeader};
-use tokio::net::unix::pipe::Receiver;
+use pnet::datalink::MacAddr;
 use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task;
 
 use crate::listener::Settings;
-use crate::probe::iperf_json::{IperfResponse, Success};
+use crate::probe::iperf_json::IperfResponse;
 
-pub type CaptureResult =  Result<(PacketCapturer, PCAPMeta), Box<dyn Error>>;
+pub type CaptureResult = Result<(PacketCapturer, PCAPMeta), Box<dyn Error>>;
 
 pub type CapEventSender = UnboundedSender<CapEvent>;
 pub type CapEventReceiver = UnboundedReceiver<CapEvent>;
@@ -20,7 +19,6 @@ pub enum CapEvent {
     Packet(OwnedPacket),
     IperfResponse(IperfResponse),
 }
-
 
 pub struct PacketCapturer {
     cap: Capture<Active>,
@@ -46,8 +44,8 @@ impl PCAPMeta {
         }
         PCAPMeta {
             mac_addr: MacAddr::from(mac_addr.bytes()),
-            ipv4: ipv4,
-            ipv6: ipv6,
+            ipv4,
+            ipv6,
             name: device.name.clone(),
         }
     }
@@ -101,9 +99,7 @@ impl PacketCapturer {
     /**
      *  Create a new PacketCapturer instance
      */
-    pub fn new(
-        sender: CapEventSender,
-    ) -> CaptureResult {
+    pub fn new(sender: CapEventSender) -> CaptureResult {
         // ! Change this to select device by name maybe?
         let device = Device::lookup()?.ok_or("No device available for capture")?;
         info!("Using device: {}", device.name);
@@ -125,7 +121,13 @@ impl PacketCapturer {
 
         let meta = PCAPMeta::new(device.clone(), mac_addr);
 
-        Ok((PacketCapturer { cap, sender: sender }, meta))
+        Ok((
+            PacketCapturer {
+                cap,
+                sender,
+            },
+            meta,
+        ))
     }
 
     pub fn monitor_device(

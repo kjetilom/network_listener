@@ -3,10 +3,8 @@ use network_listener::listener::{capture::PacketCapturer, parser::Parser};
 use network_listener::logging::logger;
 use network_listener::probe::iperf::IperfServer;
 use network_listener::IPERF3_PORT;
-use tokio::time;
 use std::error::Error;
 use std::net::IpAddr;
-use std::time::Duration;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::task::JoinHandle;
 pub type EventSender = tokio::sync::mpsc::UnboundedSender<EventMessage>;
@@ -15,7 +13,7 @@ pub type EventReceiver = tokio::sync::mpsc::UnboundedReceiver<EventMessage>;
 // Struct representation of the crate.
 pub struct NetworkListener {
     event_receiver: EventReceiver,
-    event_sender: EventSender,
+    _event_sender: EventSender,
     handles: Vec<JoinHandle<()>>,
     result_handles: Vec<JoinHandle<anyhow::Result<()>>>,
 }
@@ -31,10 +29,10 @@ type Modules = (PacketCapturer, Parser, IperfServer);
 
 impl NetworkListener {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let (event_sender, event_receiver) = unbounded_channel();
+        let (_event_sender, event_receiver) = unbounded_channel();
         Ok(Self {
             event_receiver,
-            event_sender,
+            _event_sender,
             handles: vec![],
             result_handles: vec![],
         })

@@ -15,19 +15,13 @@ pub enum NetEntry {
     },
 }
 
+#[derive(Default)]
 pub struct NetStat {
     pub tcp: HashMap<ConnectionKey, NetEntry>,
     pub udp: HashMap<ConnectionKey, NetEntry>,
 }
 
-impl Default for NetStat {
-    fn default() -> Self {
-        NetStat {
-            tcp: HashMap::new(),
-            udp: HashMap::new(),
-        }
-    }
-}
+
 
 
 pub async fn proc_net() -> NetStat {
@@ -71,7 +65,7 @@ pub async fn get_interface_info(index: i32) -> Result<NetlinkData,  Box<dyn std:
         stations: station_info,
         bss: bss_info,
     };
-    return Ok(neli_data);
+    Ok(neli_data)
 }
 
 pub async fn get_interface(device_name: &str) -> Result<Interface, Box<dyn Error>> {

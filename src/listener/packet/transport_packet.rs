@@ -55,7 +55,7 @@ impl TransportPacket {
                     sequence: tcp.get_sequence(),
                     acknowledgment: tcp.get_acknowledgement(),
                     flags: TcpFlags::new(tcp.get_flags()),
-                    payload_len: payload_len,
+                    payload_len,
                     options: TcpOptions::from_bytes(tcp.get_options_iter()),
                     src_port: tcp.get_source(),
                     dst_port: tcp.get_destination(),
@@ -120,6 +120,12 @@ pub struct TcpOptions {
     pub tsecr: Option<u32>,
     pub scale: Option<u8>,
     pub mss: Option<u16>,
+}
+
+impl Default for TcpOptions {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TcpOptions {

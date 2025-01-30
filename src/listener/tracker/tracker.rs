@@ -3,10 +3,8 @@ use std::time::{Duration, SystemTime};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 
 use super::{
-    super::packet::packet_builder::ParsedPacket,
-    generic_tracker::GenericTracker,
-    tcp_tracker::TcpTracker,
-    udp_tracker::UdpTracker,
+    super::packet::packet_builder::ParsedPacket, generic_tracker::GenericTracker,
+    tcp_tracker::TcpTracker, udp_tracker::UdpTracker,
 };
 
 /// Single struct to represent a sent or received packet with optional RTT.

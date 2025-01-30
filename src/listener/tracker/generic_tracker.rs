@@ -5,6 +5,12 @@ use pnet::packet::ip::IpNextHeaderProtocol;
 #[derive(Debug)]
 pub struct GenericTracker;
 
+impl Default for GenericTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GenericTracker {
     pub fn new() -> Self {
         GenericTracker
