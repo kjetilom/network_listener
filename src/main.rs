@@ -1,15 +1,13 @@
 use log::info;
-use network_listener::CapEventSender;
-
 use network_listener::listener::{capture::PacketCapturer, parser::Parser};
 use network_listener::logging::logger;
 use network_listener::probe::iperf::IperfServer;
 use network_listener::{prost_net, IPERF3_PORT};
+use prost_net::bandwidth_server::BwServer;
 use std::error::Error;
 use std::net::IpAddr;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::task::JoinHandle;
-use prost_net::bandwidth_server::spawn_bw_server;
 pub type EventSender = tokio::sync::mpsc::UnboundedSender<EventMessage>;
 pub type EventReceiver = tokio::sync::mpsc::UnboundedReceiver<EventMessage>;
 
@@ -20,7 +18,6 @@ pub struct NetworkListener {
     handles: Vec<JoinHandle<()>>,
     result_handles: Vec<JoinHandle<anyhow::Result<()>>>,
     bw_server_handles: Vec<JoinHandle<Result<(), Box<dyn Error + Send + Sync>>>>,
-    cap_event_sender: Option<CapEventSender>,
 }
 
 pub enum EventMessage {
@@ -30,7 +27,7 @@ pub enum EventMessage {
     PausePCAP,
 }
 
-type Modules = (PacketCapturer, Parser, IperfServer);
+type Modules = (PacketCapturer, Parser, IperfServer, BwServer);
 
 impl NetworkListener {
     pub fn new() -> Result<Self, Box<dyn Error>> {
@@ -41,7 +38,6 @@ impl NetworkListener {
             handles: vec![],
             result_handles: vec![],
             bw_server_handles: vec![],
-            cap_event_sender: None,
         })
     }
 
@@ -52,19 +48,19 @@ impl NetworkListener {
         let parser = Parser::new(receiver, pcap_meta)?;
 
         let server = IperfServer::new(IPERF3_PORT, sender.clone())?;
-        self.cap_event_sender = Some(sender);
-        Ok((pcap, parser, server))
+        let bw_server = BwServer::new(sender.clone());
+        Ok((pcap, parser, server, bw_server))
     }
 
     pub fn start(&mut self) -> Result<(), Box<dyn Error>> {
         info!("Starting packet capture");
 
-        let (pcap, parser, server) = self.init_modules()?;
+        let (pcap, parser, server, bw_server) = self.init_modules()?;
 
         let cap_h = pcap.start_capture_loop();
-        let parser_h = tokio::spawn(async move {parser.start().await});
-        let server_h = tokio::spawn(async move {server.start().await});
-        let _bw_server_h= spawn_bw_server(self.cap_event_sender.clone().unwrap());
+        let parser_h = tokio::spawn(async move { parser.start().await });
+        let server_h = tokio::spawn(async move { server.start().await });
+        let _bw_server_h = bw_server.spawn_bw_server();
         self.handles.push(cap_h);
         self.handles.push(parser_h);
         self.result_handles.push(server_h);
@@ -100,7 +96,7 @@ impl NetworkListener {
                     break;
                 }
             }
-        };
+        }
 
         self
     }
@@ -138,4 +134,3 @@ async fn main() -> Result<(), Box<dyn Error>> {
     netlistener.blocking_event_loop().await.stop().await;
     Ok(())
 }
-

@@ -23,7 +23,7 @@ pub fn spawn_client_task() -> (mpsc::Sender<ClientEvent>, tokio::task::JoinHandl
     // Spawn the task in the background.
     let handle = tokio::spawn(async move {
         // Create a single persistent gRPC client for efficiency.
-        let mut client = match BandwidthServiceClient::connect("http://[::1]:50051").await {
+        let mut client = match BandwidthServiceClient::connect("http://10.0.2.20:50051").await {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("Failed to connect to server: {:?}", e);

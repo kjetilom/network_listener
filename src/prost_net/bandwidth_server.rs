@@ -23,6 +23,27 @@ pub struct BwServer {
     sender: UnboundedSender<CapEvent>,
 }
 
+impl BwServer {
+    pub fn new(sender: UnboundedSender<CapEvent>) -> Self {
+        BwServer { sender }
+    }
+
+    /// Spawns the server in the background.
+    /// Consumes self, returns a handle to the task
+    pub fn spawn_bw_server(self) -> JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>> {
+        tokio::spawn(async move {
+            let addr = "[::1]:50051".parse()?;
+
+            Server::builder()
+                .add_service(BandwidthServiceServer::new(self))
+                .serve(addr)
+                .await?;
+
+            Ok(())
+        })
+    }
+}
+
 #[tonic::async_trait]
 impl BandwidthService for BwServer {
     async fn say_hello(
@@ -40,17 +61,17 @@ impl BandwidthService for BwServer {
     }
 }
 
-// Spawns the server in the background.
-pub fn spawn_bw_server(sender: CapEventSender) -> JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>> {
-    tokio::spawn(async move {
-        let addr = "[::1]:50051".parse()?;
-        let service = BwServer { sender };
 
-        Server::builder()
-            .add_service(BandwidthServiceServer::new(service))
-            .serve(addr)
-            .await?;
+// pub fn spawn_bw_server(sender: CapEventSender) -> JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>> {
+//     tokio::spawn(async move {
+//         let addr = "[::1]:50051".parse()?;
+//         let service = BwServer { sender };
 
-        Ok(())
-    })
-}
+//         Server::builder()
+//             .add_service(BandwidthServiceServer::new(service))
+//             .serve(addr)
+//             .await?;
+
+//         Ok(())
+//     })
+// }
