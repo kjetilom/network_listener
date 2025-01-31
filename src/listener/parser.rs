@@ -84,6 +84,9 @@ impl Parser {
                         capture::CapEvent::IperfResponse(data) => {
                             self.handle_iperf(data);
                         }
+                        capture::CapEvent::Protobuf(pbf) => {
+                            info!("Received protobuf: {:?}", pbf);
+                        }
                     }
                 },
                 Some(periodic_data) = prx.recv() => {

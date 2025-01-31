@@ -9,6 +9,7 @@ use tokio::task;
 
 use crate::listener::Settings;
 use crate::probe::iperf_json::IperfResponse;
+use crate::prost_net::bandwidth_server::PbfMsg;
 
 pub type CaptureResult = Result<(PacketCapturer, PCAPMeta), Box<dyn Error>>;
 
@@ -18,6 +19,7 @@ pub type CapEventReceiver = UnboundedReceiver<CapEvent>;
 pub enum CapEvent {
     Packet(OwnedPacket),
     IperfResponse(IperfResponse),
+    Protobuf(PbfMsg),
 }
 
 pub struct PacketCapturer {

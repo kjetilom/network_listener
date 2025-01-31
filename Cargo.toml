@@ -10,11 +10,7 @@ name = "network_listener"
 path = "src/main.rs"
 
 [[bin]]
-name = "bandwidth_server"
-path = "src/prost_net/bandwidth_server.rs"
-
-[[bin]]
-name = "bandwidth_client"
+name = "bwclient"
 path = "src/prost_net/bandwidth_client.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
