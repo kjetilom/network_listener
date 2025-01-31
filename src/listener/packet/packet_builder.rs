@@ -9,7 +9,7 @@ use pnet::util::MacAddr;
 
 use crate::listener::capture::{OwnedPacket, PCAPMeta};
 use crate::listener::packet::transport_packet::TransportPacket;
-use super::direction::{self, Direction};
+use super::Direction;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocol;
 
@@ -60,7 +60,7 @@ impl<'a> ParsedPacket {
         // Build the transport struct from the raw payload reference
         let transport = TransportPacket::from_data(payload, protocol, total_length as u16 - (hdrlen+ETH_HLEN as u16));
 
-        let direction = direction::Direction::from_mac(eth.get_destination(), pcap_meta.mac_addr);
+        let direction = Direction::from_mac(eth.get_destination(), pcap_meta.mac_addr);
 
         // The packet is intercepted if A <-> B <-> C and the packet is marked A <-> C
         let intercepted = !pcap_meta.matches_ip(src_ip) && !pcap_meta.matches_ip(dst_ip);

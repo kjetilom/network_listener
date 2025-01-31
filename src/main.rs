@@ -1,5 +1,6 @@
 use log::info;
-use network_listener::listener::capture::CapEventSender;
+use network_listener::CapEventSender;
+
 use network_listener::listener::{capture::PacketCapturer, parser::Parser};
 use network_listener::logging::logger;
 use network_listener::probe::iperf::IperfServer;

@@ -1,7 +1,7 @@
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 
-use super::super::packet::packet_builder::ParsedPacket;
+use super::super::packet::ParsedPacket;
 use super::super::tracking::stream_id::StreamKey;
 use super::super::tracking::tracker::{Tracker, TrackerState};
 // Replace HashMap with DashMap
@@ -11,6 +11,8 @@ pub struct StreamManager {
     streams: HashMap<StreamKey, Tracker<TrackerState>>,
     data_in: u32,
     data_out: u32,
+    max_in: u32,
+    max_out: u32,
 }
 
 impl StreamManager {
@@ -19,6 +21,8 @@ impl StreamManager {
             streams: HashMap::new(),
             data_in: 0,
             data_out: 0,
+            max_in: 0,
+            max_out: 0,
         }
     }
 
@@ -35,10 +39,10 @@ impl StreamManager {
 
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
         match packet.direction {
-            super::super::packet::direction::Direction::Incoming => {
+            super::super::packet::Direction::Incoming => {
                 self.data_in += packet.total_length;
             }
-            super::super::packet::direction::Direction::Outgoing => {
+            super::super::packet::Direction::Outgoing => {
                 self.data_out += packet.total_length;
             }
         }
@@ -88,11 +92,17 @@ impl StreamManager {
     }
 
     pub fn get_in_out(&self) -> (u32, u32) {
-        (self.data_in, self.data_out)
+        (self.max_out, self.max_out) // REMOVE THIS
     }
 
     pub fn periodic(&mut self) {
         self.update_states();
+        if self.data_in > self.max_in {
+            self.max_in = self.data_in;
+        }
+        if self.data_out > self.max_out {
+            self.max_out = self.data_out;
+        }
         self.data_in = 0;
         self.data_out = 0;
     }

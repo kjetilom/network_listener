@@ -3,8 +3,8 @@ use std::collections::VecDeque;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::UdpState;
 
-use super::super::packet::{direction::Direction, transport_packet::TransportPacket};
-use crate::listener::packet::packet_builder::ParsedPacket;
+use crate::{Direction, TransportPacket};
+use crate::ParsedPacket;
 
 use super::tracker::{DefaultState, SentPacket};
 

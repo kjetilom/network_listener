@@ -5,8 +5,8 @@ use std::net::IpAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::{TcpNetEntry, UdpNetEntry};
 
-use super::super::packet::packet_builder::ParsedPacket;
-use super::super::packet::transport_packet::TransportPacket;
+use super::super::packet::ParsedPacket;
+use super::super::packet::TransportPacket;
 
 #[derive(Debug, Hash, Eq, PartialEq)]
 pub struct IpPair {
@@ -26,6 +26,20 @@ impl IpPair {
 
     pub fn get_pair(&self) -> (IpAddr, IpAddr) {
         self.pair
+    }
+
+    /// Used for keeping track of seen IP addrs.
+    /// Since IpPair is a bi-directional pair, this function will return the IP that does not match the input IP.
+    /// If the IP is not in the pair, it will return the pair.
+    pub fn get_non_matching(&self, ip: IpAddr) -> (IpAddr, Option<IpAddr>) {
+        if self.pair.0 == ip {
+            (self.pair.1, None)
+        } else if self.pair.1 == ip {
+            (self.pair.0, None)
+        } else {
+            // If the IP is not in the pair, return the pair
+            (self.pair.0, Some(self.pair.1))
+        }
     }
 }
 

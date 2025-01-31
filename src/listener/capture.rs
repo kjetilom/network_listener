@@ -2,25 +2,10 @@ use log::{error, info};
 use mac_address::{get_mac_address, MacAddress};
 use pcap::{Active, Capture, Device, Packet, PacketHeader};
 use pnet::datalink::MacAddr;
-use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::task;
 
-use crate::listener::Settings;
-use crate::probe::iperf_json::IperfResponse;
-use crate::prost_net::bandwidth_server::PbfMsg;
-
-pub type CaptureResult = Result<(PacketCapturer, PCAPMeta), Box<dyn Error>>;
-
-pub type CapEventSender = UnboundedSender<CapEvent>;
-pub type CapEventReceiver = UnboundedReceiver<CapEvent>;
-
-pub enum CapEvent {
-    Packet(OwnedPacket),
-    IperfResponse(IperfResponse),
-    Protobuf(PbfMsg),
-}
+use crate::*;
 
 pub struct PacketCapturer {
     cap: Capture<Active>,
@@ -116,7 +101,7 @@ impl PacketCapturer {
             .open()?;
 
         let mac_addr = match get_mac_address() {
-            Ok(Some(ma)) => ma,
+            Ok(Some(mac)) => mac,
             Ok(None) => return Err("No MAC address found".into()),
             Err(e) => return Err(e.into()),
         };
@@ -130,29 +115,6 @@ impl PacketCapturer {
             },
             meta,
         ))
-    }
-
-    pub fn monitor_device(
-        dev_name: String,
-    ) -> Result<(Self, CapEventReceiver, Device), Box<dyn Error>> {
-        // Given that a monitor device exists, we can capture packets here.
-        // As of now, this is not used.
-        let device = Device::list()?
-            .into_iter()
-            .find(|d| d.name == dev_name)
-            .ok_or("No device available for capture")?;
-        info!("Using device: {}", device.name);
-        let mut cap = Capture::from_device(device.clone())?
-            .promisc(false)
-            .immediate_mode(Settings::IMMEDIATE_MODE)
-            .timeout(Settings::TIMEOUT) // Timeout in milliseconds
-            .tstamp_type(Settings::TSTAMP_TYPE)
-            .precision(Settings::PRECISION)
-            .open()?;
-        cap.set_datalink(pcap::Linktype(127)).unwrap();
-        let (sender, receiver) = unbounded_channel();
-
-        Ok((PacketCapturer { cap, sender }, receiver, device))
     }
 
     /**

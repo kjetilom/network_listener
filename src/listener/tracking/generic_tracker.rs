@@ -1,4 +1,4 @@
-use crate::listener::packet::packet_builder::ParsedPacket;
+use crate::listener::packet::ParsedPacket;
 use crate::listener::tracking::tracker::DefaultState;
 use pnet::packet::ip::IpNextHeaderProtocol;
 

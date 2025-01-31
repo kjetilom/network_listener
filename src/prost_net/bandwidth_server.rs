@@ -5,7 +5,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use proto_bw::{HelloReply, HelloRequest};
 use proto_bw::bandwidth_service_server::{BandwidthService, BandwidthServiceServer};
 
-use crate::listener::capture::{CapEvent, CapEventSender};
+use crate::*;
 
 pub mod proto_bw {
     tonic::include_proto!("bandwidth"); // The string specified here must match the proto package name

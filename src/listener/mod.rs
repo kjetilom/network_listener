@@ -25,6 +25,7 @@ impl Settings {
     // The window should be large enough to gather nessesary data, but small enough to adapt to changing network conditions.
     pub const BWE_WINDOW: i32 = 15;
 }
+
 pub mod packet;
 pub mod parser;
 pub mod capture;

@@ -4,10 +4,10 @@ use std::time::{Duration, SystemTime};
 use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::TcpState;
 
-use super::super::packet::{
-    direction::Direction,
-    packet_builder::ParsedPacket,
-    transport_packet::{TcpFlags, TransportPacket},
+use crate::{
+    Direction,
+    ParsedPacket,
+    {TcpFlags, TransportPacket},
 };
 
 use super::tracker::{DefaultState, SentPacket};

@@ -1,20 +1,18 @@
 use crate::probe::iperf_json::IperfResponse;
 
-use super::packet::packet_builder::ParsedPacket;
 use super::procfs_reader::{self, get_interface, get_interface_info, NetStat};
 use super::tracking::link::LinkManager;
+
+use crate::{CapEvent, CapEventReceiver, OwnedPacket, PCAPMeta, ParsedPacket, Settings};
 use anyhow::Result;
-use capture::OwnedPacket;
 use log::{error, info, warn};
 use neli_wifi::{Bss, Station};
 use tokio::{
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{channel, Receiver, Sender},
     time,
 };
 
-const CHANNEL_CAPACITY: usize = 1000;
-
-use super::capture::{self, CapEventReceiver, PCAPMeta};
+const CHANNEL_CAPACITY: usize = 10; // Amount of messages. Not Bytes.
 
 #[derive(Debug)]
 pub struct NetlinkData {
@@ -67,24 +65,24 @@ impl Parser {
         };
 
         let (ptx, mut prx): (Sender<PeriodicData>, Receiver<PeriodicData>) =
-            mpsc::channel(CHANNEL_CAPACITY);
+            channel(CHANNEL_CAPACITY);
 
         let periodic_handle = tokio::spawn(async move {
             Parser::periodic(ptx, idx).await;
         });
 
-        let mut interval = time::interval(super::Settings::CLEANUP_INTERVAL);
+        let mut interval = time::interval(Settings::CLEANUP_INTERVAL);
         loop {
             tokio::select! {
                 Some(cap_ev) = self.packet_stream.recv() => {
                     match cap_ev {
-                        capture::CapEvent::Packet(packet) => {
+                        CapEvent::Packet(packet) => {
                             self.handle_capture(packet);
                         }
-                        capture::CapEvent::IperfResponse(data) => {
+                        CapEvent::IperfResponse(data) => {
                             self.handle_iperf(data);
                         }
-                        capture::CapEvent::Protobuf(pbf) => {
+                        CapEvent::Protobuf(pbf) => {
                             info!("Received protobuf: {:?}", pbf);
                         }
                     }
@@ -128,7 +126,7 @@ impl Parser {
                 break;
             }
 
-            time::sleep(super::Settings::CLEANUP_INTERVAL).await;
+            time::sleep(Settings::CLEANUP_INTERVAL).await;
         }
     }
 
@@ -172,5 +170,4 @@ impl Parser {
             }
         }
     }
-
 }
