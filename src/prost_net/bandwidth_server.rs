@@ -32,7 +32,7 @@ impl BwServer {
     /// Consumes self, returns a handle to the task
     pub fn spawn_bw_server(self) -> JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>> {
         tokio::spawn(async move {
-            let addr = "[::1]:50051".parse()?;
+            let addr = "0.0.0.0:50051".parse()?;
 
             Server::builder()
                 .add_service(BandwidthServiceServer::new(self))
