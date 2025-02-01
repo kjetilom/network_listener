@@ -1,9 +1,12 @@
+
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 use tonic::{transport::Server, Request, Response, Status};
 use anyhow::Result;
+use std::pin::Pin;
+use futures::Stream;
 
-use proto_bw::{HelloReply, HelloRequest};
+use proto_bw::{BandwidthMessage, BandwidthRequest, HelloReply, HelloRequest};
 use proto_bw::bandwidth_service_server::{BandwidthService, BandwidthServiceServer};
 
 use crate::*;
@@ -48,6 +51,8 @@ impl BwServer {
 
 #[tonic::async_trait]
 impl BandwidthService for BwServer {
+    type SubscribeBandwidthStream = Pin<Box<dyn Stream<Item = Result<BandwidthMessage, Status>> + Send + 'static>>;
+
     async fn say_hello(
         &self,
         request: Request<HelloRequest>,
@@ -60,5 +65,19 @@ impl BandwidthService for BwServer {
         self.sender.send(CapEvent::Protobuf(PbfMsg::HelloRequest(inner))).expect("Failed to send protobuf message");
 
         Ok(Response::new(reply))
+    }
+
+    async fn get_bandwidth(
+        &self,
+        _: Request<BandwidthRequest>,
+    ) -> Result<Response<BandwidthMessage>, Status> {
+        panic!("Not implemented yet");
+    }
+
+    async fn subscribe_bandwidth(
+        &self,
+        _: Request<BandwidthRequest>,
+    ) -> Result<Response<Self::SubscribeBandwidthStream>, Status> {
+        panic!("Not implemented yet");
     }
 }

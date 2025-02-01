@@ -26,6 +26,13 @@ pub struct Error {
 pub struct Success {
     pub intervals: Vec<Interval>,
     pub end: End,
+    pub start: Start,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Start {
+    pub connected: Vec<Connected>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

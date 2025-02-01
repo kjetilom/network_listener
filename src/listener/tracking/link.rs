@@ -36,10 +36,10 @@ impl LinkManager {
             .record_ip_packet(&packet);
     }
 
-    pub fn insert_iperf_result(&mut self, ip_pair: IpPair, data_in: u32, data_out: u32) {
+    pub fn insert_iperf_result(&mut self, ip_pair: IpPair, bps: f64) {
         self.links.entry(ip_pair)
             .or_insert_with(StreamManager::default)
-            .record_iperf_result(data_in, data_out);
+            .record_iperf_result(bps);
     }
 
     pub fn periodic(&mut self) {
@@ -57,13 +57,13 @@ impl LinkManager {
             let data_in_out = stream_manager.get_in_out();
             let latency = stream_manager.get_latency_avg();
             //let rt_in_out = stream_manager.get_rt_in_out();
-            let in_ = (data_in_out.0 * 8) as f64 / 1024.0 / 1.0 / Settings::CLEANUP_INTERVAL.as_secs_f64(); // INSERT THING HERE
-            let out = (data_in_out.1 * 8) as f64 / 1024.0 / 1.0 / Settings::CLEANUP_INTERVAL.as_secs_f64(); // INSERT THING HERE
+            let in_ = (data_in_out.0 * 8) as f64 / 1000.0 / Settings::CLEANUP_INTERVAL.as_secs_f64(); // INSERT THING HERE
+            let out = (data_in_out.1 * 8) as f64 / 1000.0 / Settings::CLEANUP_INTERVAL.as_secs_f64(); // INSERT THING HERE
             let state = LinkState {
                 thp_in: in_,
                 thp_out: out,
                 bw: None, // ! Setting to None for now
-                abw: None,
+                abw: Some(stream_manager.get_abw()),
                 latency: latency,
                 delay: None,
                 jitter: None,

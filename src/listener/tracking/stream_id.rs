@@ -5,6 +5,8 @@ use std::net::IpAddr;
 use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::{TcpNetEntry, UdpNetEntry};
 
+use crate::probe::iperf_json::Connected;
+
 use super::super::packet::ParsedPacket;
 use super::super::packet::TransportPacket;
 
@@ -88,6 +90,23 @@ impl Display for StreamKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.protocol)
     }
+}
+
+pub fn from_iperf_connected(
+    connected: &Connected,
+    proto: IpNextHeaderProtocol,
+) -> (StreamKey, IpPair) {
+    (
+        StreamKey::new(
+            proto,
+            Some(connected.local_port as u16),
+            Some(connected.remote_port as u16),
+        ),
+        IpPair::new(
+            connected.local_host.parse().unwrap(),
+            connected.remote_host.parse().unwrap(),
+        ),
+    )
 }
 
 macro_rules! from_net_entry {

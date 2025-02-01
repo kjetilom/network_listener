@@ -3,13 +3,19 @@ package bandwidth;
 
 service BandwidthService {
     rpc SayHello (HelloRequest) returns (HelloReply);
+    rpc GetBandwidth (BandwidthRequest) returns (BandwidthMessage);
+    rpc SubscribeBandwidth (BandwidthRequest) returns (stream BandwidthMessage);
+    // rpc ShareBandwidth (BandwidthMessage) returns (BandwidthMessage);
+    // SendBandwidth
+
 }
 
 message BandwidthMessage {
     // An array of bandwidth messages
-    repeated Bandwidth bandwidth = 1;
+    //repeated Bandwidth bandwidth = 1;
+    repeated LinkState link_state = 1;
 
-    message Bandwidth {
+    message LinkState {
         // Ip addr of the sender (source)
         string sender_ip = 1;
         // Ip addr of the receiver (destination)
@@ -26,6 +32,10 @@ message BandwidthMessage {
 }
 
 message HelloRequest {
+    string name = 1;
+}
+
+message BandwidthRequest {
     string name = 1;
 }
 

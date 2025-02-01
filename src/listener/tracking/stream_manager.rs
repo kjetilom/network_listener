@@ -13,6 +13,7 @@ pub struct StreamManager {
     data_out: u32,
     max_in: u32,
     max_out: u32,
+    abw: f64,
 }
 
 impl StreamManager {
@@ -23,6 +24,7 @@ impl StreamManager {
             data_out: 0,
             max_in: 0,
             max_out: 0,
+            abw: 0.0,
         }
     }
 
@@ -37,9 +39,13 @@ impl StreamManager {
         false
     }
 
-    pub fn record_iperf_result(&mut self, data_in: u32, data_out: u32) {
-        self.data_in += data_in;
-        self.data_out += data_out; // ! FIX THIS LATER DUDE
+    pub fn record_iperf_result(&mut self, bps: f64) {
+        // Check if in out is very different
+        self.abw = bps;
+    }
+
+    pub fn get_abw(&self) -> f64 {
+        self.abw
     }
 
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
@@ -97,7 +103,7 @@ impl StreamManager {
     }
 
     pub fn get_in_out(&self) -> (u32, u32) {
-        (self.max_out, self.max_out) // REMOVE THIS
+        (self.max_in, self.max_out) // REMOVE THIS
     }
 
     pub fn periodic(&mut self) {

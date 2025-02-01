@@ -3,10 +3,14 @@ use crate::probe::iperf_json::IperfResponse;
 use super::procfs_reader::{self, get_interface, get_interface_info, NetStat};
 use super::tracking::link::LinkManager;
 
-use crate::{CapEvent, CapEventReceiver, OwnedPacket, PCAPMeta, ParsedPacket, Settings};
+use crate::{
+    stream_id::from_iperf_connected, CapEvent, CapEventReceiver, OwnedPacket, PCAPMeta,
+    ParsedPacket, Settings,
+};
 use anyhow::Result;
 use log::{error, info, warn};
 use neli_wifi::{Bss, Station};
+use pnet::packet::ip::IpNextHeaderProtocols;
 use tokio::task::JoinHandle;
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
@@ -164,14 +168,20 @@ impl Parser {
                 warn!("Iperf error: {}", e.error);
             }
             IperfResponse::Success(s) => {
-                let end = s.end;
-                let recv = end.sum_received.bits_per_second;
-                let sent = end.sum_sent.bits_per_second;
-                if recv > 0.0 {
-                    info!("Iperf received: {} Mbp/s", recv / 1_000_000.0);
-                }
-                if sent > 0.0 {
-                    info!("Iperf sent: {} Mbp/s", sent / 1_000_000.0);
+                let connected = s.start.connected;
+                if connected.len() == 1 {
+                    let (_stream_id, ip_pair) = // ! Use stream_id later pls
+                        from_iperf_connected(
+                            connected.first().unwrap(),
+                            IpNextHeaderProtocols::Tcp
+                        );
+                    self.link_manager.insert_iperf_result(
+                        ip_pair,
+                        s.end
+                            .sum_received
+                            .bits_per_second
+                            .max(s.end.sum_sent.bits_per_second),
+                    ); // ! This is a hack
                 }
             }
         }
