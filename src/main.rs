@@ -17,7 +17,6 @@ pub struct NetworkListener {
     _event_sender: EventSender,
     handles: Vec<JoinHandle<()>>,
     result_handles: Vec<JoinHandle<anyhow::Result<()>>>,
-    bw_server_handles: Vec<JoinHandle<Result<(), Box<dyn Error + Send + Sync>>>>,
 }
 
 pub enum EventMessage {
@@ -37,7 +36,6 @@ impl NetworkListener {
             _event_sender,
             handles: vec![],
             result_handles: vec![],
-            bw_server_handles: vec![],
         })
     }
 
@@ -58,13 +56,13 @@ impl NetworkListener {
         let (pcap, parser, server, bw_server) = self.init_modules()?;
 
         let cap_h = pcap.start_capture_loop();
-        let parser_h = tokio::spawn(async move { parser.start().await });
-        let server_h = tokio::spawn(async move { server.start().await });
-        let _bw_server_h = bw_server.spawn_bw_server();
-        self.handles.push(cap_h);
+        let parser_h = parser.dispatch_parser();
+        let server_h = server.dispatch_server();
+        let bw_server_h = bw_server.dispatch_server();
+        self.result_handles.push(cap_h);
         self.handles.push(parser_h);
         self.result_handles.push(server_h);
-        self.bw_server_handles.push(_bw_server_h);
+        self.result_handles.push(bw_server_h);
         Ok(())
     }
 
@@ -110,12 +108,6 @@ impl NetworkListener {
             handle.abort();
         }
         for handle in self.result_handles {
-            if handle.is_finished() {
-                continue;
-            }
-            handle.abort();
-        }
-        for handle in self.bw_server_handles {
             if handle.is_finished() {
                 continue;
             }

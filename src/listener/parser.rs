@@ -7,6 +7,7 @@ use crate::{CapEvent, CapEventReceiver, OwnedPacket, PCAPMeta, ParsedPacket, Set
 use anyhow::Result;
 use log::{error, info, warn};
 use neli_wifi::{Bss, Station};
+use tokio::task::JoinHandle;
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
     time,
@@ -48,6 +49,10 @@ impl Parser {
         })
     }
 
+    pub fn dispatch_parser(self) -> JoinHandle<()> {
+        tokio::spawn(async move { self.start().await })
+    }
+
     pub async fn start(mut self) {
         let interface = match get_interface(&self.pcap_meta.name).await {
             Ok(interface) => {
@@ -55,12 +60,13 @@ impl Parser {
                 Some(interface)
             }
             Err(e) => {
-                error!("Error getting interface: {:?}", e);
+                error!("Failed to get interface index: {}", e);
                 None
             }
         };
+
         let idx = match interface {
-            Some(interface) => Some(interface.index.unwrap()),
+            Some(interface) => interface.index,
             None => None,
         };
 

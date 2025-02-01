@@ -1,3 +1,39 @@
+/**
+ * Module for managing iperf probes.
+ *
+ * This module provides an implementation for both iperf server and client functionality.
+ *
+ * IperfEvent:
+ *   - Represents events originating from the iperf process output.
+ *   - Currently supports events with JSON-formatted data.
+ *
+ * IperfServer:
+ *   - A structure representing an iperf server that listens on a specified port.
+ *   - It spawns an iperf3 process to run as a server, captures its JSON output, and dispatches
+ *     the parsed events via a provided event sender channel.
+ *
+ * Methods on IperfServer:
+ *   - new:
+ *       * Initializes the server with a given listening port and event sender.
+ *   - dispatch_server:
+ *       * Spawns the server operation asynchronously.
+ *   - start:
+ *       * Launches the iperf server process and processes its stdout line-by-line, constructing JSON
+ *         messages and sending parsed responses as events.
+ *
+ * do_iperf_test:
+ *   - Executes an iperf client test to a specified destination IP and port.
+ *   - Runs iperf3 in client mode with options for JSON output, capturing and processing the output
+ *     to provide test results.
+ *
+ * Common Functionality:
+ *   - Both client and server functions use asynchronous process management via Tokio's facilities.
+ *   - Process output is streamed using asynchronous buffered readers, and logging is performed
+ *     to track process lifecycle and errors.
+ *
+ * Error Handling:
+ *   - Uses the anyhow crate to simplify error propagation and reporting in asynchronous contexts.
+ */
 use std::process::Stdio;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -25,6 +61,10 @@ impl IperfServer {
             listen_port,
             sender,
         })
+    }
+
+    pub fn dispatch_server(self) -> tokio::task::JoinHandle<Result<()>> {
+        tokio::spawn(async move { self.start().await })
     }
 
     pub async fn start(self) -> Result<()> {

@@ -37,6 +37,11 @@ impl StreamManager {
         false
     }
 
+    pub fn record_iperf_result(&mut self, data_in: u32, data_out: u32) {
+        self.data_in += data_in;
+        self.data_out += data_out; // ! FIX THIS LATER DUDE
+    }
+
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
         match packet.direction {
             super::super::packet::Direction::Incoming => {

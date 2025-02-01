@@ -8,7 +8,7 @@ use procfs::net::{TcpNetEntry, UdpNetEntry};
 use super::super::packet::ParsedPacket;
 use super::super::packet::TransportPacket;
 
-#[derive(Debug, Hash, Eq, PartialEq)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone, Copy)]
 pub struct IpPair {
     pair: (IpAddr, IpAddr),
 }

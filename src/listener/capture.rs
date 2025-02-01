@@ -1,14 +1,15 @@
 use log::{error, info};
 use mac_address::{get_mac_address, MacAddress};
-use pcap::{Active, Capture, Device, Packet, PacketHeader};
+use pcap::{Capture, Device, Inactive, Packet, PacketHeader};
 use pnet::datalink::MacAddr;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use tokio::task;
+use anyhow::Result;
 
 use crate::*;
 
 pub struct PacketCapturer {
-    cap: Capture<Active>,
+    cap: Capture<Inactive>,
     sender: CapEventSender,
 }
 
@@ -97,8 +98,7 @@ impl PacketCapturer {
             .timeout(Settings::TIMEOUT) // Timeout in milliseconds
             .tstamp_type(Settings::TSTAMP_TYPE)
             .precision(Settings::PRECISION)
-            .snaplen(Settings::SNAPLEN)
-            .open()?;
+            .snaplen(Settings::SNAPLEN);
 
         let mac_addr = match get_mac_address() {
             Ok(Some(mac)) => mac,
@@ -117,22 +117,34 @@ impl PacketCapturer {
         ))
     }
 
-    /**
-     *  Start the asynchronous packet capturing loop
-     */
-    pub fn start_capture_loop(mut self) -> task::JoinHandle<()> {
+    /// Start the asynchronous packet capturing loop
+    ///
+    /// The idea: Don't block the main thread with packet capture
+    /// This way the reciever can be temporarily overloaded without
+    /// affecting the packet capture
+    ///
+    /// Issue: Might cause high Memory and CPU usage
+    pub fn start_capture_loop(self) -> task::JoinHandle<Result<()>> {
         // Clone the sender to move into the thread
         let sender = self.sender.clone();
         // Capture needs to be in a blocking task since pcap::Capture is blocking
         let handle = task::spawn_blocking(move || {
+            let mut cap = match self.cap.open() {
+                Ok(c) => c,
+                Err(e) => {
+                    error!("Failed to open capture: {}", e);
+                    return Err(e.into());
+                }
+            }; // Open the capture
             loop {
-                match self.cap.next_packet() {
+                match cap.next_packet() {
                     Ok(packet) => {
                         let packet = OwnedPacket::from(packet);
-                        if sender.send(CapEvent::Packet(packet)).is_err() {
-                            // Receiver has been dropped
-                            error!("Receiver dropped. Stopping packet capture.");
-                            break;
+                        match sender.send(CapEvent::Packet(packet)) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                return Err(e.into());
+                            }
                         }
                     }
                     Err(e) => {

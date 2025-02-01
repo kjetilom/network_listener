@@ -44,13 +44,6 @@ pub struct Connected {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ConnectingTo {
-    pub host: String,
-    pub port: i64,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Interval {
     pub sum: Sum,
 }

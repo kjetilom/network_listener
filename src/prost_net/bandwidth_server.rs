@@ -1,6 +1,7 @@
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 use tonic::{transport::Server, Request, Response, Status};
+use anyhow::Result;
 
 use proto_bw::{HelloReply, HelloRequest};
 use proto_bw::bandwidth_service_server::{BandwidthService, BandwidthServiceServer};
@@ -30,15 +31,16 @@ impl BwServer {
 
     /// Spawns the server in the background.
     /// Consumes self, returns a handle to the task
-    pub fn spawn_bw_server(self) -> JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>> {
+    pub fn dispatch_server(self) -> JoinHandle<Result<()>> {
         tokio::spawn(async move {
-            let addr = "0.0.0.0:50051".parse()?;
+            let addr = "0.0.0.0:50051"
+                .parse()
+                .expect("Failed to parse address");
 
             Server::builder()
                 .add_service(BandwidthServiceServer::new(self))
                 .serve(addr)
                 .await?;
-
             Ok(())
         })
     }
@@ -60,18 +62,3 @@ impl BandwidthService for BwServer {
         Ok(Response::new(reply))
     }
 }
-
-
-// pub fn spawn_bw_server(sender: CapEventSender) -> JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync + 'static>>> {
-//     tokio::spawn(async move {
-//         let addr = "[::1]:50051".parse()?;
-//         let service = BwServer { sender };
-
-//         Server::builder()
-//             .add_service(BandwidthServiceServer::new(service))
-//             .serve(addr)
-//             .await?;
-
-//         Ok(())
-//     })
-// }
