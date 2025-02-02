@@ -1,4 +1,8 @@
+use std::net::{IpAddr, Ipv4Addr};
+use std::str::FromStr;
+
 use crate::probe::iperf_json::IperfResponse;
+use crate::proto_bw::HelloReply;
 
 use super::procfs_reader::{self, get_interface, get_interface_info, NetStat};
 use super::tracking::link::LinkManager;
@@ -6,6 +10,7 @@ use super::tracking::link::LinkManager;
 use crate::{
     stream_id::from_iperf_connected, CapEvent, CapEventReceiver, OwnedPacket, PCAPMeta,
     ParsedPacket, Settings,
+    ClientEvent,
 };
 use anyhow::Result;
 use log::{error, info, warn};
@@ -43,11 +48,12 @@ impl Parser {
         packet_stream: CapEventReceiver,
         // "Metadata" from the pcap capture, aka this devices MAC and IP addresses
         pcap_meta: PCAPMeta,
+        client_sender: Sender<ClientEvent>,
     ) -> Result<Self> {
         Ok(Parser {
             packet_stream,
             pcap_meta,
-            link_manager: LinkManager::new(),
+            link_manager: LinkManager::new(client_sender),
             netlink_data: Vec::new(),
             netstat_data: None,
         })
@@ -77,9 +83,15 @@ impl Parser {
         let (ptx, mut prx): (Sender<PeriodicData>, Receiver<PeriodicData>) =
             channel(CHANNEL_CAPACITY);
 
+        let (ctx, mut crx): (
+            Sender<Result<HelloReply, tonic::Status>>,
+             Receiver<Result<HelloReply, tonic::Status>>) = channel(CHANNEL_CAPACITY);
+
         let periodic_handle = tokio::spawn(async move {
             Parser::periodic(ptx, idx).await;
         });
+
+        let mut longer_interval = time::interval(Settings::LONGER_INTERVAL);
 
         let mut interval = time::interval(Settings::CLEANUP_INTERVAL);
         loop {
@@ -100,8 +112,17 @@ impl Parser {
                 Some(periodic_data) = prx.recv() => {
                     self.handle_periodic(periodic_data);
                 },
+                Some(reply) = crx.recv() => {
+                    match reply {
+                        Err(e) => error!("Error occured: {:?}", e),
+                        Ok(reply) => self.link_manager.add_important_link(IpAddr::from_str(&reply.ip_addr).unwrap_or(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))),
+                    }
+                },
                 _ = interval.tick() => {
                     self.link_manager.periodic();
+                },
+                _ = longer_interval.tick() => {
+                    self.link_manager.init_important_links(&self.pcap_meta, ctx.clone()).await;
                 },
                 else => {
                     // Both streams have ended

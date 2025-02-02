@@ -40,6 +40,6 @@ message BandwidthRequest {
 }
 
 message HelloReply {
-    string greeting = 1;
+    string ip_addr = 1;
 }
 

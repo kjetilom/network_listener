@@ -11,10 +11,11 @@ tmux new-window -d -t "=core" -n start_core -c $BASE_DIR
 # Start the core-daemon in the daemon window
 tmux send-keys -t "=core:=daemon" "sudo core-daemon" Enter
 # This takes some time to start, so we will wait for a few seconds
-sleep 5
+sleep 3
 
 # Start the start_core.sh script in the start_core window
 tmux send-keys -t "=core:=start_core" "./start_core.sh" Enter
+sleep 5
 
 tmux new-window -d -t "=core" -n nodes -c $BASE_DIR
 
@@ -27,13 +28,6 @@ tmux send-keys -t "=core:=nodes.0" "vcmd -c /tmp/pycore.1/pc120" Enter
 tmux send-keys -t "=core:=nodes.1" "vcmd -c /tmp/pycore.1/pc220" Enter
 tmux send-keys -t "=core:=nodes.2" "vcmd -c /tmp/pycore.1/pc320" Enter
 tmux send-keys -t "=core:=nodes.3" "vcmd -c /tmp/pycore.1/pc221" Enter
-
-
-# Run a command in both panes
-tmux send-keys -t "=core:=nodes.0" "echo 'Hello from pane 0'" Enter
-tmux send-keys -t "=core:=nodes.1" "echo 'Hello from pane 1'" Enter
-
-tmux split-window -v -t "=core:=nodes.0" -c $BASE_DIR
 
 # How do we stop the session?
 # Wait for the user to press enter

@@ -1,6 +1,8 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::{HashMap, HashSet}, fmt::Display, net::IpAddr};
 
-use crate::{listener::{packet::ParsedPacket, tracking::stream_manager::StreamManager}, Settings};
+use tokio::sync::mpsc::Sender;
+
+use crate::{listener::{packet::ParsedPacket, tracking::stream_manager::StreamManager}, proto_bw::HelloReply, ClientEvent, Settings};
 
 use super::stream_id::IpPair;
 
@@ -9,18 +11,16 @@ type Streams = HashMap<IpPair, StreamManager>;
 #[derive(Debug)]
 pub struct LinkManager {
     links: Streams, // Private field
-}
-
-impl Default for LinkManager {
-    fn default() -> Self {
-        Self::new()
-    }
+    vip_links: HashSet<IpAddr>, // Links we care about (Empty at startup)
+    client_sender: Sender<ClientEvent>,
 }
 
 impl LinkManager {
-    pub fn new() -> Self {
+    pub fn new(client_sender: Sender<ClientEvent>) -> Self {
         LinkManager {
             links: HashMap::new(),
+            vip_links: HashSet::new(),
+            client_sender,
         }
     }
 
@@ -49,6 +49,49 @@ impl LinkManager {
         }
         for link in self.get_link_states() {
             println!("{}", link);
+        }
+    }
+
+    pub fn do_something_with_vip_links(&self) {
+        for link in self.vip_links.iter() {
+            println!("VIP Link: {}", link);
+        }
+    }
+
+    pub fn add_important_link(&mut self, ip_addr: IpAddr) {
+        self.vip_links.insert(ip_addr);
+    }
+
+    pub async fn init_important_links(&mut self, pcap_meta: &crate::PCAPMeta, sender: Sender<Result<HelloReply, tonic::Status>>) {
+        // We want to find out which links are running an instance of network_listener
+        // We can do this by sending hello messages to all the links we know about
+        // If we get a response, we know that the link is running network_listener
+        if self.vip_links.len() != 0 {
+            for ip in self.vip_links.iter() {
+                let a= self.client_sender.send(ClientEvent::SendHello {
+                    ip: ip.to_string(),
+                    message: String::from("Hello!"),
+                    reply_tx: sender.clone()});
+                if a.await.is_err() {
+                    eprintln!("Failed to send hello message to {}", ip);
+                }
+            }
+            return;
+        }
+        for ip_pair in self.links.keys() {
+            // Send hello message
+            let pair = ip_pair.get_non_matching(pcap_meta.ipv4.into());
+            let ips = pair.1.map(|ip| vec![pair.0, ip]).unwrap_or(vec![pair.0]);
+            println!("Sending hello messages to: {}", ips.iter().map(|ip| ip.to_string()).collect::<Vec<String>>().join(", "));
+            for ip in ips {
+                let a= self.client_sender.send(ClientEvent::SendHello {
+                    ip: ip.to_string(),
+                    message: String::from("Hello!"),
+                    reply_tx: sender.clone()});
+                if a.await.is_err() {
+                    eprintln!("Failed to send hello message to {}", ip);
+                }
+            }
         }
     }
 

@@ -4,6 +4,7 @@ use network_listener::logging::logger;
 use network_listener::probe::iperf::IperfServer;
 use network_listener::{prost_net, IPERF3_PORT};
 use prost_net::bandwidth_server::BwServer;
+use prost_net::bandwidth_client::spawn_client_task;
 use std::error::Error;
 use std::net::IpAddr;
 use tokio::sync::mpsc::unbounded_channel;
@@ -26,8 +27,6 @@ pub enum EventMessage {
     PausePCAP,
 }
 
-type Modules = (PacketCapturer, Parser, IperfServer, BwServer);
-
 impl NetworkListener {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let (_event_sender, event_receiver) = unbounded_channel();
@@ -39,28 +38,27 @@ impl NetworkListener {
         })
     }
 
-    pub fn init_modules(&mut self) -> Result<Modules, Box<dyn Error>> {
-        let (sender, receiver) = unbounded_channel();
-
-        let (pcap, pcap_meta) = PacketCapturer::new(sender.clone())?;
-        let parser = Parser::new(receiver, pcap_meta)?;
-
-        let server = IperfServer::new(IPERF3_PORT, sender.clone())?;
-        let bw_server = BwServer::new(sender.clone());
-        Ok((pcap, parser, server, bw_server))
-    }
-
     pub fn start(&mut self) -> Result<(), Box<dyn Error>> {
         info!("Starting packet capture");
 
-        let (pcap, parser, server, bw_server) = self.init_modules()?;
+        let (sender, receiver) = unbounded_channel();
+        let (client_sender, bw_client_h) = spawn_client_task();
+
+        let (pcap, pcap_meta) = PacketCapturer::new(sender.clone())?;
+        let parser = Parser::new(receiver, pcap_meta.clone(), client_sender)?;
+        let server = IperfServer::new(IPERF3_PORT, sender.clone())?;
+        let bw_server = BwServer::new(sender.clone(), pcap_meta.ipv4.into());
+
 
         let cap_h = pcap.start_capture_loop();
         let parser_h = parser.dispatch_parser();
         let server_h = server.dispatch_server();
         let bw_server_h = bw_server.dispatch_server();
-        self.result_handles.push(cap_h);
+
+
         self.handles.push(parser_h);
+        self.handles.push(bw_client_h);
+        self.result_handles.push(cap_h);
         self.result_handles.push(server_h);
         self.result_handles.push(bw_server_h);
         Ok(())

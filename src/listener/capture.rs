@@ -13,6 +13,7 @@ pub struct PacketCapturer {
     sender: CapEventSender,
 }
 
+#[derive(Clone, Debug)]
 pub struct PCAPMeta {
     pub mac_addr: MacAddr,
     pub ipv4: Ipv4Addr,

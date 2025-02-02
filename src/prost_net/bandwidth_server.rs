@@ -3,33 +3,34 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 use tonic::{transport::Server, Request, Response, Status};
 use anyhow::Result;
+use std::net::IpAddr;
 use std::pin::Pin;
 use futures::Stream;
 
 use proto_bw::{BandwidthMessage, BandwidthRequest, HelloReply, HelloRequest};
 use proto_bw::bandwidth_service_server::{BandwidthService, BandwidthServiceServer};
 
-use crate::*;
-
-pub mod proto_bw {
-    tonic::include_proto!("bandwidth"); // The string specified here must match the proto package name
-}
+use crate::proto_bw;
+use crate::CapEvent;
 
 #[derive(Debug)]
 pub enum PbfMsg {
     HelloReply(HelloReply),
     HelloRequest(HelloRequest),
+    BandwidthMessage(BandwidthMessage),
+    BandwidthRequest(BandwidthRequest),
 }
 
 
 #[derive(Debug)]
 pub struct BwServer {
     sender: UnboundedSender<CapEvent>,
+    my_ip: IpAddr,
 }
 
 impl BwServer {
-    pub fn new(sender: UnboundedSender<CapEvent>) -> Self {
-        BwServer { sender }
+    pub fn new(sender: UnboundedSender<CapEvent>, my_ip: IpAddr) -> Self {
+        BwServer { sender, my_ip }
     }
 
     /// Spawns the server in the background.
@@ -59,7 +60,7 @@ impl BandwidthService for BwServer {
     ) -> Result<Response<HelloReply>, Status> {
         let inner = request.into_inner();
         let reply = HelloReply {
-            greeting: format!("Hello {}!", inner.name),
+            ip_addr: self.my_ip.to_string(),
         };
 
         self.sender.send(CapEvent::Protobuf(PbfMsg::HelloRequest(inner))).expect("Failed to send protobuf message");
