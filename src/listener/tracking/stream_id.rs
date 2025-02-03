@@ -33,14 +33,13 @@ impl IpPair {
     /// Used for keeping track of seen IP addrs.
     /// Since IpPair is a bi-directional pair, this function will return the IP that does not match the input IP.
     /// If the IP is not in the pair, it will return the pair.
-    pub fn get_non_matching(&self, ip: IpAddr) -> (IpAddr, Option<IpAddr>) {
+    pub fn get_non_matching(&self, ip: IpAddr) -> Vec<IpAddr> {
         if self.pair.0 == ip {
-            (self.pair.1, None)
+            vec![self.pair.1]
         } else if self.pair.1 == ip {
-            (self.pair.0, None)
+            vec![self.pair.0]
         } else {
-            // If the IP is not in the pair, return the pair
-            (self.pair.0, Some(self.pair.1))
+            vec![self.pair.0, self.pair.1]
         }
     }
 }

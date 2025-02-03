@@ -6,7 +6,6 @@ use network_listener::prost_net::bandwidth_client::ClientHandlerEvent;
 use network_listener::{prost_net, IPERF3_PORT};
 use prost_net::bandwidth_server::BwServer;
 use prost_net::bandwidth_client::ClientHandler;
-use tonic::client;
 use std::error::Error;
 use std::net::IpAddr;
 use tokio::sync::mpsc::{channel, unbounded_channel};
@@ -44,7 +43,7 @@ impl NetworkListener {
         info!("Starting packet capture");
 
         let (sender, receiver) = unbounded_channel();
-        let (client_sender, client_receiver) = channel::<ClientHandlerEvent>(10);
+        let (client_sender, client_receiver) = channel::<ClientHandlerEvent>(100);
 
 
         let (pcap, pcap_meta) = PacketCapturer::new(sender.clone())?;

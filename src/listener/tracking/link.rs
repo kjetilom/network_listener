@@ -1,8 +1,17 @@
-use std::{collections::{HashMap, HashSet}, fmt::Display, net::IpAddr};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    net::{AddrParseError, IpAddr},
+};
 
+use log::info;
 use tokio::sync::mpsc::Sender;
 
-use crate::{listener::{packet::ParsedPacket, tracking::stream_manager::StreamManager}, prost_net::bandwidth_client::ClientHandlerEvent, proto_bw::HelloReply, ClientEvent, Settings};
+use crate::{
+    listener::{packet::ParsedPacket, tracking::stream_manager::StreamManager},
+    prost_net::bandwidth_client::ClientHandlerEvent,
+    Settings,
+};
 
 use super::stream_id::IpPair;
 
@@ -10,7 +19,7 @@ type Streams = HashMap<IpPair, StreamManager>;
 
 #[derive(Debug)]
 pub struct LinkManager {
-    links: Streams, // Private field
+    links: Streams,             // Private field
     vip_links: HashSet<IpAddr>, // Links we care about (Empty at startup)
     client_sender: Sender<ClientHandlerEvent>,
 }
@@ -34,18 +43,20 @@ impl LinkManager {
         }
         let ip_pair = IpPair::from_packet(&packet);
 
-        self.links.entry(ip_pair)
+        self.links
+            .entry(ip_pair)
             .or_insert_with(StreamManager::default)
             .record_ip_packet(&packet);
     }
 
     pub fn insert_iperf_result(&mut self, ip_pair: IpPair, bps: f64) {
-        self.links.entry(ip_pair)
+        self.links
+            .entry(ip_pair)
             .or_insert_with(StreamManager::default)
             .record_iperf_result(bps);
     }
 
-    pub fn periodic(&mut self) {
+    pub async fn periodic(&mut self, pcap_meta: &crate::PCAPMeta) {
         println!();
         for (_, stream_manager) in self.links.iter_mut() {
             stream_manager.periodic();
@@ -53,6 +64,7 @@ impl LinkManager {
         for link in self.get_link_states() {
             println!("{}", link);
         }
+        self.client_sender.send(ClientHandlerEvent::BroadcastHello { message: String::from(format!("{}", pcap_meta.ipv4)) }).await.unwrap();
     }
 
     pub fn do_something_with_vip_links(&self) {
@@ -61,78 +73,73 @@ impl LinkManager {
         }
     }
 
-    pub fn add_important_link(&mut self, ip_addr: IpAddr) {
-        self.vip_links.insert(ip_addr);
+    pub fn add_important_link(&mut self, ip_addr: Result<IpAddr, AddrParseError>) {
+        if let Ok(ip_addr) = ip_addr {
+            self.vip_links.insert(ip_addr);
+        } else {
+            info!("Failed to parse IP address");
+        }
     }
 
-    pub async fn init_important_links(&mut self, pcap_meta: &crate::PCAPMeta) {
-        // We want to find out which links are running an instance of network_listener
-        // We can do this by sending hello messages to all the links we know about
-        // If we get a response, we know that the link is running network_listener
-        // if self.vip_links.len() != 0 {
-        //     for ip in self.vip_links.iter() {
-        //         let a= self.client_sender.send(ClientEvent::SendHello {
-        //             ip: ip.to_string(),
-        //             message: String::from("Hello!"),
-        //             reply_tx: sender.clone()});
-        //         if a.await.is_err() {
-        //             eprintln!("Failed to send hello message to {}", ip);
-        //         }
-        //     }
-        //     return;
-        // }
-        // for ip_pair in self.links.keys() {
-        //     // Send hello message
-        //     let pair = ip_pair.get_non_matching(pcap_meta.ipv4.into());
-        //     let ips = pair.1.map(|ip| vec![pair.0, ip]).unwrap_or(vec![pair.0]);
-        //     println!("Sending hello messages to: {}", ips.iter().map(|ip| ip.to_string()).collect::<Vec<String>>().join(", "));
-        //     for ip in ips {
-        //         let a= self.client_sender.send(ClientEvent::SendHello {
-        //             ip: ip.to_string(),
-        //             message: String::from("Hello!"),
-        //             reply_tx: sender.clone()});
-        //         if a.await.is_err() {
-        //             eprintln!("Failed to send hello message to {}", ip);
-        //         }
-        //     }
-        // }
+    pub fn collect_external_ips(&self, pcap_meta: &crate::PCAPMeta) -> Vec<IpAddr> {
+        let my_ip = pcap_meta.ipv4.into(); // ! Add support for ipv6 later
+        self.links
+            .keys()
+            .map(|ip_pair| ip_pair.get_non_matching(my_ip))
+            .flatten()
+            .collect()
+    }
+
+    pub async fn send_init_clients_msg(&mut self, pcap_meta: &crate::PCAPMeta) {
+        info!("Initiating client-server connections");
+        self.client_sender
+            .send(ClientHandlerEvent::InitClients {
+                ips: self.collect_external_ips(pcap_meta),
+            })
+            .await
+            .unwrap();
     }
 
     pub fn get_link_states(&self) -> Vec<Link> {
-        self.links.iter().map(|(ip_pair, stream_manager)| {
-            let data_in_out = stream_manager.get_in_out();
-            let latency = stream_manager.get_latency_avg();
-            //let rt_in_out = stream_manager.get_rt_in_out();
-            let in_ = (data_in_out.0 * 8) as f64 / 1000.0 / Settings::CLEANUP_INTERVAL.as_secs_f64(); // INSERT THING HERE
-            let out = (data_in_out.1 * 8) as f64 / 1000.0 / Settings::CLEANUP_INTERVAL.as_secs_f64(); // INSERT THING HERE
-            let state = LinkState {
-                thp_in: in_,
-                thp_out: out,
-                bw: None, // ! Setting to None for now
-                abw: Some(stream_manager.get_abw()),
-                latency: latency,
-                delay: None,
-                jitter: None,
-                loss: None,
-            };
-            Link {
-                ip_pair: *ip_pair, // Copy IpPair
-                state,
-            }
-        }).collect()
+        self.links
+            .iter()
+            .map(|(ip_pair, stream_manager)| {
+                let data_in_out = stream_manager.get_in_out();
+                let latency = stream_manager.get_latency_avg();
+                //let rt_in_out = stream_manager.get_rt_in_out();
+                let in_ =
+                    (data_in_out.0 * 8) as f64 / 1000.0 / Settings::CLEANUP_INTERVAL.as_secs_f64(); // INSERT THING HERE
+                let out =
+                    (data_in_out.1 * 8) as f64 / 1000.0 / Settings::CLEANUP_INTERVAL.as_secs_f64(); // INSERT THING HERE
+                let state = LinkState {
+                    thp_in: in_,
+                    thp_out: out,
+                    bw: None, // ! Setting to None for now
+                    abw: Some(stream_manager.get_abw()),
+                    latency: latency,
+                    delay: None,
+                    jitter: None,
+                    loss: None,
+                };
+                Link {
+                    ip_pair: *ip_pair, // Copy IpPair
+                    state,
+                }
+            })
+            .collect()
     }
 }
 
 #[derive(Debug)]
 pub struct LinkState {
-    thp_in: f64, // Throughput in (Measured)
-    thp_out: f64, // Throughput out (Measured)
-    bw: Option<f64>, // bps, None if not available (Bandwidth, estimated)
-    abw: Option<f64>, // bps, None if not available (Available bandwidth, estimated)
+    thp_in: f64,          // Throughput in (Measured)
+    thp_out: f64,         // Throughput out (Measured)
+    bw: Option<f64>,      // bps, None if not available (Bandwidth, estimated)
+    abw: Option<f64>,     // bps, None if not available (Available bandwidth, estimated)
     latency: Option<f64>, // ms rtt, None if not available (Measured)
-    delay: Option<f64>, // ms, None if not available (Estimated)
-    jitter: Option<f64>, // ms, None if not available (Measured)
-    loss: Option<f64>, // %, None if not available (Measured)
+    delay: Option<f64>,   // ms, None if not available (Estimated)
+    jitter: Option<f64>,  // ms, None if not available (Measured)
+    loss: Option<f64>,    // %, None if not available (Measured)
 }
 
 #[derive(Debug)]

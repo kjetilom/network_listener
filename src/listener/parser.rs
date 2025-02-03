@@ -1,9 +1,8 @@
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
 use std::str::FromStr;
 
 use crate::probe::iperf_json::IperfResponse;
-use crate::prost_net::bandwidth_client::ClientHandlerEvent;
-use crate::proto_bw::HelloReply;
+use crate::prost_net::bandwidth_client::{ClientEventResult, ClientHandlerEvent};
 
 use super::procfs_reader::{self, get_interface, get_interface_info, NetStat};
 use super::tracking::link::LinkManager;
@@ -11,7 +10,6 @@ use super::tracking::link::LinkManager;
 use crate::{
     stream_id::from_iperf_connected, CapEvent, CapEventReceiver, OwnedPacket, PCAPMeta,
     ParsedPacket, Settings,
-    ClientEvent,
 };
 use anyhow::Result;
 use log::{error, info, warn};
@@ -42,7 +40,7 @@ pub struct Parser {
     link_manager: LinkManager,
     netlink_data: Vec<NetlinkData>,
     netstat_data: Option<NetStat>,
-    crx: Receiver<Result<HelloReply, tonic::Status>>,
+    crx: Receiver<ClientEventResult>,
 }
 
 impl Parser {
@@ -51,10 +49,10 @@ impl Parser {
         // "Metadata" from the pcap capture, aka this devices MAC and IP addresses
         pcap_meta: PCAPMeta,
         client_sender: Sender<ClientHandlerEvent>,
-    ) -> Result<(Self, Sender<Result<HelloReply, tonic::Status>>)> {
+    ) -> Result<(Self, Sender<ClientEventResult>)> {
         let (ctx, crx): (
-            Sender<Result<HelloReply, tonic::Status>>,
-             Receiver<Result<HelloReply, tonic::Status>>) = channel(CHANNEL_CAPACITY);
+            Sender<ClientEventResult>,
+             Receiver<ClientEventResult>) = channel(CHANNEL_CAPACITY);
         Ok((Parser {
             packet_stream,
             pcap_meta,
@@ -116,15 +114,18 @@ impl Parser {
                 },
                 Some(reply) = self.crx.recv() => {
                     match reply {
-                        Err(e) => error!("Error occured: {:?}", e),
-                        Ok(reply) => self.link_manager.add_important_link(IpAddr::from_str(&reply.ip_addr).unwrap_or(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))),
+                        ClientEventResult::ServerConnected(ip) => {
+                            self.link_manager.add_important_link(IpAddr::from_str(ip.as_str()));
+                        },
+                        _ => info!("Received reply: {:?}", reply),
+                        //Ok(reply) => self.link_manager.add_important_link(IpAddr::from_str(&reply.ip_addr).unwrap_or(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))),
                     }
                 },
                 _ = interval.tick() => {
-                    self.link_manager.periodic();
+                    self.link_manager.periodic(&self.pcap_meta).await;
                 },
                 _ = longer_interval.tick() => {
-                    self.link_manager.init_important_links(&self.pcap_meta).await;
+                    self.link_manager.send_init_clients_msg(&self.pcap_meta).await;
                 },
                 else => {
                     // Both streams have ended
