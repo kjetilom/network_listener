@@ -5,7 +5,8 @@ use log::info;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration};
-use crate::proto_bw;
+use crate::probe::iperf::dispatch_iperf_client;
+use crate::{proto_bw, CapEventSender};
 use proto_bw::bandwidth_service_client::BandwidthServiceClient;
 use proto_bw::{HelloRequest, HelloReply};
 use anyhow::{Error, Result};
@@ -34,6 +35,7 @@ pub enum ClientHandlerEvent {
         message: String,
     },
     Stop,
+    DoIperf3(String, u16, u16),
 }
 
 #[derive(Debug)]
@@ -55,16 +57,17 @@ pub struct ClientHandler {
     clients: HashMap<IpAddr, Option<OuterClient>>,
     reply_tx: Sender<ClientEventResult>,
     event_rx: Receiver<ClientHandlerEvent>,
+    cap_ev_tx: CapEventSender,
 }
 
 impl ClientHandler {
-    pub fn new(reply_tx: Sender<ClientEventResult>, event_rx: Receiver<ClientHandlerEvent>) -> Self {
+    pub fn new(reply_tx: Sender<ClientEventResult>, event_rx: Receiver<ClientHandlerEvent>, cap_ev_tx: CapEventSender) -> Self {
         ClientHandler {
             clients: HashMap::new(),
             reply_tx,
             event_rx,
+            cap_ev_tx,
         }
-
     }
 
     pub fn dispatch_client_handler(self) -> JoinHandle<()> {
@@ -102,6 +105,10 @@ impl ClientHandler {
                     for ip in ips {
                         self.send_hello(ip, message.clone()).await;
                     }
+                }
+                ClientHandlerEvent::DoIperf3(ip, port, duration) => {
+                    info!("Starting iperf3 to {}:{} for {} seconds", ip, port, duration);
+                    dispatch_iperf_client(ip, port, duration, self.cap_ev_tx.clone());
                 }
 
             }
@@ -171,6 +178,22 @@ impl BwClient {
         // let response = self.connection.say_hello(request);
 
         self.reply_tx.send(ClientEventResult::HelloReply(Ok(response))).await.unwrap();
+    }
+
+    pub async fn send_hello_noreply(&mut self, message: String) -> Result<HelloReply, Error> {
+        // On self.connection, send a hello request, dont send reply to reply_tx
+        let request = tonic::Request::new(HelloRequest { name: message });
+
+        let response = match timeout(Duration::from_secs(3), self.connection.say_hello(request)).await {
+            Ok(Ok(response)) => response.into_inner(),
+            Ok(Err(e)) => {
+                return Err(e.into());
+            }
+            Err(_) => {
+                return Err(anyhow::anyhow!("Request timed out"));
+            }
+        };
+        Ok(response)
     }
 
     pub async fn start_event_loop(mut self) -> JoinHandle<()> {

@@ -8,9 +8,7 @@ use log::info;
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    listener::{packet::ParsedPacket, tracking::stream_manager::StreamManager},
-    prost_net::bandwidth_client::ClientHandlerEvent,
-    Settings,
+    listener::{packet::ParsedPacket, tracking::stream_manager::StreamManager}, probe::iperf::dispatch_iperf_client, prost_net::bandwidth_client::ClientHandlerEvent, CapEventSender, Settings
 };
 
 use super::stream_id::IpPair;
@@ -64,12 +62,14 @@ impl LinkManager {
         for link in self.get_link_states() {
             println!("{}", link);
         }
-        self.client_sender.send(ClientHandlerEvent::BroadcastHello { message: String::from(format!("{}", pcap_meta.ipv4)) }).await.unwrap();
+        self.do_something_with_vip_links().await;
     }
 
-    pub fn do_something_with_vip_links(&self) {
+    pub async fn do_something_with_vip_links(&self) {
         for link in self.vip_links.iter() {
             println!("VIP Link: {}", link);
+            self.client_sender
+                .send(ClientHandlerEvent::DoIperf3(link.to_string(), 5001, 1)).await.unwrap();
         }
     }
 

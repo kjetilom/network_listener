@@ -42,12 +42,8 @@ use anyhow::Result;
 use log::info;
 use tokio::process::Command;
 
-use crate::*;
 use crate::probe::iperf_json::IperfResponse;
-
-pub enum IperfEvent {
-    JSON(String),
-}
+use crate::*;
 
 #[derive(Debug)]
 pub struct IperfServer {
@@ -109,7 +105,13 @@ impl IperfServer {
     }
 }
 
-pub async fn do_iperf_test(dest_ip: &str, port: u16, duration: u16) {
+pub fn dispatch_iperf_client(dest_ip: String, port: u16, duration: u16, sender: CapEventSender) {
+    tokio::spawn(async move {
+        do_iperf_test(&dest_ip, port, duration, sender).await;
+    });
+}
+
+pub async fn do_iperf_test(dest_ip: &str, port: u16, duration: u16, sender: CapEventSender) {
     // Run iperf -c $dest_ip -p $port
     let mut cmd = Command::new("iperf3");
     cmd.args([
@@ -124,10 +126,8 @@ pub async fn do_iperf_test(dest_ip: &str, port: u16, duration: u16) {
     ]);
 
     cmd.stdout(Stdio::piped());
-    let mut child = cmd.spawn()
-        .expect("Failed to start iperf client");
-    let stdout = child.stdout.take()
-        .expect("Failed to capture stdout");
+    let mut child = cmd.spawn().expect("Failed to start iperf client");
+    let stdout = child.stdout.take().expect("Failed to capture stdout");
 
     let mut reader = BufReader::new(stdout).lines();
 
@@ -149,7 +149,9 @@ pub async fn do_iperf_test(dest_ip: &str, port: u16, duration: u16) {
             // Parse JSON
             let parsed_json =
                 serde_json::from_str::<IperfResponse>(&json_buffer).expect("Failed to parse JSON");
-            dbg!(parsed_json);
+            sender
+                .send(CapEvent::IperfResponse(parsed_json))
+                .expect("Failed to send iperf response");
             json_buffer.clear();
         }
     }

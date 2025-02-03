@@ -48,7 +48,7 @@ impl NetworkListener {
 
         let (pcap, pcap_meta) = PacketCapturer::new(sender.clone())?;
         let (parser, ctx) = Parser::new(receiver, pcap_meta.clone(), client_sender)?;
-        let client_handler = ClientHandler::new(ctx, client_receiver);
+        let client_handler = ClientHandler::new(ctx, client_receiver, sender.clone());
         let server = IperfServer::new(IPERF3_PORT, sender.clone())?;
         let bw_server = BwServer::new(sender.clone(), pcap_meta.ipv4.into());
 

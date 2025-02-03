@@ -1,4 +1,5 @@
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
+use tokio::time::Instant;
 use std::collections::HashMap;
 
 use super::super::packet::ParsedPacket;
@@ -14,6 +15,7 @@ pub struct StreamManager {
     max_in: u32,
     max_out: u32,
     abw: f64,
+    last_iperf: Option<Instant>,
 }
 
 impl StreamManager {
@@ -25,6 +27,7 @@ impl StreamManager {
             max_in: 0,
             max_out: 0,
             abw: 0.0,
+            last_iperf: None,
         }
     }
 
@@ -41,6 +44,7 @@ impl StreamManager {
 
     pub fn record_iperf_result(&mut self, bps: f64) {
         // Check if in out is very different
+        self.last_iperf = Some(Instant::now());
         self.abw = bps;
     }
 
