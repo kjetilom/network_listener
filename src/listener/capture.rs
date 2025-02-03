@@ -69,7 +69,7 @@ impl PCAPMeta {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct OwnedPacket {
     pub header: PacketHeader,
     pub data: Vec<u8>,
@@ -78,7 +78,7 @@ pub struct OwnedPacket {
 impl<'a> From<Packet<'a>> for OwnedPacket {
     fn from(packet: Packet<'a>) -> Self {
         OwnedPacket {
-            header: *packet.header,
+            header: packet.header.to_owned(),
             data: packet.data.to_vec(),
         }
     }

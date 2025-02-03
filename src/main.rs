@@ -2,12 +2,14 @@ use log::info;
 use network_listener::listener::{capture::PacketCapturer, parser::Parser};
 use network_listener::logging::logger;
 use network_listener::probe::iperf::IperfServer;
+use network_listener::prost_net::bandwidth_client::ClientHandlerEvent;
 use network_listener::{prost_net, IPERF3_PORT};
 use prost_net::bandwidth_server::BwServer;
-use prost_net::bandwidth_client::spawn_client_task;
+use prost_net::bandwidth_client::ClientHandler;
+use tonic::client;
 use std::error::Error;
 use std::net::IpAddr;
-use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::mpsc::{channel, unbounded_channel};
 use tokio::task::JoinHandle;
 pub type EventSender = tokio::sync::mpsc::UnboundedSender<EventMessage>;
 pub type EventReceiver = tokio::sync::mpsc::UnboundedReceiver<EventMessage>;
@@ -42,14 +44,16 @@ impl NetworkListener {
         info!("Starting packet capture");
 
         let (sender, receiver) = unbounded_channel();
-        let (client_sender, bw_client_h) = spawn_client_task();
+        let (client_sender, client_receiver) = channel::<ClientHandlerEvent>(10);
+
 
         let (pcap, pcap_meta) = PacketCapturer::new(sender.clone())?;
-        let parser = Parser::new(receiver, pcap_meta.clone(), client_sender)?;
+        let (parser, ctx) = Parser::new(receiver, pcap_meta.clone(), client_sender)?;
+        let client_handler = ClientHandler::new(ctx, client_receiver);
         let server = IperfServer::new(IPERF3_PORT, sender.clone())?;
         let bw_server = BwServer::new(sender.clone(), pcap_meta.ipv4.into());
 
-
+        let bw_client_h = client_handler.dispatch_client_handler();
         let cap_h = pcap.start_capture_loop();
         let parser_h = parser.dispatch_parser();
         let server_h = server.dispatch_server();

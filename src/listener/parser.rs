@@ -2,6 +2,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::str::FromStr;
 
 use crate::probe::iperf_json::IperfResponse;
+use crate::prost_net::bandwidth_client::ClientHandlerEvent;
 use crate::proto_bw::HelloReply;
 
 use super::procfs_reader::{self, get_interface, get_interface_info, NetStat};
@@ -41,6 +42,7 @@ pub struct Parser {
     link_manager: LinkManager,
     netlink_data: Vec<NetlinkData>,
     netstat_data: Option<NetStat>,
+    crx: Receiver<Result<HelloReply, tonic::Status>>,
 }
 
 impl Parser {
@@ -48,15 +50,19 @@ impl Parser {
         packet_stream: CapEventReceiver,
         // "Metadata" from the pcap capture, aka this devices MAC and IP addresses
         pcap_meta: PCAPMeta,
-        client_sender: Sender<ClientEvent>,
-    ) -> Result<Self> {
-        Ok(Parser {
+        client_sender: Sender<ClientHandlerEvent>,
+    ) -> Result<(Self, Sender<Result<HelloReply, tonic::Status>>)> {
+        let (ctx, crx): (
+            Sender<Result<HelloReply, tonic::Status>>,
+             Receiver<Result<HelloReply, tonic::Status>>) = channel(CHANNEL_CAPACITY);
+        Ok((Parser {
             packet_stream,
             pcap_meta,
             link_manager: LinkManager::new(client_sender),
             netlink_data: Vec::new(),
             netstat_data: None,
-        })
+            crx,
+        }, ctx))
     }
 
     pub fn dispatch_parser(self) -> JoinHandle<()> {
@@ -83,10 +89,6 @@ impl Parser {
         let (ptx, mut prx): (Sender<PeriodicData>, Receiver<PeriodicData>) =
             channel(CHANNEL_CAPACITY);
 
-        let (ctx, mut crx): (
-            Sender<Result<HelloReply, tonic::Status>>,
-             Receiver<Result<HelloReply, tonic::Status>>) = channel(CHANNEL_CAPACITY);
-
         let periodic_handle = tokio::spawn(async move {
             Parser::periodic(ptx, idx).await;
         });
@@ -112,7 +114,7 @@ impl Parser {
                 Some(periodic_data) = prx.recv() => {
                     self.handle_periodic(periodic_data);
                 },
-                Some(reply) = crx.recv() => {
+                Some(reply) = self.crx.recv() => {
                     match reply {
                         Err(e) => error!("Error occured: {:?}", e),
                         Ok(reply) => self.link_manager.add_important_link(IpAddr::from_str(&reply.ip_addr).unwrap_or(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))),
@@ -122,7 +124,7 @@ impl Parser {
                     self.link_manager.periodic();
                 },
                 _ = longer_interval.tick() => {
-                    self.link_manager.init_important_links(&self.pcap_meta, ctx.clone()).await;
+                    self.link_manager.init_important_links(&self.pcap_meta).await;
                 },
                 else => {
                     // Both streams have ended
