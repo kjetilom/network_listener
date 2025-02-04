@@ -2,10 +2,7 @@ use std::time::{Duration, SystemTime};
 
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 
-use crate::{
-    ParsedPacket, GenericTracker,
-    tcp_tracker::TcpTracker, udp_tracker::UdpTracker,
-};
+use crate::{tcp_tracker::TcpTracker, udp_tracker::UdpTracker, GenericTracker, ParsedPacket};
 
 /// Single struct to represent a sent or received packet with optional RTT.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

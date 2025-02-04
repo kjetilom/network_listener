@@ -1,18 +1,17 @@
 use std::collections::HashMap;
 // use super::stream_id::StreamId;
+use super::{
+    parser::NetlinkData,
+    tracking::stream_id::{from_tcp_net_entry, from_udp_net_entry, IpPair, StreamKey},
+};
 use neli_wifi::{AsyncSocket, Interface};
 use pnet::packet::ip::IpNextHeaderProtocols;
-use std::error::Error;
-use super::{parser::NetlinkData, tracking::stream_id::{from_tcp_net_entry, from_udp_net_entry, IpPair, StreamKey}};
 use procfs::net::{TcpNetEntry, UdpNetEntry};
+use std::error::Error;
 
 pub enum NetEntry {
-    Tcp{
-        entry: TcpNetEntry
-    },
-    Udp{
-        entry: UdpNetEntry
-    },
+    Tcp { entry: TcpNetEntry },
+    Udp { entry: UdpNetEntry },
 }
 
 #[derive(Default)]
@@ -21,11 +20,7 @@ pub struct NetStat {
     pub udp: HashMap<(StreamKey, IpPair), NetEntry>,
 }
 
-
-
-
 pub async fn proc_net() -> NetStat {
-
     let tcp = [procfs::net::tcp(), procfs::net::tcp6()];
     let udp = [procfs::net::udp(), procfs::net::udp6()];
 
@@ -40,24 +35,22 @@ pub async fn proc_net() -> NetStat {
     for tcp_entry in entries {
         nstat.tcp.insert(
             from_tcp_net_entry(&tcp_entry, IpNextHeaderProtocols::Tcp),
-            NetEntry::Tcp {
-                entry: tcp_entry
-            }
+            NetEntry::Tcp { entry: tcp_entry },
         );
     }
     for udp_entry in udp_entries {
         nstat.udp.insert(
-            from_udp_net_entry(&udp_entry,IpNextHeaderProtocols::Udp),
-            NetEntry::Udp {
-                entry: udp_entry
-            }
+            from_udp_net_entry(&udp_entry, IpNextHeaderProtocols::Udp),
+            NetEntry::Udp { entry: udp_entry },
         );
     }
 
     nstat
 }
 
-pub async fn get_interface_info(index: i32) -> Result<NetlinkData,  Box<dyn std::error::Error + Send + Sync>> {
+pub async fn get_interface_info(
+    index: i32,
+) -> Result<NetlinkData, Box<dyn std::error::Error + Send + Sync>> {
     let mut socket = AsyncSocket::connect()?;
     let station_info = socket.get_station_info(index).await?;
     let bss_info = socket.get_bss_info(index).await?;
@@ -82,7 +75,6 @@ pub async fn get_interface(device_name: &str) -> Result<Interface, Box<dyn Error
             return Ok(interface);
         }
         // Compare names, take null-terminated string into account
-
     }
     Err("Interface not found".into())
 }

@@ -1,20 +1,17 @@
-use std::net::IpAddr;
 use libc::ETH_HLEN;
 use pnet::packet::ipv4::Ipv4Packet;
 use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::Packet;
-use tokio::time;
-use std::time::{SystemTime, UNIX_EPOCH};
 use pnet::util::MacAddr;
+use std::net::IpAddr;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::time;
 
+use super::Direction;
 use crate::listener::capture::{OwnedPacket, PCAPMeta};
 use crate::listener::packet::transport_packet::TransportPacket;
-use super::Direction;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocol;
-
-
-
 
 /// time::Duration and SystemTime uses Nanosecond precision
 pub fn timeval_to_system_time(tv: libc::timeval) -> SystemTime {
@@ -58,13 +55,16 @@ impl<'a> ParsedPacket {
         let (src_ip, dst_ip, payload, protocol, hdrlen) = Self::get_ip_info(&eth)?;
 
         // Build the transport struct from the raw payload reference
-        let transport = TransportPacket::from_data(payload, protocol, total_length as u16 - (hdrlen+ETH_HLEN as u16));
+        let transport = TransportPacket::from_data(
+            payload,
+            protocol,
+            total_length as u16 - (hdrlen + ETH_HLEN as u16),
+        );
 
         let direction = Direction::from_mac(eth.get_destination(), pcap_meta.mac_addr);
 
         // The packet is intercepted if A <-> B <-> C and the packet is marked A <-> C
         let intercepted = !pcap_meta.matches_ip(src_ip) && !pcap_meta.matches_ip(dst_ip);
-
 
         Some(ParsedPacket {
             src_ip,
@@ -81,7 +81,7 @@ impl<'a> ParsedPacket {
 
     /// Returns (src_ip, dst_ip, payload, protocol)
     fn get_ip_info(
-        eth: &'a EthernetPacket
+        eth: &'a EthernetPacket,
     ) -> Option<(IpAddr, IpAddr, &'a [u8], IpNextHeaderProtocol, u16)> {
         match eth.get_ethertype() {
             EtherTypes::Ipv4 => Self::parse_ipv4_packet(eth.payload()),
@@ -132,19 +132,23 @@ mod tests {
         packet_data.extend_from_slice(&[0x00; 6]); // dst MAC
         packet_data.extend_from_slice(&[0x01; 6]); // src MAC
         packet_data.extend_from_slice(&[0x08, 0x00]); // EtherType = IPv4
-        // IPv4 header (20 bytes, minimal)
-        let ipv4_header = [0x45, 0x00, 0x00, 0x00, // version, IHL=5, DSCP, ECN
-                           0x00, 0x00, 0b11100000, 0x00, // total length (will ignore), id
-                           0x40, 0x06, 0x00, 0x00, // flags, ttl=64, protocol=TCP
-                           0x7F, 0x00, 0x00, 0x01, // src IP
-                           0x7F, 0x00, 0x00, 0x02];// dst IP
+                                                      // IPv4 header (20 bytes, minimal)
+        let ipv4_header = [
+            0x45, 0x00, 0x00, 0x00, // version, IHL=5, DSCP, ECN
+            0x00, 0x00, 0b11100000, 0x00, // total length (will ignore), id
+            0x40, 0x06, 0x00, 0x00, // flags, ttl=64, protocol=TCP
+            0x7F, 0x00, 0x00, 0x01, // src IP
+            0x7F, 0x00, 0x00, 0x02,
+        ]; // dst IP
         packet_data.extend_from_slice(&ipv4_header);
         // TCP header (20 bytes, minimal)
-        let tcp_header = [0x00, 0x50, 0x00, 0x50, // src port 80, dst port 80
-                          0x00, 0x00, 0x00, 0x00, // seq num
-                          0x00, 0x00, 0x00, 0x00, // ack num
-                          0x50, 0x02, 0xFF, 0xFF, // data offset, flags, window size
-                          0x00, 0x00, 0x00, 0x00];// checksum, urgent pointer
+        let tcp_header = [
+            0x00, 0x50, 0x00, 0x50, // src port 80, dst port 80
+            0x00, 0x00, 0x00, 0x00, // seq num
+            0x00, 0x00, 0x00, 0x00, // ack num
+            0x50, 0x02, 0xFF, 0xFF, // data offset, flags, window size
+            0x00, 0x00, 0x00, 0x00,
+        ]; // checksum, urgent pointer
         packet_data.extend_from_slice(&tcp_header);
         packet_data
     }
@@ -157,13 +161,15 @@ mod tests {
         packet_data.extend_from_slice(&[0x00; 6]); // dst MAC
         packet_data.extend_from_slice(&[0x01; 6]); // src MAC
         packet_data.extend_from_slice(&[0x08, 0x00]); // EtherType = IPv4
-        // IPv4 header (20 bytes, minimal)
-        let mut ipv4_header = [0x45, 0x00, 0x00, 0x00, // version, IHL=5, DSCP, ECN
-                               0x00, 0x00, 0x00, 0x00, // total length (will ignore), id
-                               0x40, 0x00, 0x40, 0x06, // flags, ttl=64, protocol=TCP
-                               0x7F, 0x00, 0x00, 0x01, // src IP 127.0.0.1
-                               0x7F, 0x00, 0x00, 0x02];// dst IP 127.0.0.2
-        // Adjust the total length field (bytes 2..4) to 20 + 1000
+                                                      // IPv4 header (20 bytes, minimal)
+        let mut ipv4_header = [
+            0x45, 0x00, 0x00, 0x00, // version, IHL=5, DSCP, ECN
+            0x00, 0x00, 0x00, 0x00, // total length (will ignore), id
+            0x40, 0x00, 0x40, 0x06, // flags, ttl=64, protocol=TCP
+            0x7F, 0x00, 0x00, 0x01, // src IP 127.0.0.1
+            0x7F, 0x00, 0x00, 0x02,
+        ]; // dst IP 127.0.0.2
+           // Adjust the total length field (bytes 2..4) to 20 + 1000
         let total_len = 20 + 1000;
         ipv4_header[2] = (total_len >> 8) as u8;
         ipv4_header[3] = total_len as u8;
@@ -173,7 +179,10 @@ mod tests {
 
         let owned_packet = OwnedPacket {
             header: PacketHeader {
-                ts: libc::timeval { tv_sec: 0, tv_usec: 0 },
+                ts: libc::timeval {
+                    tv_sec: 0,
+                    tv_usec: 0,
+                },
                 caplen: (14 + total_len) as u32,
                 len: (14 + total_len) as u32,
             },
@@ -193,7 +202,10 @@ mod tests {
         // Create the same packet, say its the same size, but remove the payload
         let owned_packet = OwnedPacket {
             header: PacketHeader {
-                ts: libc::timeval { tv_sec: 0, tv_usec: 0 },
+                ts: libc::timeval {
+                    tv_sec: 0,
+                    tv_usec: 0,
+                },
                 caplen: (14 + 20) as u32,
                 len: (14 + 20 + 1000) as u32,
             },
@@ -210,7 +222,10 @@ mod tests {
         let packet_data = create_tcp_packet();
         let owned_packet = OwnedPacket {
             header: PacketHeader {
-                ts: libc::timeval { tv_sec: 0, tv_usec: 0 },
+                ts: libc::timeval {
+                    tv_sec: 0,
+                    tv_usec: 0,
+                },
                 caplen: packet_data.len() as u32,
                 len: packet_data.len() as u32 + 1000, // pretend there's more data
             },
@@ -232,5 +247,4 @@ mod tests {
             panic!("Expected TCP packet");
         }
     }
-
 }

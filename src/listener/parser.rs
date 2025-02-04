@@ -15,12 +15,12 @@ use anyhow::Result;
 use log::{error, info, warn};
 use neli_wifi::{Bss, Station};
 use pnet::packet::ip::IpNextHeaderProtocols;
+use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
     time,
 };
-use std::sync::Arc;
 
 const CHANNEL_CAPACITY: usize = 10; // Amount of messages. Not Bytes.
 
@@ -51,17 +51,19 @@ impl Parser {
         pcap_meta: Arc<PCAPMeta>,
         client_sender: Sender<ClientHandlerEvent>,
     ) -> Result<(Self, Sender<ClientEventResult>)> {
-        let (ctx, crx): (
-            Sender<ClientEventResult>,
-             Receiver<ClientEventResult>) = channel(CHANNEL_CAPACITY);
-        Ok((Parser {
-            packet_stream,
-            pcap_meta: pcap_meta.clone(),
-            link_manager: LinkManager::new(client_sender, pcap_meta.clone()),
-            netlink_data: Vec::new(),
-            netstat_data: None,
-            crx,
-        }, ctx))
+        let (ctx, crx): (Sender<ClientEventResult>, Receiver<ClientEventResult>) =
+            channel(CHANNEL_CAPACITY);
+        Ok((
+            Parser {
+                packet_stream,
+                pcap_meta: pcap_meta.clone(),
+                link_manager: LinkManager::new(client_sender, pcap_meta.clone()),
+                netlink_data: Vec::new(),
+                netstat_data: None,
+                crx,
+            },
+            ctx,
+        ))
     }
 
     pub fn dispatch_parser(self) -> JoinHandle<()> {

@@ -1,7 +1,6 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum IperfResponse {
@@ -16,7 +15,6 @@ pub enum IperfResponse {
 pub struct Error {
     pub error: String,
 }
-
 
 /// -----------------///
 /// SUCCESS response ///

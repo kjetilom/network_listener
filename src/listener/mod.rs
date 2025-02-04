@@ -19,17 +19,17 @@ impl Settings {
     pub const ETHDR: i32 = 14;
     // TCP header without options: 20 bytes
     pub const TCPHDR_NOOPT: i32 = 20;
-    pub const SNAPLEN_NOOPT: i32 = Self::TCPHDR_NOOPT+Self::ETHDR+Self::IPHDR; // Max header size=94 bytes.
-    pub const SNAPLEN: i32 = Self::TCPHDR+Self::ETHDR+Self::IPHDR; // Max header size=134 bytes.
+    pub const SNAPLEN_NOOPT: i32 = Self::TCPHDR_NOOPT + Self::ETHDR + Self::IPHDR; // Max header size=94 bytes.
+    pub const SNAPLEN: i32 = Self::TCPHDR + Self::ETHDR + Self::IPHDR; // Max header size=134 bytes.
 
     // Bandwidth estimation window in seconds. Determines the time window before the data is invalidated.
     // The window should be large enough to gather nessesary data, but small enough to adapt to changing network conditions.
     pub const BWE_WINDOW: i32 = 15;
 }
 
-pub mod packet;
-pub mod parser;
 pub mod capture;
 pub mod config;
-pub mod tracking;
+pub mod packet;
+pub mod parser;
 pub mod procfs_reader;
+pub mod tracking;

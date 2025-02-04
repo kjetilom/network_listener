@@ -36,7 +36,13 @@ mod tests {
         let outgoing_mac = MacAddr::new(2, 2, 2, 2, 2, 2);
 
         assert_eq!(Direction::from_mac(own_mac, own_mac), Direction::Incoming);
-        assert_eq!(Direction::from_mac(incoming_mac, own_mac), Direction::Outgoing);
-        assert_eq!(Direction::from_mac(outgoing_mac, own_mac), Direction::Outgoing);
+        assert_eq!(
+            Direction::from_mac(incoming_mac, own_mac),
+            Direction::Outgoing
+        );
+        assert_eq!(
+            Direction::from_mac(outgoing_mac, own_mac),
+            Direction::Outgoing
+        );
     }
 }

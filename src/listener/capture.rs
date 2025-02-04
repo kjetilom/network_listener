@@ -1,10 +1,10 @@
+use anyhow::Result;
 use log::{error, info};
 use mac_address::{get_mac_address, MacAddress};
 use pcap::{Capture, Device, Inactive, Packet, PacketHeader};
 use pnet::datalink::MacAddr;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use tokio::task;
-use anyhow::Result;
 
 use crate::*;
 
@@ -109,13 +109,7 @@ impl PacketCapturer {
 
         let meta = PCAPMeta::new(device.clone(), mac_addr);
 
-        Ok((
-            PacketCapturer {
-                cap,
-                sender,
-            },
-            meta,
-        ))
+        Ok((PacketCapturer { cap, sender }, meta))
     }
 
     /// Start the asynchronous packet capturing loop

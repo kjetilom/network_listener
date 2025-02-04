@@ -7,7 +7,6 @@ service BandwidthService {
     rpc SubscribeBandwidth (BandwidthRequest) returns (stream BandwidthMessage);
     // rpc ShareBandwidth (BandwidthMessage) returns (BandwidthMessage);
     // SendBandwidth
-
 }
 
 message LinkState {

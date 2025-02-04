@@ -5,9 +5,7 @@ use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::TcpState;
 
 use crate::{
-    Direction,
-    ParsedPacket,
-    {TcpFlags, TransportPacket},
+    Direction, ParsedPacket, {TcpFlags, TransportPacket},
 };
 
 use super::tracker::{DefaultState, SentPacket};
@@ -63,7 +61,6 @@ impl TcpStats {
         }
         self.received_seqs.insert(*seq);
         self.recv.push_back(p);
-
     }
 
     pub fn register_data_sent(&mut self, p: SentPacket) {
@@ -76,7 +73,13 @@ impl TcpStats {
     pub fn input_recv_gap(&self) -> Option<f64> {
         if let Some(first) = self.recv.front() {
             if let Some(last) = self.recv.back() {
-                return Some(last.sent_time.duration_since(first.sent_time).unwrap().as_secs_f64() / self.recv.len() as f64);
+                return Some(
+                    last.sent_time
+                        .duration_since(first.sent_time)
+                        .unwrap()
+                        .as_secs_f64()
+                        / self.recv.len() as f64,
+                );
             }
         }
         None
@@ -106,7 +109,6 @@ impl TcpStats {
         Some(new_rtt > threshold)
     }
 }
-
 
 #[derive(Debug)]
 pub struct TcpTracker {
@@ -147,18 +149,17 @@ impl TcpTracker {
         {
             match packet.direction {
                 Direction::Incoming => {
-
                     // Record data if it’s not just a pure ACK.
                     if !flags.is_ack() || *payload_len != 0 {
-
-                        self.stats.register_data_received(SentPacket {
-                            len: *payload_len as u32,
-                            sent_time: packet.timestamp,
-                            retransmissions: 0,
-                            rtt: None,
-                        },
-                        sequence,
-                    );
+                        self.stats.register_data_received(
+                            SentPacket {
+                                len: *payload_len as u32,
+                                sent_time: packet.timestamp,
+                                retransmissions: 0,
+                                rtt: None,
+                            },
+                            sequence,
+                        );
                     }
 
                     // Update acked packets if possible.
@@ -208,7 +209,6 @@ impl TcpTracker {
             }
 
             if len > 0 {
-
                 match self.sent_packets.get_mut(&sequence) {
                     Some(existing) => {
                         existing.retransmissions += 1;
@@ -225,7 +225,7 @@ impl TcpTracker {
                         if self.bytes_in_flight > self.max_bytes_in_flight {
                             self.max_bytes_in_flight = self.bytes_in_flight;
                         } else {
-                            self.max_bytes_in_flight -= self.mss/10;
+                            self.max_bytes_in_flight -= self.mss / 10;
                         }
                         self.sent_packets.insert(sequence, new_packet);
                     }

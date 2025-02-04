@@ -1,39 +1,30 @@
-use std::collections::HashMap;
-use std::net::IpAddr;
-use futures::future::join_all;
-use log::info;
-use tokio::sync::mpsc::{Receiver, Sender, channel};
-use tokio::task::JoinHandle;
-use tokio::time::{timeout, Duration, Instant};
 use crate::probe::iperf::dispatch_iperf_client;
 use crate::{proto_bw, CapEventSender};
-use proto_bw::bandwidth_service_client::BandwidthServiceClient;
-use proto_bw::{HelloRequest, HelloReply};
 use anyhow::{Error, Result};
+use futures::future::join_all;
+use log::info;
+use proto_bw::bandwidth_service_client::BandwidthServiceClient;
+use proto_bw::{HelloReply, HelloRequest};
+use std::collections::HashMap;
+use std::net::IpAddr;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::task::JoinHandle;
+use tokio::time::{timeout, Duration, Instant};
 
 /// Events that the client task can respond to.
 #[derive(Debug)]
 pub enum ClientEvent {
     /// Sends a hello message to the given IP.
     /// The provided `reply_tx` will receive the result.
-    SendHello {
-        message: String,
-    },
+    SendHello { message: String },
     /// Stops the client task.
     Stop,
 }
 
 pub enum ClientHandlerEvent {
-    InitClients {
-        ips: Vec<IpAddr>,
-    },
-    SendHello {
-        ip: IpAddr,
-        message: String,
-    },
-    BroadcastHello {
-        message: String,
-    },
+    InitClients { ips: Vec<IpAddr> },
+    SendHello { ip: IpAddr, message: String },
+    BroadcastHello { message: String },
     Stop,
     DoIperf3(String, u16, u16),
 }
@@ -84,7 +75,11 @@ pub struct ClientHandler {
 }
 
 impl ClientHandler {
-    pub fn new(reply_tx: Sender<ClientEventResult>, event_rx: Receiver<ClientHandlerEvent>, cap_ev_tx: CapEventSender) -> Self {
+    pub fn new(
+        reply_tx: Sender<ClientEventResult>,
+        event_rx: Receiver<ClientHandlerEvent>,
+        cap_ev_tx: CapEventSender,
+    ) -> Self {
         ClientHandler {
             clients: HashMap::new(),
             reply_tx,
@@ -118,7 +113,7 @@ impl ClientHandler {
                 ClientHandlerEvent::SendHello { ip, message } => {
                     // Send hello to all clients
                     self.send_hello(ip, message).await;
-                },
+                }
                 ClientHandlerEvent::Stop => break,
                 ClientHandlerEvent::InitClients { ips } => {
                     self.init_clients(ips).await;
@@ -132,12 +127,11 @@ impl ClientHandler {
                 ClientHandlerEvent::DoIperf3(ip, port, duration) => {
                     dispatch_iperf_client(ip, port, duration, self.cap_ev_tx.clone());
                 }
-
             }
         }
     }
 
-     /// For each IP address, run BwClient::new concurrently.
+    /// For each IP address, run BwClient::new concurrently.
     /// Then, wait for all tasks to finish and store the returned client handles.
     pub async fn init_clients(&mut self, ips: Vec<IpAddr>) {
         let mut tasks = Vec::new();
@@ -163,18 +157,22 @@ impl ClientHandler {
 
         for res in results {
             match res {
-                Ok((ip, client_result)) => {
-                    match client_result {
-                        Ok((client_handle, client_tx)) => {
-                            self.clients.insert(ip, Some((client_tx, client_handle)));
-                        }
-                        Err(e) => {
-                            self.reply_tx.send(ClientEventResult::ServerConnectError(e)).await.unwrap();
-                        }
+                Ok((ip, client_result)) => match client_result {
+                    Ok((client_handle, client_tx)) => {
+                        self.clients.insert(ip, Some((client_tx, client_handle)));
                     }
-                }
+                    Err(e) => {
+                        self.reply_tx
+                            .send(ClientEventResult::ServerConnectError(e))
+                            .await
+                            .unwrap();
+                    }
+                },
                 Err(e) => {
-                    self.reply_tx.send(ClientEventResult::ServerConnectError(e.into())).await.unwrap();
+                    self.reply_tx
+                        .send(ClientEventResult::ServerConnectError(e.into()))
+                        .await
+                        .unwrap();
                 }
             }
         }
@@ -186,21 +184,28 @@ impl BwClient {
         // On self.connection, send a hello request
         let request = tonic::Request::new(HelloRequest { name: message });
 
-        let response = match timeout(Duration::from_secs(3), self.connection.say_hello(request)).await {
-            Ok(Ok(response)) => response.into_inner(),
-            Ok(Err(e)) => {
-                self.status = Some(ClientStatus::new_disconnected());
-                self.reply_tx.send(ClientEventResult::HelloReply(Err(e))).await.unwrap();
-                return;
-            }
-            Err(_) => {
-                self.status = Some(ClientStatus::new_disconnected());
-                return;
-            }
-        };
+        let response =
+            match timeout(Duration::from_secs(3), self.connection.say_hello(request)).await {
+                Ok(Ok(response)) => response.into_inner(),
+                Ok(Err(e)) => {
+                    self.status = Some(ClientStatus::new_disconnected());
+                    self.reply_tx
+                        .send(ClientEventResult::HelloReply(Err(e)))
+                        .await
+                        .unwrap();
+                    return;
+                }
+                Err(_) => {
+                    self.status = Some(ClientStatus::new_disconnected());
+                    return;
+                }
+            };
         // let response = self.connection.say_hello(request);
 
-        self.reply_tx.send(ClientEventResult::HelloReply(Ok(response))).await.unwrap();
+        self.reply_tx
+            .send(ClientEventResult::HelloReply(Ok(response)))
+            .await
+            .unwrap();
         self.status = Some(ClientStatus::new_connected());
     }
 
@@ -208,17 +213,18 @@ impl BwClient {
         // On self.connection, send a hello request, dont send reply to reply_tx
         let request = tonic::Request::new(HelloRequest { name: message });
 
-        let response = match timeout(Duration::from_secs(3), self.connection.say_hello(request)).await {
-            Ok(Ok(response)) => response.into_inner(),
-            Ok(Err(e)) => {
-                self.status = Some(ClientStatus::new_disconnected());
-                return Err(e.into());
-            }
-            Err(_) => {
-                self.status = Some(ClientStatus::new_disconnected());
-                return Err(anyhow::anyhow!("Request timed out"));
-            }
-        };
+        let response =
+            match timeout(Duration::from_secs(3), self.connection.say_hello(request)).await {
+                Ok(Ok(response)) => response.into_inner(),
+                Ok(Err(e)) => {
+                    self.status = Some(ClientStatus::new_disconnected());
+                    return Err(e.into());
+                }
+                Err(_) => {
+                    self.status = Some(ClientStatus::new_disconnected());
+                    return Err(anyhow::anyhow!("Request timed out"));
+                }
+            };
         self.status = Some(ClientStatus::new_connected());
         Ok(response)
     }
@@ -236,11 +242,15 @@ impl BwClient {
         })
     }
 
-    pub async fn new(ip: String, reply_tx: Sender<ClientEventResult> ) -> Result<(tokio::task::JoinHandle<()>, Sender<ClientEvent>)> {
+    pub async fn new(
+        ip: String,
+        reply_tx: Sender<ClientEventResult>,
+    ) -> Result<(tokio::task::JoinHandle<()>, Sender<ClientEvent>)> {
         let (tx, rx) = channel::<ClientEvent>(10);
         let addr = format!("http://{}:50051", ip);
         let connect_timeout = Duration::from_secs(3);
-        let connection = match timeout(connect_timeout, BandwidthServiceClient::connect(addr)).await {
+        let connection = match timeout(connect_timeout, BandwidthServiceClient::connect(addr)).await
+        {
             Ok(Ok(conn)) => conn,
             Ok(Err(e)) => {
                 return Err(e.into());
@@ -257,11 +267,14 @@ impl BwClient {
             status: None,
         };
 
-        client.reply_tx.send(ClientEventResult::ServerConnected(ip)).await.unwrap();
+        client
+            .reply_tx
+            .send(ClientEventResult::ServerConnected(ip))
+            .await
+            .unwrap();
 
         let handle = client.start_event_loop().await;
 
         Ok((handle, tx))
-
     }
 }

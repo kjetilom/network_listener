@@ -4,8 +4,8 @@ use network_listener::logging::logger;
 use network_listener::probe::iperf::IperfServer;
 use network_listener::prost_net::bandwidth_client::ClientHandlerEvent;
 use network_listener::{prost_net, IPERF3_PORT};
-use prost_net::bandwidth_server::BwServer;
 use prost_net::bandwidth_client::ClientHandler;
+use prost_net::bandwidth_server::BwServer;
 use std::error::Error;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -46,7 +46,6 @@ impl NetworkListener {
         let (sender, receiver) = unbounded_channel();
         let (client_sender, client_receiver) = channel::<ClientHandlerEvent>(100);
 
-
         let (pcap, pcap_meta) = PacketCapturer::new(sender.clone())?;
         let pcap_meta = Arc::new(pcap_meta);
         let (parser, ctx) = Parser::new(receiver, pcap_meta.clone(), client_sender)?;
@@ -59,7 +58,6 @@ impl NetworkListener {
         let parser_h = parser.dispatch_parser();
         let server_h = server.dispatch_server();
         let bw_server_h = bw_server.dispatch_server();
-
 
         self.handles.push(parser_h);
         self.handles.push(bw_client_h);

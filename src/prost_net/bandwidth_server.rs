@@ -1,14 +1,13 @@
-
+use anyhow::Result;
+use futures::Stream;
+use std::pin::Pin;
+use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 use tonic::{transport::Server, Request, Response, Status};
-use anyhow::Result;
-use std::pin::Pin;
-use std::sync::Arc;
-use futures::Stream;
 
-use proto_bw::{BandwidthMessage, BandwidthRequest, HelloReply, HelloRequest};
 use proto_bw::bandwidth_service_server::{BandwidthService, BandwidthServiceServer};
+use proto_bw::{BandwidthMessage, BandwidthRequest, HelloReply, HelloRequest};
 
 use crate::listener::capture::PCAPMeta;
 use crate::proto_bw;
@@ -21,7 +20,6 @@ pub enum PbfMsg {
     BandwidthMessage(BandwidthMessage),
     BandwidthRequest(BandwidthRequest),
 }
-
 
 #[derive(Debug)]
 pub struct BwServer {
@@ -38,9 +36,7 @@ impl BwServer {
     /// Consumes self, returns a handle to the task
     pub fn dispatch_server(self) -> JoinHandle<Result<()>> {
         tokio::spawn(async move {
-            let addr = "0.0.0.0:50051"
-                .parse()
-                .expect("Failed to parse address");
+            let addr = "0.0.0.0:50051".parse().expect("Failed to parse address");
 
             Server::builder()
                 .add_service(BandwidthServiceServer::new(self))
@@ -53,7 +49,8 @@ impl BwServer {
 
 #[tonic::async_trait]
 impl BandwidthService for BwServer {
-    type SubscribeBandwidthStream = Pin<Box<dyn Stream<Item = Result<BandwidthMessage, Status>> + Send + 'static>>;
+    type SubscribeBandwidthStream =
+        Pin<Box<dyn Stream<Item = Result<BandwidthMessage, Status>> + Send + 'static>>;
 
     async fn say_hello(
         &self,
@@ -64,7 +61,9 @@ impl BandwidthService for BwServer {
             ip_addr: self.pcap_meta.ipv4.to_string(),
         };
 
-        self.sender.send(CapEvent::Protobuf(PbfMsg::HelloRequest(inner))).expect("Failed to send protobuf message");
+        self.sender
+            .send(CapEvent::Protobuf(PbfMsg::HelloRequest(inner)))
+            .expect("Failed to send protobuf message");
 
         Ok(Response::new(reply))
     }

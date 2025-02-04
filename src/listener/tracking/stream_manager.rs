@@ -1,6 +1,6 @@
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
-use tokio::time::Instant;
 use std::collections::HashMap;
+use tokio::time::Instant;
 
 use super::super::packet::ParsedPacket;
 use super::super::tracking::stream_id::StreamKey;
@@ -42,8 +42,6 @@ impl StreamManager {
         false
     }
 
-
-
     pub fn record_iperf_result(&mut self, bps: f64) {
         // Check if in out is very different
         self.last_iperf = Some(Instant::now());
@@ -64,11 +62,11 @@ impl StreamManager {
             }
         }
         let stream_id = StreamKey::from_packet(packet);
-        self.streams.entry(stream_id)
-            .or_insert_with(|| Tracker::<TrackerState>::new(
-                packet.timestamp,
-                packet.transport.get_ip_proto()
-            ))
+        self.streams
+            .entry(stream_id)
+            .or_insert_with(|| {
+                Tracker::<TrackerState>::new(packet.timestamp, packet.transport.get_ip_proto())
+            })
             .register_packet(packet);
     }
 

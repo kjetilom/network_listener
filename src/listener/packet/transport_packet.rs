@@ -1,5 +1,8 @@
 use pnet::packet::{
-    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols}, tcp::{TcpOptionIterable, TcpOptionNumbers, TcpPacket}, udp::UdpPacket, Packet
+    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
+    tcp::{TcpOptionIterable, TcpOptionNumbers, TcpPacket},
+    udp::UdpPacket,
+    Packet,
 };
 
 #[derive(Debug)]
@@ -43,7 +46,9 @@ impl TransportPacket {
                     Some(tcp) => tcp,
                     None => {
                         log::warn!("Failed to parse TCP packet");
-                        return TransportPacket::OTHER { protocol: protocol.0 };
+                        return TransportPacket::OTHER {
+                            protocol: protocol.0,
+                        };
                     }
                 };
 
@@ -67,14 +72,16 @@ impl TransportPacket {
                     Some(udp) => udp,
                     None => {
                         log::warn!("Failed to parse UDP packet");
-                        return TransportPacket::OTHER { protocol: protocol.0 };
+                        return TransportPacket::OTHER {
+                            protocol: protocol.0,
+                        };
                     }
                 };
                 TransportPacket::UDP {
                     src_port: udp.get_source(),
                     dst_port: udp.get_destination(),
                 }
-            },
+            }
             IpNextHeaderProtocols::Icmp => TransportPacket::ICMP,
             _ => TransportPacket::OTHER {
                 protocol: protocol.0,
@@ -87,7 +94,6 @@ impl TransportPacket {
 pub struct TcpFlags(u8);
 
 impl TcpFlags {
-
     pub fn new(flags: u8) -> TcpFlags {
         TcpFlags(flags)
     }

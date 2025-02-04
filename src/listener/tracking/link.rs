@@ -1,7 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
-    net::{AddrParseError, IpAddr}, sync::Arc,
+    net::{AddrParseError, IpAddr},
+    sync::Arc,
 };
 
 use crate::proto_bw::{BandwidthMessage, LinkState as LinkStateProto};
@@ -15,8 +16,8 @@ use crate::{
     Settings,
 };
 
-use crate::PCAPMeta;
 use super::stream_id::IpPair;
+use crate::PCAPMeta;
 
 type Streams = HashMap<IpPair, StreamManager>;
 
@@ -40,10 +41,7 @@ impl LinkManager {
 
     /// Tries to construct a key from an existing external IP addr.
     /// If the key exists, returns the link.
-    pub fn get_link_by_ext_ip(
-        &self,
-        ext_ip: IpAddr,
-    ) -> Option<&StreamManager> {
+    pub fn get_link_by_ext_ip(&self, ext_ip: IpAddr) -> Option<&StreamManager> {
         let ip_pair = match ext_ip {
             IpAddr::V4(_) => IpPair::new(ext_ip, self.pcap_meta.ipv4.into()),
             IpAddr::V6(_) => IpPair::new(ext_ip, self.pcap_meta.ipv6.into()),
@@ -199,7 +197,8 @@ pub struct Link {
 }
 
 impl Link {
-    pub fn to_proto(&self) -> LinkStateProto { // ! THIS IS BAD
+    pub fn to_proto(&self) -> LinkStateProto {
+        // ! THIS IS BAD
         self.state.to_proto(
             self.ip_pair.get_pair().0.to_string(),
             self.ip_pair.get_pair().1.to_string(),
