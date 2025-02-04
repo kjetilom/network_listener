@@ -4,7 +4,7 @@ use futures::future::join_all;
 use log::info;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
-use tokio::time::{timeout, Duration};
+use tokio::time::{timeout, Duration, Instant};
 use crate::probe::iperf::dispatch_iperf_client;
 use crate::{proto_bw, CapEventSender};
 use proto_bw::bandwidth_service_client::BandwidthServiceClient;
@@ -38,6 +38,28 @@ pub enum ClientHandlerEvent {
     DoIperf3(String, u16, u16),
 }
 
+pub enum ClientStatus {
+    Connected(Instant),
+    Disconnected(Instant),
+}
+
+impl ClientStatus {
+    pub fn new_connected() -> Self {
+        ClientStatus::Connected(Instant::now())
+    }
+    pub fn new_disconnected() -> Self {
+        ClientStatus::Disconnected(Instant::now())
+    }
+
+    pub fn duration_since_now(&self) -> Duration {
+        let other = Instant::now();
+        match self {
+            ClientStatus::Connected(t) => t.duration_since(other),
+            ClientStatus::Disconnected(t) => t.duration_since(other),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ClientEventResult {
     HelloReply(Result<HelloReply, tonic::Status>),
@@ -51,6 +73,7 @@ pub struct BwClient {
     event_rx: Receiver<ClientEvent>,
     reply_tx: Sender<ClientEventResult>,
     connection: BandwidthServiceClient<tonic::transport::Channel>,
+    status: Option<ClientStatus>,
 }
 
 pub struct ClientHandler {
@@ -107,7 +130,6 @@ impl ClientHandler {
                     }
                 }
                 ClientHandlerEvent::DoIperf3(ip, port, duration) => {
-                    info!("Starting iperf3 to {}:{} for {} seconds", ip, port, duration);
                     dispatch_iperf_client(ip, port, duration, self.cap_ev_tx.clone());
                 }
 
@@ -167,17 +189,19 @@ impl BwClient {
         let response = match timeout(Duration::from_secs(3), self.connection.say_hello(request)).await {
             Ok(Ok(response)) => response.into_inner(),
             Ok(Err(e)) => {
-                println!("Failed to send hello: {:?}", e); // This should be handled
+                self.status = Some(ClientStatus::new_disconnected());
+                self.reply_tx.send(ClientEventResult::HelloReply(Err(e))).await.unwrap();
                 return;
             }
             Err(_) => {
-                println!("Request timed out"); // This should be handled
+                self.status = Some(ClientStatus::new_disconnected());
                 return;
             }
         };
         // let response = self.connection.say_hello(request);
 
         self.reply_tx.send(ClientEventResult::HelloReply(Ok(response))).await.unwrap();
+        self.status = Some(ClientStatus::new_connected());
     }
 
     pub async fn send_hello_noreply(&mut self, message: String) -> Result<HelloReply, Error> {
@@ -187,12 +211,15 @@ impl BwClient {
         let response = match timeout(Duration::from_secs(3), self.connection.say_hello(request)).await {
             Ok(Ok(response)) => response.into_inner(),
             Ok(Err(e)) => {
+                self.status = Some(ClientStatus::new_disconnected());
                 return Err(e.into());
             }
             Err(_) => {
+                self.status = Some(ClientStatus::new_disconnected());
                 return Err(anyhow::anyhow!("Request timed out"));
             }
         };
+        self.status = Some(ClientStatus::new_connected());
         Ok(response)
     }
 
@@ -227,6 +254,7 @@ impl BwClient {
             event_rx: rx,
             reply_tx,
             connection,
+            status: None,
         };
 
         client.reply_tx.send(ClientEventResult::ServerConnected(ip)).await.unwrap();

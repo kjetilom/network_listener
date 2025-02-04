@@ -20,6 +20,7 @@ use tokio::{
     sync::mpsc::{channel, Receiver, Sender},
     time,
 };
+use std::sync::Arc;
 
 const CHANNEL_CAPACITY: usize = 10; // Amount of messages. Not Bytes.
 
@@ -36,7 +37,7 @@ pub struct PeriodicData {
 
 pub struct Parser {
     packet_stream: CapEventReceiver,
-    pcap_meta: PCAPMeta,
+    pcap_meta: Arc<PCAPMeta>,
     link_manager: LinkManager,
     netlink_data: Vec<NetlinkData>,
     netstat_data: Option<NetStat>,
@@ -47,7 +48,7 @@ impl Parser {
     pub fn new(
         packet_stream: CapEventReceiver,
         // "Metadata" from the pcap capture, aka this devices MAC and IP addresses
-        pcap_meta: PCAPMeta,
+        pcap_meta: Arc<PCAPMeta>,
         client_sender: Sender<ClientHandlerEvent>,
     ) -> Result<(Self, Sender<ClientEventResult>)> {
         let (ctx, crx): (
@@ -55,8 +56,8 @@ impl Parser {
              Receiver<ClientEventResult>) = channel(CHANNEL_CAPACITY);
         Ok((Parser {
             packet_stream,
-            pcap_meta,
-            link_manager: LinkManager::new(client_sender),
+            pcap_meta: pcap_meta.clone(),
+            link_manager: LinkManager::new(client_sender, pcap_meta.clone()),
             netlink_data: Vec::new(),
             netstat_data: None,
             crx,
@@ -122,10 +123,10 @@ impl Parser {
                     }
                 },
                 _ = interval.tick() => {
-                    self.link_manager.periodic(&self.pcap_meta).await;
+                    self.link_manager.periodic().await;
                 },
                 _ = longer_interval.tick() => {
-                    self.link_manager.send_init_clients_msg(&self.pcap_meta).await;
+                    self.link_manager.send_init_clients_msg().await;
                 },
                 else => {
                     // Both streams have ended

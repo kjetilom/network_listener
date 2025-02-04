@@ -8,6 +8,7 @@ use prost_net::bandwidth_server::BwServer;
 use prost_net::bandwidth_client::ClientHandler;
 use std::error::Error;
 use std::net::IpAddr;
+use std::sync::Arc;
 use tokio::sync::mpsc::{channel, unbounded_channel};
 use tokio::task::JoinHandle;
 pub type EventSender = tokio::sync::mpsc::UnboundedSender<EventMessage>;
@@ -47,10 +48,11 @@ impl NetworkListener {
 
 
         let (pcap, pcap_meta) = PacketCapturer::new(sender.clone())?;
+        let pcap_meta = Arc::new(pcap_meta);
         let (parser, ctx) = Parser::new(receiver, pcap_meta.clone(), client_sender)?;
         let client_handler = ClientHandler::new(ctx, client_receiver, sender.clone());
         let server = IperfServer::new(IPERF3_PORT, sender.clone())?;
-        let bw_server = BwServer::new(sender.clone(), pcap_meta.ipv4.into());
+        let bw_server = BwServer::new(sender.clone(), pcap_meta.clone());
 
         let bw_client_h = client_handler.dispatch_client_handler();
         let cap_h = pcap.start_capture_loop();

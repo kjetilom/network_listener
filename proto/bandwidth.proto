@@ -10,25 +10,35 @@ service BandwidthService {
 
 }
 
+message LinkState {
+    // Ip addr of the sender (source)
+    string sender_ip = 1;
+    // Ip addr of the receiver (destination)
+    string receiver_ip = 2;
+
+    double thp_in = 3;
+
+    double thp_out = 4;
+
+    double bw = 5;
+
+    double abw = 6;
+
+    double latency = 7;
+
+    double delay = 8;
+
+    double jitter = 9;
+
+    double loss = 10;
+}
+
 message BandwidthMessage {
     // An array of bandwidth messages
     //repeated Bandwidth bandwidth = 1;
     repeated LinkState link_state = 1;
 
-    message LinkState {
-        // Ip addr of the sender (source)
-        string sender_ip = 1;
-        // Ip addr of the receiver (destination)
-        string receiver_ip = 2;
-        // The estimated bandwidth in kbits/s (0 if not available)
-        int32 bandwidth = 3;
-        // Average latency in milliseconds (0 if not available)
-        int32 latency = 4;
-        // Packet loss rate in percentage (0 if not available)
-        int32 packet_loss = 5;
-        // Measurement time in milliseconds (Since last measurement)
-        int32 time = 6;
-    }
+
 }
 
 message HelloRequest {
