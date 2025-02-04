@@ -30,6 +30,10 @@ impl IpPair {
         self.pair
     }
 
+    pub fn contains(&self, ip: IpAddr) -> bool {
+        self.pair.0 == ip || self.pair.1 == ip
+    }
+
     /// Used for keeping track of seen IP addrs.
     /// Since IpPair is a bi-directional pair, this function will return the IP that does not match the input IP.
     /// If the IP is not in the pair, it will return the pair.

@@ -15,7 +15,7 @@ pub struct StreamManager {
     max_in: u32,
     max_out: u32,
     abw: f64,
-    last_iperf: Option<Instant>,
+    pub last_iperf: Option<Instant>,
 }
 
 impl StreamManager {
@@ -41,6 +41,8 @@ impl StreamManager {
         }
         false
     }
+
+
 
     pub fn record_iperf_result(&mut self, bps: f64) {
         // Check if in out is very different

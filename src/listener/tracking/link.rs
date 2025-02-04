@@ -8,7 +8,9 @@ use log::info;
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    listener::{packet::ParsedPacket, tracking::stream_manager::StreamManager}, probe::iperf::dispatch_iperf_client, prost_net::bandwidth_client::ClientHandlerEvent, CapEventSender, Settings
+    listener::{packet::ParsedPacket, tracking::stream_manager::StreamManager},
+    prost_net::bandwidth_client::ClientHandlerEvent,
+    Settings,
 };
 
 use super::stream_id::IpPair;
@@ -29,6 +31,20 @@ impl LinkManager {
             vip_links: HashSet::new(),
             client_sender,
         }
+    }
+
+    /// Tries to construct a key from an existing external IP addr.
+    /// If the key exists, returns the link.
+    pub fn get_link_by_ext_ip(
+        &self,
+        ext_ip: IpAddr,
+        pcap_meta: &crate::PCAPMeta,
+    ) -> Option<&StreamManager> {
+        let ip_pair = match ext_ip {
+            IpAddr::V4(_) => IpPair::new(ext_ip, pcap_meta.ipv4.into()),
+            IpAddr::V6(_) => IpPair::new(ext_ip, pcap_meta.ipv6.into()),
+        };
+        self.links.get(&ip_pair)
     }
 
     pub fn insert(&mut self, packet: ParsedPacket) {
@@ -62,14 +78,22 @@ impl LinkManager {
         for link in self.get_link_states() {
             println!("{}", link);
         }
-        self.do_something_with_vip_links().await;
+        self.do_something_with_vip_links(pcap_meta).await;
     }
 
-    pub async fn do_something_with_vip_links(&self) {
+    pub async fn do_something_with_vip_links(&self, pcap_meta: &crate::PCAPMeta) {
         for link in self.vip_links.iter() {
-            println!("VIP Link: {}", link);
+            if let Some(stream) = self.get_link_by_ext_ip(*link, pcap_meta) {
+                if let Some(last_iperf) = stream.last_iperf {
+                    if last_iperf.elapsed().as_secs() < 10 {
+                        continue;
+                    }
+                }
+            }
             self.client_sender
-                .send(ClientHandlerEvent::DoIperf3(link.to_string(), 5001, 1)).await.unwrap();
+                .send(ClientHandlerEvent::DoIperf3(link.to_string(), 5001, 1))
+                .await
+                .unwrap();
         }
     }
 
