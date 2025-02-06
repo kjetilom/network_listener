@@ -49,6 +49,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         return Ok(());
     }
 
+    println!("{:?}", args);
+
     let listen_addr = args[1].clone();
     run_server(&listen_addr).await?;
     Ok(())

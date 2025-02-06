@@ -112,9 +112,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     logger::setup_logging()?;
     // let _ = tokio::spawn(network_listener::grafana::client::start_client());
 
-
-    std::process::exit(0);
-
     let mut netlistener = NetworkListener::new()?;
     netlistener.start()?;
     netlistener.blocking_event_loop().await.stop().await;
