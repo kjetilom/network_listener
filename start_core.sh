@@ -10,6 +10,7 @@ COREDIR=/tmp/pycore.1
 # Get the full path to the executables for the network listener and mgen
 # This is needed as vcmd will run the script in the directory of the device
 NETLISTENER=$(realpath $BASE_DIR/target/release/network_listener)
+SCHEDULER=$(realpath $BASE_DIR/target/release/scheduler)
 MGEN_SCRIPTS=$(realpath $BASE_DIR/mgensh/mgen_scripts)
 
 # Output files (relative to the device directory)
@@ -85,6 +86,10 @@ do
     echo "Started traffic generator on $dev [$!]"
     sleep 0.5
 done
+
+# Start the scheduler server
+vcmd -c $COREDIR/mdr4 -- $SCHEDULER -- 0.0.0.0:50041 >> $COREDIR/mdr4.conf/$NLST_OUTPUT &
+PIDS+=($!)
 
 read -p "Press [ENTER] to kill started processes and delete emulation session."
 

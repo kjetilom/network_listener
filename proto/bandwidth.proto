@@ -36,8 +36,10 @@ message BandwidthMessage {
     // An array of bandwidth messages
     //repeated Bandwidth bandwidth = 1;
     repeated LinkState link_state = 1;
+}
 
-
+message HelloMessage {
+    string message = 1;
 }
 
 message HelloRequest {

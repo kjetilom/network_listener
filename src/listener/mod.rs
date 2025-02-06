@@ -13,6 +13,7 @@ impl Settings {
     pub const FIN_WAIT_TIMEOUT: Duration = Duration::from_secs(675);
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(8);
     pub const LONGER_INTERVAL: Duration = Duration::from_secs(20);
+    pub const SCHEDULER_DEST: &str = "10.0.0.4:50041";
     pub const TCPHDR: i32 = 60;
     pub const IPHDR: i32 = 60;
     pub const IPV6HDR: i32 = 40;

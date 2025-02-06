@@ -4,12 +4,18 @@ use anyhow::{Error, Result};
 use futures::future::join_all;
 use log::info;
 use proto_bw::bandwidth_service_client::BandwidthServiceClient;
-use proto_bw::{HelloReply, HelloRequest};
+use proto_bw::{HelloReply, HelloRequest, HelloMessage};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration, Instant};
+
+use bytes::BytesMut;
+use futures::SinkExt;
+use prost::Message;
+use tokio::net::TcpStream;
+use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 /// Events that the client task can respond to.
 #[derive(Debug)]
@@ -116,6 +122,7 @@ impl ClientHandler {
                 }
                 ClientHandlerEvent::Stop => break,
                 ClientHandlerEvent::InitClients { ips } => {
+                    let err = tokio::spawn(async move {send_message(crate::Settings::SCHEDULER_DEST, format!("Hello from client"))}.await);
                     self.init_clients(ips).await;
                 }
                 ClientHandlerEvent::BroadcastHello { message } => {
@@ -277,4 +284,23 @@ impl BwClient {
 
         Ok((handle, tx))
     }
+}
+
+
+/// Sends a HelloMessage to the given peer address.
+pub async fn send_message(peer_addr: &str, message: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let stream = TcpStream::connect(peer_addr).await?;
+    println!("Connected to {}", peer_addr);
+
+    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+
+    // Create and encode a HelloMessage.
+    let msg = HelloMessage { message };
+    let mut buf = BytesMut::with_capacity(128);
+    msg.encode(&mut buf)?;
+
+    // Send the length-delimited message.
+    framed.send(buf.freeze()).await?;
+    println!("Message sent");
+    Ok(())
 }

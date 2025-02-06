@@ -7,7 +7,6 @@ use network_listener::{prost_net, IPERF3_PORT};
 use prost_net::bandwidth_client::ClientHandler;
 use prost_net::bandwidth_server::BwServer;
 use std::error::Error;
-use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::mpsc::{channel, unbounded_channel};
 use tokio::task::JoinHandle;
@@ -23,10 +22,8 @@ pub struct NetworkListener {
 }
 
 pub enum EventMessage {
-    DoIperf3(IpAddr),
-    DoPing(IpAddr),
-    DoExit,
-    PausePCAP,
+    PausePCAP(std::time::Duration),
+    ResumePCAP,
 }
 
 impl NetworkListener {
@@ -72,22 +69,15 @@ impl NetworkListener {
         loop {
             tokio::select! {
                 Some(event) = self.event_receiver.recv() => match event {
-                    EventMessage::DoIperf3(ip) => {
-                        info!("Starting iperf3 to {}", ip);
-                    }
-                    EventMessage::DoPing(ip) => {
-                        info!("Pinging {}", ip);
-                    }
-                    EventMessage::DoExit => {
-                        info!("Exiting");
-                        break;
-                    }
-                    EventMessage::PausePCAP => {
-                        info!("Pausing PCAP");
-                    }
+                    EventMessage::PausePCAP(_) => {
+                        info!("Pausing packet capture! (JK)");
+                    },
+                    EventMessage::ResumePCAP => {
+                        info!("Resuming packet capture! (JK)");
+                    },
                 },
                 _ = tokio::signal::ctrl_c() => {
-                    info!("Received Ctrl-C");
+                    info!("Received Ctrl-C, Stopping all tasks");
                     break;
                 },
                 else => {
@@ -121,6 +111,9 @@ impl NetworkListener {
 async fn main() -> Result<(), Box<dyn Error>> {
     logger::setup_logging()?;
     // let _ = tokio::spawn(network_listener::grafana::client::start_client());
+
+
+    std::process::exit(0);
 
     let mut netlistener = NetworkListener::new()?;
     netlistener.start()?;
