@@ -1,10 +1,11 @@
 use crate::probe::iperf::dispatch_iperf_client;
+use crate::proto_bw::BandwidthMessage;
 use crate::{proto_bw, CapEventSender};
 use anyhow::{Error, Result};
 use futures::future::join_all;
 use log::info;
 use proto_bw::bandwidth_service_client::BandwidthServiceClient;
-use proto_bw::{HelloReply, HelloRequest, HelloMessage};
+use proto_bw::{HelloReply, HelloRequest};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -33,6 +34,7 @@ pub enum ClientHandlerEvent {
     BroadcastHello { message: String },
     Stop,
     DoIperf3(String, u16, u16),
+    SendBandwidth(BandwidthMessage),
 }
 
 pub enum ClientStatus {
@@ -122,7 +124,6 @@ impl ClientHandler {
                 }
                 ClientHandlerEvent::Stop => break,
                 ClientHandlerEvent::InitClients { ips } => {
-                    let err = tokio::spawn(async move {send_message(crate::Settings::SCHEDULER_DEST, format!("Hello from client"))}.await);
                     self.init_clients(ips).await;
                 }
                 ClientHandlerEvent::BroadcastHello { message } => {
@@ -133,6 +134,11 @@ impl ClientHandler {
                 }
                 ClientHandlerEvent::DoIperf3(ip, port, duration) => {
                     dispatch_iperf_client(ip, port, duration, self.cap_ev_tx.clone());
+                }
+                ClientHandlerEvent::SendBandwidth(bw) => {
+                    tokio::spawn(async move {
+                        send_message(crate::Settings::SCHEDULER_DEST, bw.into()).await.unwrap_or(());
+                    });
                 }
             }
         }
@@ -288,16 +294,15 @@ impl BwClient {
 
 
 /// Sends a HelloMessage to the given peer address.
-pub async fn send_message(peer_addr: &str, message: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn send_message(peer_addr: &str, message: BandwidthMessage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let stream = TcpStream::connect(peer_addr).await?;
     println!("Connected to {}", peer_addr);
 
     let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
 
     // Create and encode a HelloMessage.
-    let msg = HelloMessage { message };
-    let mut buf = BytesMut::with_capacity(128);
-    msg.encode(&mut buf)?;
+    let mut buf = BytesMut::with_capacity(message.encoded_len());
+    message.encode(&mut buf)?;
 
     // Send the length-delimited message.
     framed.send(buf.freeze()).await?;

@@ -1,13 +1,10 @@
 use std::{
-    collections::{HashMap, HashSet},
-    fmt::Display,
-    net::{AddrParseError, IpAddr},
-    sync::Arc,
+    collections::{HashMap, HashSet}, f64::consts::E, fmt::Display, net::{AddrParseError, IpAddr}, sync::Arc
 };
 
 use crate::proto_bw::{BandwidthMessage, LinkState as LinkStateProto};
 
-use log::info;
+use log::{info, warn};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
@@ -105,6 +102,14 @@ impl LinkManager {
         } else {
             info!("Failed to parse IP address");
         }
+    }
+
+    pub async fn send_bandwidth(&mut self) {
+        let bw_message = self.get_bw_message();
+        self.client_sender
+            .send(ClientHandlerEvent::SendBandwidth(bw_message))
+            .await
+            .unwrap_or(warn!("Failed to send bandwidth message"));
     }
 
     pub fn collect_external_ips(&self) -> Vec<IpAddr> {

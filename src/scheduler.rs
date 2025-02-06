@@ -6,7 +6,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 // Adjust the module path to match your generated protobuf code.
-use network_listener::proto_bw::HelloMessage;
+use network_listener::proto_bw::BandwidthMessage;
 
 async fn handle_connection(socket: TcpStream) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Wrap the socket with a length-delimited codec for framing.
@@ -15,8 +15,8 @@ async fn handle_connection(socket: TcpStream) -> Result<(), Box<dyn Error + Send
     // Wait for a complete frame (a complete Protobuf message)
     if let Some(frame) = framed.next().await {
         let bytes = frame?;
-        let msg = HelloMessage::decode(bytes)?;
-        println!("Received message: {}", msg.message);
+        let msg = BandwidthMessage::decode(bytes)?;
+        println!("Received message: {:?}", msg.link_state);
     }
     Ok(())
 }
