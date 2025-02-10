@@ -12,7 +12,7 @@ use crate::{
     ParsedPacket, Settings,
 };
 use anyhow::Result;
-use log::{error, info, warn};
+use log::{error, info};
 use neli_wifi::{Bss, Station};
 use pnet::packet::ip::IpNextHeaderProtocols;
 use std::sync::Arc;
@@ -121,7 +121,6 @@ impl Parser {
                             self.link_manager.add_important_link(IpAddr::from_str(ip.as_str()));
                         },
                         _ => info!("Received reply: {:?}", reply),
-                        //Ok(reply) => self.link_manager.add_important_link(IpAddr::from_str(&reply.ip_addr).unwrap_or(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))),
                     }
                 },
                 _ = interval.tick() => {
@@ -192,23 +191,35 @@ impl Parser {
 
     fn handle_iperf(&mut self, iperf_data: IperfResponse) {
         match iperf_data {
-            IperfResponse::Error(e) => {
-                warn!("Iperf error: {}", e.error);
+            IperfResponse::Error(_) => {
+                // Do nothing for now
             }
             IperfResponse::Success(s) => {
                 let connected = s.start.connected;
                 if connected.len() == 1 {
-                    let (_stream_id, ip_pair) = // ! Use stream_id later pls
+                    let (_, ip_pair) =
                         from_iperf_connected(
                             connected.first().unwrap(),
                             IpNextHeaderProtocols::Tcp
                         );
+
+                    let mut stream = None;
+                    if s.end.sum_sent.sender == true {
+                        // We are the client.
+                        if let Some(strm) = s.end.streams.first().take() {
+                            stream = Some(strm);
+                        }
+                    }
+
+                    s.end.sum_sent.retransmits;
+
                     self.link_manager.insert_iperf_result(
                         ip_pair,
                         s.end
                             .sum_received
                             .bits_per_second
                             .max(s.end.sum_sent.bits_per_second),
+                        stream,
                     ); // ! This is a hack
                 }
             }

@@ -15,6 +15,9 @@ pub struct StreamManager {
     max_in: u32,
     max_out: u32,
     abw: f64,
+    max_rtt: i64,
+    min_rtt: i64,
+    mean_rtt: i64,
     pub last_iperf: Option<Instant>,
 }
 
@@ -27,6 +30,9 @@ impl StreamManager {
             max_in: 0,
             max_out: 0,
             abw: 0.0,
+            max_rtt: 0,
+            min_rtt: 0,
+            mean_rtt: 0,
             last_iperf: None,
         }
     }
@@ -42,10 +48,16 @@ impl StreamManager {
         false
     }
 
-    pub fn record_iperf_result(&mut self, bps: f64) {
+    pub fn record_iperf_result(&mut self, bps: f64, stream: Option<&crate::IperfStream>) {
         // Check if in out is very different
         self.last_iperf = Some(Instant::now());
         self.abw = bps;
+        if let Some(stream) = stream {
+            self.max_rtt = stream.sender.max_rtt.unwrap_or(0);
+            self.min_rtt = stream.sender.min_rtt.unwrap_or(0);
+            self.mean_rtt = stream.sender.mean_rtt.unwrap_or(0);
+        }
+
     }
 
     pub fn get_abw(&self) -> f64 {

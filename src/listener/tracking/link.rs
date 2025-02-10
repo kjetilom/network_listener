@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet}, f64::consts::E, fmt::Display, net::{AddrParseError, IpAddr}, sync::Arc
+    collections::{HashMap, HashSet}, fmt::Display, net::{AddrParseError, IpAddr}, sync::Arc
 };
 
 use crate::proto_bw::{BandwidthMessage, LinkState as LinkStateProto};
@@ -62,11 +62,11 @@ impl LinkManager {
             .record_ip_packet(&packet);
     }
 
-    pub fn insert_iperf_result(&mut self, ip_pair: IpPair, bps: f64) {
+    pub fn insert_iperf_result(&mut self, ip_pair: IpPair, bps: f64, stream: Option<&crate::IperfStream>) {
         self.links
             .entry(ip_pair)
             .or_insert_with(StreamManager::default)
-            .record_iperf_result(bps);
+            .record_iperf_result(bps, stream);
     }
 
     pub async fn periodic(&mut self) {
