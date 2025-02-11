@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "scheduler"
-path = "src/scheduler.rs"
+path = "src/scheduler/scheduler.rs"
 
 [dependencies]
 pnet = "0.35.0"
@@ -19,15 +19,18 @@ pcap = "2.2.0"
 chrono = "0.4.39"
 log = "0.4.25"
 env_logger = "0.11.6"
-clap = { version = "4.5.23", features = ["derive"] }
+clap = { version = "4.5.28", features = ["derive"] }
 fern = "0.7.1"
 tokio = { version = "1.42.0", features = ["full"] }
 pcap-async = "0.4.1"
 libc = "0.2.169"
 procfs = "0.17.0"
+
+# Wifi stuff
 rtnetlink = "0.14.1"
 neli-wifi = { version = "0.6.0", features = ["async"] }
-mac_address = "1.1.7"
+
+mac_address = "1.1.8"
 # neli = { version = "0.6.4", features = ["async"] }
 prost = "0.13.4"
 prost-types = "0.13.4"
@@ -38,6 +41,8 @@ tonic = "0.12.3"
 futures = "0.3.17"
 tokio-util = "0.7"
 bytes = "1.10.0"
+# Postgres stuff
+tokio-postgres = "0.7"
 
 [build-dependencies]
 tonic-build = "*"

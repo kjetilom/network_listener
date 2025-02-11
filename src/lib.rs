@@ -8,6 +8,7 @@ pub mod listener;
 pub mod logging;
 pub mod probe;
 pub mod prost_net;
+pub mod scheduler;
 
 pub use listener::packet::*;
 pub use listener::tracking::*;

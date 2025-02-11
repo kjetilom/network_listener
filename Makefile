@@ -3,6 +3,8 @@
 # The name of the binary
 BINARY_NAME := network_listener
 
+POSTGRES_DB := pgrdb
+
 # The directory containing the source code
 SRC_DIR := src
 
@@ -31,6 +33,18 @@ run_debug: build_debug
 
 run_debugbin:
 	sudo ./target/debug/$(BINARY_NAME)
+
+start-postgres:
+	sudo docker run --name $(POSTGRES_DB) \
+	  -e POSTGRES_USER=user \
+	  -e POSTGRES_PASSWORD=password \
+	  -e POSTGRES_DB=metricsdb \
+	  -p 5432:5432 \
+	  -d postgres:13
+
+stop-postgres:
+	-sudo docker stop $(POSTGRES_DB) || true
+	-sudo docker rm $(POSTGRES_DB) || true
 
 # Clean the project
 clean:
