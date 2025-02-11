@@ -191,6 +191,7 @@ impl LinkState {
             delay: self.delay.unwrap_or(0.0),
             jitter: self.jitter.unwrap_or(0.0),
             loss: self.loss.unwrap_or(0.0),
+            timestamp: chrono::Utc::now().timestamp_millis(),
         }
     }
 }

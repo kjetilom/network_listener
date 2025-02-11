@@ -8,6 +8,52 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 // Adjust the module path to match your generated protobuf code.
 use network_listener::proto_bw::BandwidthMessage;
 
+/// HTTP handler for uploading bandwidth metrics.
+///
+/// This endpoint expects a JSON payload that corresponds to your BandwidthMessage.
+/// For each contained LinkState, we insert a row into the PostgreSQL database.
+async fn upload_bandwidth(msg: BandwidthMessage) {
+    // Connect to the database.
+    let (client, _) = tokio_postgres::connect(
+        "host=localhost, user=user, password=password, dbname=metricsdb",
+        tokio_postgres::NoTls,
+    )
+    .await
+    .unwrap();
+
+    // For each LinkState record in the message, insert a row.
+    for ls in &msg.link_state {
+        // Convert the timestamp (assumed seconds since epoch) to a DateTime<Utc>
+        // Using timestamp_opt for safety:
+        let timestamp = ls.timestamp;
+
+        // Now use dt directly in your query.
+        if let Err(e) = client
+            .execute(
+                "INSERT INTO link_state (
+                    sender_ip, receiver_ip, thp_in, thp_out, bw, abw, latency, delay, jitter, loss, ts
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+                &[
+                    &ls.sender_ip,
+                    &ls.receiver_ip,
+                    &ls.thp_in,
+                    &ls.thp_out,
+                    &ls.bw,
+                    &ls.abw,
+                    &ls.latency,
+                    &ls.delay,
+                    &ls.jitter,
+                    &ls.loss,
+                    &timestamp,
+                ],
+            )
+            .await
+        {
+            eprintln!("Error inserting record: {}", e);
+        }
+    }
+}
+
 async fn handle_connection(socket: TcpStream) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Wrap the socket with a length-delimited codec for framing.
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
@@ -16,7 +62,7 @@ async fn handle_connection(socket: TcpStream) -> Result<(), Box<dyn Error + Send
     if let Some(frame) = framed.next().await {
         let bytes = frame?;
         let msg = BandwidthMessage::decode(bytes)?;
-        println!("Received message: {:?}", msg.link_state);
+        upload_bandwidth(msg).await;
     }
     Ok(())
 }

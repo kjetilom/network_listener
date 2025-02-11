@@ -1,7 +1,14 @@
-CREATE TABLE metrics (
+CREATE TABLE link_state (
     id SERIAL PRIMARY KEY,
-    measurement TEXT NOT NULL,
-    value DOUBLE PRECISION NOT NULL,
-    tags JSONB,
-    ts TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    sender_ip TEXT NOT NULL,
+    receiver_ip TEXT NOT NULL,
+    thp_in DOUBLE PRECISION,
+    thp_out DOUBLE PRECISION,
+    bw DOUBLE PRECISION,
+    abw DOUBLE PRECISION,
+    latency DOUBLE PRECISION,
+    delay DOUBLE PRECISION,
+    jitter DOUBLE PRECISION,
+    loss DOUBLE PRECISION,
+    ts INTEGER NOT NULL
 );

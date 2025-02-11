@@ -30,6 +30,8 @@ message LinkState {
     double jitter = 9;
 
     double loss = 10;
+
+    int64 timestamp = 11;
 }
 
 message BandwidthMessage {
