@@ -36,7 +36,7 @@ impl BwServer {
     /// Consumes self, returns a handle to the task
     pub fn dispatch_server(self) -> JoinHandle<Result<()>> {
         tokio::spawn(async move {
-            let addr = "0.0.0.0:50051".parse().expect("Failed to parse address");
+            let addr = format!("0.0.0.0:{}", crate::Settings::BW_SERVER_PORT).parse().expect("Failed to parse address");
 
             Server::builder()
                 .add_service(BandwidthServiceServer::new(self))

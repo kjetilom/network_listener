@@ -14,6 +14,7 @@ impl Settings {
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(8);
     pub const LONGER_INTERVAL: Duration = Duration::from_secs(20);
     pub const SCHEDULER_DEST: &str = "172.16.0.254:50041";
+    pub const BW_SERVER_PORT: u16 = 50042;
     pub const TCPHDR: i32 = 60;
     pub const IPHDR: i32 = 60;
     pub const IPV6HDR: i32 = 40;

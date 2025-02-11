@@ -87,9 +87,9 @@ do
     sleep 0.5
 done
 
-# Start the scheduler server
-vcmd -c $COREDIR/mdr4 -- $SCHEDULER "0.0.0.0:50041" >> $COREDIR/mdr4.conf/$NLST_OUTPUT &
-PIDS+=($!)
+# # Start the scheduler server
+# vcmd -c $COREDIR/mdr4 -- $SCHEDULER "0.0.0.0:50041" >> $COREDIR/mdr4.conf/$NLST_OUTPUT &
+# PIDS+=($!)
 
 read -p "Press [ENTER] to kill started processes and delete emulation session."
 

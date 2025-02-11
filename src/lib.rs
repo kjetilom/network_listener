@@ -16,7 +16,7 @@ pub use listener::Settings;
 pub use prost_net::bandwidth_client::ClientEvent;
 pub use probe::iperf_json::Stream2 as IperfStream;
 
-pub const IPERF3_PORT: u16 = 5001;
+pub const IPERF3_PORT: u16 = 5201;
 pub const PROTOBUF_PORT: u16 = 5012; // Unused
 
 pub type CapEventSender = UnboundedSender<CapEvent>;

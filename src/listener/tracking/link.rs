@@ -90,7 +90,7 @@ impl LinkManager {
                 }
             }
             self.client_sender
-                .send(ClientHandlerEvent::DoIperf3(link.to_string(), 5001, 1))
+                .send(ClientHandlerEvent::DoIperf3(link.to_string(), crate::IPERF3_PORT, 1))
                 .await
                 .unwrap();
         }
