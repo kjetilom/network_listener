@@ -10,5 +10,5 @@ CREATE TABLE link_state (
     delay DOUBLE PRECISION,
     jitter DOUBLE PRECISION,
     loss DOUBLE PRECISION,
-    ts INTEGER NOT NULL
+    ts TIMESTAMPTZ NOT NULL,
 );

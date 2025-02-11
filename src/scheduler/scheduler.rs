@@ -1,5 +1,7 @@
+use chrono::{DateTime, Utc};
 use futures::StreamExt;
 use prost::Message;
+use tokio_postgres::{Client, types::Timestamp};
 use std::env;
 use std::error::Error;
 use tokio::net::{TcpListener, TcpStream};
@@ -8,24 +10,19 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 // Adjust the module path to match your generated protobuf code.
 use network_listener::proto_bw::BandwidthMessage;
 
+type TstampTZ = Timestamp<DateTime<Utc>>;
+
 /// HTTP handler for uploading bandwidth metrics.
 ///
 /// This endpoint expects a JSON payload that corresponds to your BandwidthMessage.
 /// For each contained LinkState, we insert a row into the PostgreSQL database.
-async fn upload_bandwidth(msg: BandwidthMessage) {
-    // Connect to the database.
-    let (client, _) = tokio_postgres::connect(
-        "host=localhost, user=user, password=password, dbname=metricsdb",
-        tokio_postgres::NoTls,
-    )
-    .await
-    .unwrap();
-
+async fn upload_bandwidth(msg: BandwidthMessage, client: &Client) {
     // For each LinkState record in the message, insert a row.
     for ls in &msg.link_state {
         // Convert the timestamp (assumed seconds since epoch) to a DateTime<Utc>
         // Using timestamp_opt for safety:
         let timestamp = ls.timestamp;
+        let ts = TstampTZ::Value(DateTime::from_timestamp_millis(timestamp).unwrap());
 
         // Now use dt directly in your query.
         if let Err(e) = client
@@ -44,7 +41,7 @@ async fn upload_bandwidth(msg: BandwidthMessage) {
                     &ls.delay,
                     &ls.jitter,
                     &ls.loss,
-                    &timestamp,
+                    &ts,
                 ],
             )
             .await
@@ -54,31 +51,41 @@ async fn upload_bandwidth(msg: BandwidthMessage) {
     }
 }
 
-async fn handle_connection(socket: TcpStream) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn handle_connection(socket: TcpStream) -> Result<BandwidthMessage, Box<dyn Error + Send + Sync>> {
     // Wrap the socket with a length-delimited codec for framing.
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
 
     // Wait for a complete frame (a complete Protobuf message)
     if let Some(frame) = framed.next().await {
-        let bytes = frame?;
-        let msg = BandwidthMessage::decode(bytes)?;
-        upload_bandwidth(msg).await;
+        let bytes = match frame {
+            Ok(bytes) => bytes,
+            Err(e) => return Err(e.into()),
+        };
+
+        // Parse the message
+        let msg = BandwidthMessage::decode(bytes);
+        match msg {
+            Ok(msg) => {
+                return Ok(msg);
+            }
+            Err(e) => return Err(e.into()),
+        }
+    } else {
+        return Err("No data received".into());
     }
-    Ok(())
 }
 
-async fn run_server(listen_addr: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn run_server(listen_addr: &str, client: Client) -> Result<(), Box<dyn Error + Send + Sync>> {
     let listener = TcpListener::bind(listen_addr).await?;
     println!("Server listening on {}", listen_addr);
 
     loop {
         let (socket, addr) = listener.accept().await?;
         println!("Accepted connection from {}", addr);
-        tokio::spawn(async move {
-            if let Err(e) = handle_connection(socket).await {
-                eprintln!("Error handling connection from {}: {}", addr, e);
-            }
-        });
+        let bwm = tokio::spawn(async move {
+            handle_connection(socket).await
+        }).await??;
+        upload_bandwidth(bwm, &client).await;
     }
 }
 
@@ -95,9 +102,21 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         return Ok(());
     }
 
+    println!("Connecting to database");
+    let (client, connection) = tokio_postgres::connect(
+        "host=localhost user=user password=password dbname=metricsdb",
+        tokio_postgres::NoTls,
+    ).await?;
+
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+
     println!("{:?}", args);
 
     let listen_addr = args[1].clone();
-    run_server(&listen_addr).await?;
+    run_server(&listen_addr, client).await?;
     Ok(())
 }
