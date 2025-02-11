@@ -269,7 +269,7 @@ impl BwClient {
                 return Err(e.into());
             }
             Err(_) => {
-                return Err(anyhow::anyhow!("Connection timed out"));
+                return Err(anyhow::anyhow!("Connection timed out, ip:{}", ip));
             }
         };
 
