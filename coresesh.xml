@@ -28,25 +28,25 @@
     <device id="2" name="mdr1" icon="" canvas="1" type="mdr" class="" image="" compose="" compose_name="">
       <position x="227.93081665039062" y="393.6033020019531" lat="47.57558857005884" lon="-122.12925291270521" alt="2.0"/>
       <services>
-        <service name="OSPFv3MDR"/>
         <service name="IPForward"/>
         <service name="zebra"/>
+        <service name="OSPFv3MDR"/>
       </services>
     </device>
     <device id="3" name="mdr2" icon="" canvas="1" type="mdr" class="" image="" compose="" compose_name="">
       <position x="462.993896484375" y="219.2318572998047" lat="47.57717363146198" lon="-122.12608550134499" alt="2.0"/>
       <services>
-        <service name="OSPFv3MDR"/>
         <service name="IPForward"/>
         <service name="zebra"/>
+        <service name="OSPFv3MDR"/>
       </services>
     </device>
     <device id="4" name="mdr3" icon="" canvas="1" type="mdr" class="" image="" compose="" compose_name="">
-      <position x="625.8428344726562" y="458.4039001464844" lat="47.57499951111302" lon="-122.12389115599504" alt="2.0"/>
+      <position x="506.84283447265625" y="442.4039001464844" lat="47.575144957039846" lon="-122.12549464877718" alt="2.0"/>
       <services>
-        <service name="OSPFv3MDR"/>
         <service name="IPForward"/>
         <service name="zebra"/>
+        <service name="OSPFv3MDR"/>
       </services>
     </device>
     <device id="5" name="pc220" icon="" canvas="1" type="PC" class="" image="" compose="" compose_name="">
@@ -83,14 +83,6 @@
       <position x="292.7149353027344" y="49.86775588989258" lat="47.57871312946253" lon="-122.1283799642459" alt="2.0"/>
       <services>
         <service name="DefaultRoute"/>
-      </services>
-    </device>
-    <device id="14" name="mdr4" icon="" canvas="1" type="mdr" class="" image="" compose="" compose_name="">
-      <position x="370.9753112792969" y="616.4006958007812" lat="47.57356324002271" lon="-122.12732542686769" alt="2.0"/>
-      <services>
-        <service name="OSPFv3MDR"/>
-        <service name="IPForward"/>
-        <service name="zebra"/>
       </services>
     </device>
   </devices>
@@ -148,9 +140,6 @@
       <iface1 id="2" name="veth13.2.1"/>
       <iface2 id="1" name="eth1" mac="00:00:00:aa:00:08" ip4="10.0.2.1" ip4_mask="24" ip6="2001:0:0:2::1" ip6_mask="64"/>
       <options delay="1000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="100"/>
-    </link>
-    <link node1="14" node2="1">
-      <iface1 id="0" name="eth0" mac="00:00:00:aa:00:0c" ip4="10.0.0.4" ip4_mask="32" ip6="2001::4" ip6_mask="128"/>
     </link>
   </links>
   <session_origin lat="47.579166412353516" lon="-122.13232421875" alt="2.0" scale="150.0"/>
