@@ -145,7 +145,7 @@
   <session_origin lat="47.579166412353516" lon="-122.13232421875" alt="2.0" scale="150.0"/>
   <session_options>
     <configuration name="controlnet" value=""/>
-    <configuration name="controlnet0" value="172.16.1.0/24"/>
+    <configuration name="controlnet0" value=""/>
     <configuration name="controlnet1" value=""/>
     <configuration name="controlnet2" value=""/>
     <configuration name="controlnet3" value=""/>
