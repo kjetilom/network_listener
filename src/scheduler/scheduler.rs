@@ -1,57 +1,18 @@
-use chrono::{DateTime, Utc};
 use futures::StreamExt;
+use network_listener::proto_bw::data_msg;
 use prost::Message;
-use tokio_postgres::{Client, types::Timestamp};
+use tokio_postgres::Client;
 use std::env;
 use std::error::Error;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
 // Adjust the module path to match your generated protobuf code.
-use network_listener::proto_bw::BandwidthMessage;
+use network_listener::proto_bw::DataMsg;
 
-type TstampTZ = Timestamp<DateTime<Utc>>;
+use network_listener::scheduler::db_util::{upload_bandwidth, upload_rtt};
 
-/// HTTP handler for uploading bandwidth metrics.
-///
-/// This endpoint expects a JSON payload that corresponds to your BandwidthMessage.
-/// For each contained LinkState, we insert a row into the PostgreSQL database.
-async fn upload_bandwidth(msg: BandwidthMessage, client: &Client) {
-    // For each LinkState record in the message, insert a row.
-    for ls in &msg.link_state {
-        // Convert the timestamp (assumed seconds since epoch) to a DateTime<Utc>
-        // Using timestamp_opt for safety:
-        let timestamp = ls.timestamp;
-        let ts = TstampTZ::Value(DateTime::from_timestamp_millis(timestamp).unwrap());
-
-        // Now use dt directly in your query.
-        if let Err(e) = client
-            .execute(
-                "INSERT INTO link_state (
-                    sender_ip, receiver_ip, thp_in, thp_out, bw, abw, latency, delay, jitter, loss, ts
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-                &[
-                    &ls.sender_ip,
-                    &ls.receiver_ip,
-                    &ls.thp_in,
-                    &ls.thp_out,
-                    &ls.bw,
-                    &ls.abw,
-                    &ls.latency,
-                    &ls.delay,
-                    &ls.jitter,
-                    &ls.loss,
-                    &ts,
-                ],
-            )
-            .await
-        {
-            eprintln!("Error inserting record: {}", e);
-        }
-    }
-}
-
-async fn handle_connection(socket: TcpStream) -> Result<BandwidthMessage, Box<dyn Error + Send + Sync>> {
+async fn handle_connection(socket: TcpStream) -> Result<DataMsg, Box<dyn Error + Send + Sync>> {
     // Wrap the socket with a length-delimited codec for framing.
     let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
 
@@ -63,7 +24,7 @@ async fn handle_connection(socket: TcpStream) -> Result<BandwidthMessage, Box<dy
         };
 
         // Parse the message
-        let msg = BandwidthMessage::decode(bytes);
+        let msg = DataMsg::decode(bytes);
         match msg {
             Ok(msg) => {
                 return Ok(msg);
@@ -85,7 +46,22 @@ async fn run_server(listen_addr: &str, client: Client) -> Result<(), Box<dyn Err
         let bwm = tokio::spawn(async move {
             handle_connection(socket).await
         }).await??;
-        upload_bandwidth(bwm, &client).await;
+
+        if let Some(data) = bwm.data {
+            match data {
+                data_msg::Data::Bandwidth(bw) => {
+                    upload_bandwidth(bw, &client).await;
+                },
+                data_msg::Data::Hello(hello) => {
+                    println!("Received hello message: {}", hello.message);
+                },
+                data_msg::Data::Rtts(rtts) => {
+                    println!("Received RTT message: {:?}", rtts);
+                    upload_rtt(rtts, &client).await;
+                }
+            }
+        }
+
     }
 }
 

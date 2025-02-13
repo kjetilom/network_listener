@@ -14,17 +14,47 @@ make runbin
 ./target/{release|debug}/network_listener
 ```
 
+# Simulation
+Running the simulation will require:
+- CORE Network Emulator
+- MGEN packet generator
+As well as a lot of other packages.
 
-## Creating a monitor interface
+For installing on ubunutu 22.04:
 ```bash
-# Creating a monitor interface
-# Note, the interface names may vary (e.g. phy0, phy1, etc.)
 
-# If needed, several monitor interfaces can be created for different phy
-# interfaces if available
+```
+You have to be root to run the script.
+Information about uninstalling can be found below:
+[core](https://coreemu.github.io/core/)
+[mgen](https://github.com/USNavalResearchLaboratory/mgen)
 
-sudo iw dev
-sudo iw phy interface add mon0 type monitor
-sudo iw phy0 interface add mon0 type monitor
-sudo ifconfig mon0 up
+## Installation
+If you have docker installed, you need to put the following in /etc/docker/docker.json
+```json
+{
+  "iptables": false
+}
+```
+
+```bash
+# Install all packages in the $HOME directory
+./setup.sh
+
+# Install rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Build the project (This will build in release mode)
+make build
+```
+
+## Running the simulation.
+This requires that you don't need to input password for sudo commands.
+```bash
+# Run the simulation
+./tmux_setup.sh
+
+# In another terminal
+tmux a -t core
+# CRTL + B, 3 to switch to the node terminal view
 ```

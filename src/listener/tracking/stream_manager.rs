@@ -1,11 +1,16 @@
+use crate::{stream_id::StreamKey, tracker::Tracker, tracker::TrackerState, ParsedPacket};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 use tokio::time::Instant;
 
-use super::super::packet::ParsedPacket;
-use super::super::tracking::stream_id::StreamKey;
-use super::super::tracking::tracker::{Tracker, TrackerState};
-// Replace HashMap with DashMap
+struct IperfResult {
+    bps: f64,
+    max_rtt: i64,
+    min_rtt: i64,
+    mean_rtt: i64,
+}
+
+/// StreamManager is a struct that keeps track of all streams and their states.
 #[derive(Debug)]
 pub struct StreamManager {
     // HashMap for all streams
@@ -18,6 +23,8 @@ pub struct StreamManager {
     max_rtt: i64,
     min_rtt: i64,
     mean_rtt: i64,
+    tcp_thput: f64,
+    capacity: f64,
     pub last_iperf: Option<Instant>,
 }
 
@@ -33,6 +40,8 @@ impl StreamManager {
             max_rtt: 0,
             min_rtt: 0,
             mean_rtt: 0,
+            tcp_thput: 0.0,
+            capacity: 0.0,
             last_iperf: None,
         }
     }
@@ -51,17 +60,20 @@ impl StreamManager {
     pub fn record_iperf_result(&mut self, bps: f64, stream: Option<&crate::IperfStream>) {
         // Check if in out is very different
         self.last_iperf = Some(Instant::now());
-        self.abw = bps;
+        self.tcp_thput = bps;
         if let Some(stream) = stream {
             self.max_rtt = stream.sender.max_rtt.unwrap_or(0);
             self.min_rtt = stream.sender.min_rtt.unwrap_or(0);
             self.mean_rtt = stream.sender.mean_rtt.unwrap_or(0);
         }
-
     }
 
     pub fn get_abw(&self) -> f64 {
         self.abw
+    }
+
+    pub fn tcp_thput(&self) -> f64 {
+        self.tcp_thput
     }
 
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {

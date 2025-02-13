@@ -9,7 +9,9 @@ pub mod logging;
 pub mod probe;
 pub mod prost_net;
 pub mod scheduler;
+pub mod util;
 
+pub use util::rolling_sum::RollingSum;
 pub use listener::packet::*;
 pub use listener::tracking::*;
 pub use listener::Settings;

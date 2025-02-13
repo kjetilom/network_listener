@@ -13,6 +13,9 @@ use crate::listener::packet::transport_packet::TransportPacket;
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::ip::IpNextHeaderProtocol;
 
+const IPV6HDR: usize = 40;
+const WORD_SIZE: usize = 4;
+
 /// time::Duration and SystemTime uses Nanosecond precision
 pub fn timeval_to_system_time(tv: libc::timeval) -> SystemTime {
     match super::super::Settings::PRECISION {
@@ -97,9 +100,9 @@ impl<'a> ParsedPacket {
         Some((
             IpAddr::V4(ipv4.get_source()),
             IpAddr::V4(ipv4.get_destination()),
-            &payload[ipv4.get_header_length() as usize * 4..], // reference to the rest of the IPv4 payload
+            &payload[ipv4.get_header_length() as usize * WORD_SIZE..], // reference to the rest of the IPv4 payload
             ipv4.get_next_level_protocol(),
-            ipv4.get_header_length() as u16 * 4,
+            ipv4.get_header_length() as u16 * WORD_SIZE as u16,
         ))
     }
 
@@ -112,7 +115,7 @@ impl<'a> ParsedPacket {
             IpAddr::V6(ipv6.get_destination()),
             &payload[super::super::Settings::IPV6HDR as usize..], // reference to the rest of the IPv6 payload
             ipv6.get_next_header(),
-            40,
+            IPV6HDR as u16,
         ))
     }
 }

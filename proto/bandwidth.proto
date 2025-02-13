@@ -9,6 +9,14 @@ service BandwidthService {
     // SendBandwidth
 }
 
+message DataMsg {
+    oneof data {
+        BandwidthMessage bandwidth = 1;
+        HelloMessage hello = 2;
+        Rtts rtts = 3;
+    }
+}
+
 message LinkState {
     // Ip addr of the sender (source)
     string sender_ip = 1;
@@ -32,6 +40,21 @@ message LinkState {
     double loss = 10;
 
     int64 timestamp = 11;
+}
+
+message Rtt {
+    double rtt = 1;
+    int64 timestamp = 2;
+}
+
+message RttMessage {
+    string sender_ip = 1;
+    string receiver_ip = 2;
+    repeated Rtt rtt = 3;
+}
+
+message Rtts {
+    repeated RttMessage rtts = 1;
 }
 
 message BandwidthMessage {

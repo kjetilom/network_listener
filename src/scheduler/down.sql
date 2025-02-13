@@ -1,0 +1,3 @@
+DROP TABLE link
+DROP TABLE link_state
+DROP TABLE rtt
