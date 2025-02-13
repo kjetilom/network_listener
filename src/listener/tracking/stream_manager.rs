@@ -1,20 +1,15 @@
-use crate::{stream_id::StreamKey, tracker::Tracker, tracker::TrackerState, ParsedPacket};
+use crate::{stream_id::StreamKey, tracker::{Tracker, TrackerState}, util::regpkt::PacketRegistry, ParsedPacket};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 use tokio::time::Instant;
-
-struct IperfResult {
-    bps: f64,
-    max_rtt: i64,
-    min_rtt: i64,
-    mean_rtt: i64,
-}
 
 /// StreamManager is a struct that keeps track of all streams and their states.
 #[derive(Debug)]
 pub struct StreamManager {
     // HashMap for all streams
     streams: HashMap<StreamKey, Tracker<TrackerState>>,
+    sent: PacketRegistry,
+    received: PacketRegistry,
     data_in: u32,
     data_out: u32,
     max_in: u32,
@@ -24,7 +19,6 @@ pub struct StreamManager {
     min_rtt: i64,
     mean_rtt: i64,
     tcp_thput: f64,
-    capacity: f64,
     pub last_iperf: Option<Instant>,
 }
 
@@ -32,6 +26,8 @@ impl StreamManager {
     pub fn default() -> Self {
         StreamManager {
             streams: HashMap::new(),
+            sent: PacketRegistry::new(1000),
+            received: PacketRegistry::new(1000),
             data_in: 0,
             data_out: 0,
             max_in: 0,
@@ -41,7 +37,6 @@ impl StreamManager {
             min_rtt: 0,
             mean_rtt: 0,
             tcp_thput: 0.0,
-            capacity: 0.0,
             last_iperf: None,
         }
     }
@@ -79,10 +74,10 @@ impl StreamManager {
     pub fn record_ip_packet(&mut self, packet: &ParsedPacket) {
         match packet.direction {
             super::super::packet::Direction::Incoming => {
-                self.data_in += packet.total_length;
+                self.data_in += packet.total_length as u32;
             }
             super::super::packet::Direction::Outgoing => {
-                self.data_out += packet.total_length;
+                self.data_out += packet.total_length as u32;
             }
         }
         let stream_id = StreamKey::from_packet(packet);
@@ -115,19 +110,17 @@ impl StreamManager {
         }
     }
 
-    pub fn get_rt_in_out(&self) -> (u32, u32) {
-        let mut rt_in = 0;
-        let mut rt_out = 0;
+    pub fn get_rts(&self) -> u32 {
+        let mut rts = 0;
         for (_stream_id, tracker) in self.streams.iter() {
             match tracker.state {
                 TrackerState::Tcp(ref tcp_tracker) => {
-                    rt_in += tcp_tracker.stats.retrans_in;
-                    rt_out += tcp_tracker.stats.retrans_out;
+                    rts += tcp_tracker.stats.rts;
                 }
                 _ => {}
             }
         }
-        (rt_in, rt_out)
+        rts
     }
 
     pub fn get_in_out(&self) -> (u32, u32) {

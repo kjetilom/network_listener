@@ -8,7 +8,7 @@ use crate::{
     Direction, ParsedPacket, {TcpFlags, TransportPacket},
 };
 
-use super::tracker::{DefaultState, SentPacket};
+use super::tracker::{DefaultState, RegPkt};
 
 static ALPHA: f64 = 0.125; // 2/(15+1)
 static THRESHOLD_FACTOR: f64 = 1.1;
@@ -24,10 +24,9 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
 
 #[derive(Debug)]
 pub struct TcpStats {
-    pub retrans_in: u32,
-    pub retrans_out: u32,
-    pub recv: VecDeque<SentPacket>,
-    pub sent: VecDeque<SentPacket>,
+    pub rts: u32,
+    pub recv: VecDeque<RegPkt>,
+    pub sent: VecDeque<RegPkt>,
     received_seqs: HashSet<u32>,
     pub state: Option<TcpState>,
     pub smoothed_rtt: Option<f64>,
@@ -43,8 +42,7 @@ impl Default for TcpStats {
 impl TcpStats {
     pub fn new() -> Self {
         TcpStats {
-            retrans_in: 0,
-            retrans_out: 0,
+            rts: 0,
             recv: VecDeque::with_capacity(1000),
             sent: VecDeque::with_capacity(1000),
             received_seqs: HashSet::new(),
@@ -54,35 +52,19 @@ impl TcpStats {
         }
     }
 
-    pub fn register_data_received(&mut self, mut p: SentPacket, seq: &u32) {
+    pub fn register_data_received(&mut self, mut p: RegPkt, seq: &u32) {
         if self.received_seqs.contains(seq) {
             p.retransmissions += 1;
-            self.retrans_in += 1;
         }
         self.received_seqs.insert(*seq);
         self.recv.push_back(p);
     }
 
-    pub fn register_data_sent(&mut self, p: SentPacket) {
+    pub fn register_data_sent(&mut self, p: RegPkt) {
         if let Some(rtt) = p.rtt {
             self.update_rtt(rtt);
         }
         self.sent.push_back(p);
-    }
-
-    pub fn input_recv_gap(&self) -> Option<f64> {
-        if let Some(first) = self.recv.front() {
-            if let Some(last) = self.recv.back() {
-                return Some(
-                    last.sent_time
-                        .duration_since(first.sent_time)
-                        .unwrap()
-                        .as_secs_f64()
-                        / self.recv.len() as f64,
-                );
-            }
-        }
-        None
     }
 
     /// Updates the smoothed RTT with a new sample and
@@ -112,11 +94,8 @@ impl TcpStats {
 
 #[derive(Debug)]
 pub struct TcpTracker {
-    sent_packets: BTreeMap<u32, SentPacket>,
+    sent_packets: BTreeMap<u32, RegPkt>,
     initial_sequence_local: Option<u32>,
-    bytes_in_flight: u32,
-    max_bytes_in_flight: u32,
-    mss: u32,
     pub stats: TcpStats,
 }
 
@@ -131,9 +110,6 @@ impl TcpTracker {
         TcpTracker {
             sent_packets: BTreeMap::new(),
             initial_sequence_local: None,
-            bytes_in_flight: 0,
-            max_bytes_in_flight: 0xFFFF,
-            mss: 1400,
             stats: TcpStats::new(),
         }
     }
@@ -152,8 +128,8 @@ impl TcpTracker {
                     // Record data if it’s not just a pure ACK.
                     if !flags.is_ack() || *payload_len != 0 {
                         self.stats.register_data_received(
-                            SentPacket {
-                                len: *payload_len as u32,
+                            RegPkt {
+                                len: *payload_len,
                                 sent_time: packet.timestamp,
                                 retransmissions: 0,
                                 rtt: None,
@@ -203,7 +179,7 @@ impl TcpTracker {
         }
 
         if let Some(_initial_seq) = self.initial_sequence_local {
-            let mut len = payload_len as u32;
+            let mut len = payload_len;
             if flags.is_syn() || flags.is_fin() {
                 len += 1;
             }
@@ -212,21 +188,14 @@ impl TcpTracker {
                 match self.sent_packets.get_mut(&sequence) {
                     Some(existing) => {
                         existing.retransmissions += 1;
-                        self.stats.retrans_out += 1;
                     }
                     None => {
-                        let new_packet = SentPacket {
+                        let new_packet = RegPkt {
                             len,
                             sent_time: timestamp,
                             retransmissions: 0,
                             rtt: None,
                         };
-                        self.bytes_in_flight += len;
-                        if self.bytes_in_flight > self.max_bytes_in_flight {
-                            self.max_bytes_in_flight = self.bytes_in_flight;
-                        } else {
-                            self.max_bytes_in_flight -= self.mss / 10;
-                        }
                         self.sent_packets.insert(sequence, new_packet);
                     }
                 }
@@ -238,8 +207,7 @@ impl TcpTracker {
         let mut keys_to_remove = Vec::new();
 
         for (&seq, sent_packet) in self.sent_packets.iter_mut() {
-            if seq_less_equal(seq + sent_packet.len, ack) {
-                self.bytes_in_flight -= sent_packet.len;
+            if seq_less_equal(seq + sent_packet.len as u32, ack) {
                 // If packet is fully acked, calculate RTT
                 if let Ok(rtt_duration) = ack_timestamp.duration_since(sent_packet.sent_time) {
                     sent_packet.rtt = Some(rtt_duration);
@@ -267,5 +235,82 @@ impl DefaultState for TcpTracker {
 
     fn register_packet(&mut self, packet: &ParsedPacket) {
         self.register_packet(packet);
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use pnet::util::MacAddr;
+
+    use super::*;
+    use crate::Direction;
+    use crate::TransportPacket;
+    use std::net::Ipv4Addr;
+    use std::time::Duration;
+
+    #[test]
+    fn test_tcp_tracker() {
+        let mut tracker = TcpTracker::new();
+        let timestamp = SystemTime::now();
+        let seq = 0;
+        let ack = 0;
+        let payload_len = 10;
+        let flags = TcpFlags::new(TcpFlags::ACK);
+
+        let ack_timestamp = timestamp + Duration::from_secs(1);
+        let packet = ParsedPacket {
+            src_ip: std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            dst_ip: std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
+            src_mac: MacAddr::new(0, 0, 0, 0, 0, 0),
+            dst_mac: MacAddr::new(0, 0, 0, 0, 0, 0),
+            intercepted: false,
+            timestamp: ack_timestamp,
+            transport: TransportPacket::TCP {
+                src_port: 1,
+                dst_port: 10,
+                sequence: seq,
+                acknowledgment: 0,
+                payload_len,
+                flags: TcpFlags::new(0),
+                options: crate::TcpOptions { tsval: None, tsecr: None, scale: None, mss: None },
+                window_size: 0,
+            },
+            direction: Direction::Outgoing,
+            total_length: 0,
+        };
+
+        tracker.register_packet(&packet);
+
+        assert_eq!(tracker.stats.rts, 0);
+        assert_eq!(tracker.sent_packets.len(), 1);
+        assert_eq!(tracker.stats.recv.len(), 0);
+
+        let ack_timestamp = timestamp + Duration::from_secs(1);
+        let ack_packet = ParsedPacket {
+            src_ip: std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            dst_ip: std::net::IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2)),
+            src_mac: MacAddr::new(0, 0, 0, 0, 0, 0),
+            dst_mac: MacAddr::new(0, 0, 0, 0, 0, 0),
+            intercepted: false,
+            timestamp: ack_timestamp,
+            transport: TransportPacket::TCP {
+                src_port: 1,
+                dst_port: 10,
+                sequence: ack,
+                acknowledgment: seq + payload_len as u32,
+                payload_len: 0,
+                flags: flags,
+                options: crate::TcpOptions { tsval: None, tsecr: None, scale: None, mss: None },
+                window_size: 0,
+            },
+            direction: Direction::Incoming,
+            total_length: 50,
+        };
+
+        tracker.register_packet(&ack_packet);
+
+        assert_eq!(tracker.stats.sent.len(), 1);
+        assert_eq!(tracker.stats.recv.len(), 0);
     }
 }

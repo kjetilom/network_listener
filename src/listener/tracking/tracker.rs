@@ -6,10 +6,10 @@ use crate::{tcp_tracker::TcpTracker, udp_tracker::UdpTracker, GenericTracker, Pa
 
 /// Single struct to represent a sent or received packet with optional RTT.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct SentPacket {
-    pub len: u32,
+pub struct RegPkt {
+    pub len: u16,
     pub sent_time: SystemTime,
-    pub retransmissions: u32,
+    pub retransmissions: u8,
     pub rtt: Option<Duration>, // RTT to ack the segment
 }
 

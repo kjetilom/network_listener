@@ -1,5 +1,5 @@
 use crate::probe::iperf::dispatch_iperf_client;
-use crate::proto_bw::BandwidthMessage;
+use crate::proto_bw::DataMsg;
 use crate::{proto_bw, CapEventSender};
 use anyhow::{Error, Result};
 use futures::future::join_all;
@@ -34,7 +34,7 @@ pub enum ClientHandlerEvent {
     BroadcastHello { message: String },
     Stop,
     DoIperf3(String, u16, u16),
-    SendBandwidth(BandwidthMessage),
+    SendBandwidth(DataMsg),
 }
 
 pub enum ClientStatus {
@@ -294,7 +294,7 @@ impl BwClient {
 
 
 /// Sends a HelloMessage to the given peer address.
-pub async fn send_message(peer_addr: &str, message: BandwidthMessage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn send_message(peer_addr: &str, message: DataMsg) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let stream = TcpStream::connect(peer_addr).await?;
     println!("Connected to {}", peer_addr);
 

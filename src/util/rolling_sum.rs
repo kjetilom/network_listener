@@ -1,6 +1,6 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, ops::{Deref, DerefMut}};
 
-#[derive(Debug, )]
+#[derive(Debug, Clone)]
 pub struct RollingSum<T> {
     window: VecDeque<T>,
     sum: T,
@@ -27,6 +27,20 @@ impl <T: num_traits::Num + Copy> RollingSum<T> {
 
     pub fn sum(&self) -> T {
         self.sum
+    }
+}
+
+impl <T: num_traits::Num + Copy> Deref for RollingSum<T> {
+    type Target = VecDeque<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.window
+    }
+}
+
+impl <T: num_traits::Num + Copy> DerefMut for RollingSum<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.window
     }
 }
 
@@ -60,5 +74,7 @@ mod tests {
         assert_eq!(rs.push(5), 12);
         assert_eq!(rs.push(6), 15);
         assert_eq!(rs.push(7), 18);
+
+        rs.push_front(10);
     }
 }

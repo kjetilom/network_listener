@@ -40,7 +40,7 @@ pub struct ParsedPacket {
     pub src_mac: MacAddr,
     pub dst_mac: MacAddr,
     pub transport: TransportPacket,
-    pub total_length: u32,
+    pub total_length: u16,
     pub timestamp: SystemTime,
     pub direction: Direction,
     pub intercepted: bool,
@@ -51,7 +51,7 @@ impl<'a> ParsedPacket {
     pub fn from_packet(packet: &'a OwnedPacket, pcap_meta: &PCAPMeta) -> Option<ParsedPacket> {
         // Parse Ethernet frame in place
         let eth = EthernetPacket::new(&packet.data)?;
-        let total_length = packet.header.len;
+        let total_length = packet.header.len as u16;
         let timestamp = timeval_to_system_time(packet.header.ts);
 
         // Extract IP info & payload references

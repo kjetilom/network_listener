@@ -1,8 +1,11 @@
 use std::{
-    collections::{HashMap, HashSet}, fmt::Display, net::{AddrParseError, IpAddr}, sync::Arc
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    net::{AddrParseError, IpAddr},
+    sync::Arc,
 };
 
-use crate::proto_bw::{BandwidthMessage, LinkState as LinkStateProto};
+use crate::proto_bw::{data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto};
 
 use log::{info, warn};
 use tokio::sync::mpsc::Sender;
@@ -62,7 +65,12 @@ impl LinkManager {
             .record_ip_packet(&packet);
     }
 
-    pub fn insert_iperf_result(&mut self, ip_pair: IpPair, bps: f64, stream: Option<&crate::IperfStream>) {
+    pub fn insert_iperf_result(
+        &mut self,
+        ip_pair: IpPair,
+        bps: f64,
+        stream: Option<&crate::IperfStream>,
+    ) {
         self.links
             .entry(ip_pair)
             .or_insert_with(StreamManager::default)
@@ -90,7 +98,11 @@ impl LinkManager {
                 }
             }
             self.client_sender
-                .send(ClientHandlerEvent::DoIperf3(link.to_string(), crate::IPERF3_PORT, 1))
+                .send(ClientHandlerEvent::DoIperf3(
+                    link.to_string(),
+                    crate::IPERF3_PORT,
+                    1,
+                ))
                 .await
                 .unwrap();
         }
@@ -130,10 +142,12 @@ impl LinkManager {
             .unwrap();
     }
 
-    pub fn get_bw_message(&self) -> BandwidthMessage {
+    pub fn get_bw_message(&self) -> DataMsg {
         let links = self.get_link_states();
-        BandwidthMessage {
-            link_state: links.into_iter().map(|link| link.to_proto()).collect(),
+        DataMsg {
+            data: Some(data_msg::Data::Bandwidth(BandwidthMessage {
+                link_state: links.into_iter().map(|link| link.to_proto()).collect(),
+            })),
         }
     }
 

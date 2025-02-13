@@ -6,13 +6,13 @@ use procfs::net::UdpState;
 use crate::ParsedPacket;
 use crate::{Direction, TransportPacket};
 
-use super::tracker::{DefaultState, SentPacket};
+use super::tracker::{DefaultState, RegPkt};
 
 #[derive(Debug)]
 pub struct UdpTracker {
     pub state: Option<UdpState>,
-    outgoing_packets: VecDeque<SentPacket>,
-    incoming_packets: VecDeque<SentPacket>,
+    outgoing_packets: VecDeque<RegPkt>,
+    incoming_packets: VecDeque<RegPkt>,
 }
 
 impl Default for UdpTracker {
@@ -42,7 +42,7 @@ impl DefaultState for UdpTracker {
                 Direction::Incoming => &mut self.incoming_packets,
                 Direction::Outgoing => &mut self.outgoing_packets,
             };
-            storage.push_back(SentPacket {
+            storage.push_back(RegPkt {
                 len: packet.total_length,
                 sent_time: packet.timestamp,
                 retransmissions: 0,
