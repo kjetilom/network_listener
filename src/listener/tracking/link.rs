@@ -62,7 +62,7 @@ impl LinkManager {
         self.links
             .entry(ip_pair)
             .or_insert_with(StreamManager::default)
-            .record_ip_packet(&packet);
+            .record_packet(&packet);
     }
 
     pub fn insert_iperf_result(
@@ -155,18 +155,12 @@ impl LinkManager {
         self.links
             .iter()
             .map(|(ip_pair, stream_manager)| {
-                let data_in_out = stream_manager.get_in_out();
-                let latency = stream_manager.get_latency_avg();
-                let in_ =
-                    (data_in_out.0 * 8) as f64 / 1000.0 / Settings::CLEANUP_INTERVAL.as_secs_f64(); // INSERT THING HERE
-                let out =
-                    (data_in_out.1 * 8) as f64 / 1000.0 / Settings::CLEANUP_INTERVAL.as_secs_f64(); // INSERT THING HERE
                 let state = LinkState {
-                    thp_in: in_,
-                    thp_out: out,
+                    thp_in: 0.0,
+                    thp_out: 0.0,
                     bw: None,
                     abw: Some(stream_manager.get_abw()),
-                    latency: latency,
+                    latency: stream_manager.get_latency_avg(),
                     delay: None,
                     jitter: None,
                     loss: None,

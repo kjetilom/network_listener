@@ -1,5 +1,6 @@
 use crate::listener::packet::ParsedPacket;
 use crate::listener::tracking::tracker::DefaultState;
+use crate::DataPacket;
 use pnet::packet::ip::IpNextHeaderProtocol;
 
 #[derive(Debug)]
@@ -16,14 +17,16 @@ impl GenericTracker {
         GenericTracker
     }
 
-    pub fn register_packet(&mut self, _packet: &ParsedPacket) {}
+    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<DataPacket> {
+        vec![DataPacket::from_packet(packet)]
+    }
 }
 
 impl DefaultState for GenericTracker {
     fn default(_protocol: IpNextHeaderProtocol) -> Self {
         Self::new()
     }
-    fn register_packet(&mut self, packet: &ParsedPacket) {
-        self.register_packet(packet);
+    fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<DataPacket> {
+        self.register_packet(packet)
     }
 }

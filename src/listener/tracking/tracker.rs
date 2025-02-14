@@ -2,11 +2,11 @@ use std::time::SystemTime;
 
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 
-use crate::{tcp_tracker::TcpTracker, udp_tracker::UdpTracker, GenericTracker, ParsedPacket};
+use crate::{tcp_tracker::TcpTracker, udp_tracker::UdpTracker, DataPacket, GenericTracker, ParsedPacket};
 
 pub trait DefaultState {
     fn default(protocol: IpNextHeaderProtocol) -> Self;
-    fn register_packet(&mut self, packet: &ParsedPacket);
+    fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<DataPacket>;
 }
 
 #[derive(Debug)]
@@ -17,7 +17,7 @@ pub enum TrackerState {
 }
 
 impl DefaultState for TrackerState {
-    fn register_packet(&mut self, packet: &ParsedPacket) {
+    fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<DataPacket> {
         match self {
             TrackerState::Tcp(tracker) => tracker.register_packet(packet),
             TrackerState::Udp(tracker) => tracker.register_packet(packet),
@@ -50,8 +50,8 @@ impl<TState: DefaultState> Tracker<TState> {
         }
     }
 
-    pub fn register_packet(&mut self, packet: &ParsedPacket) {
-        self.state.register_packet(packet);
+    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<DataPacket> {
+        self.state.register_packet(packet)
     }
 
     pub fn default(_protocol: IpNextHeaderProtocol) -> Self {
