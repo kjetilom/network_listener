@@ -218,7 +218,7 @@ pub struct Link {
 
 impl Link {
     pub fn to_proto(&self) -> LinkStateProto {
-        // ! THIS IS BAD
+        // !FIXME THIS IS BAD
         self.state.to_proto(
             self.ip_pair.get_pair().0.to_string(),
             self.ip_pair.get_pair().1.to_string(),

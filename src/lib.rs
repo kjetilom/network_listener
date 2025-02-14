@@ -17,6 +17,7 @@ pub use listener::tracking::*;
 pub use listener::Settings;
 pub use prost_net::bandwidth_client::ClientEvent;
 pub use probe::iperf_json::Stream2 as IperfStream;
+pub use util::regpkt::RegPkt;
 
 pub const IPERF3_PORT: u16 = 5201;
 

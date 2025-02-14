@@ -23,18 +23,22 @@ pub struct PCAPMeta {
 
 impl PCAPMeta {
     pub fn new(device: Device, mac_addr: MacAddress) -> Self {
-        let mut ipv4 = Ipv4Addr::new(0, 0, 0, 0);
-        let mut ipv6 = Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0);
+        let mut ipv4 = None;
+        let mut ipv6 = None;
         for addr in &device.addresses {
             match addr.addr {
-                IpAddr::V4(ip) => ipv4 = ip,
-                IpAddr::V6(ip) => ipv6 = ip,
+                IpAddr::V4(ip) if ipv4.is_none() => ipv4 = Some(ip),
+                IpAddr::V6(ip) if ipv6.is_none() => ipv6 = Some(ip),
+                _ => (),
+            }
+            if ipv4.is_some() && ipv6.is_some() {
+                break;
             }
         }
         PCAPMeta {
             mac_addr: MacAddr::from(mac_addr.bytes()),
-            ipv4,
-            ipv6,
+            ipv4: ipv4.unwrap_or(Ipv4Addr::UNSPECIFIED),
+            ipv6: ipv6.unwrap_or(Ipv6Addr::UNSPECIFIED),
             name: device.name.clone(),
         }
     }
@@ -48,8 +52,9 @@ impl PCAPMeta {
 
     pub fn get_match(&self, ip_addr: IpAddr) -> Option<IpAddr> {
         match ip_addr {
-            IpAddr::V4(_) => Some(IpAddr::V4(self.ipv4)),
-            IpAddr::V6(_) => Some(IpAddr::V6(self.ipv6)),
+            IpAddr::V4(_) if self.ipv4 != Ipv4Addr::UNSPECIFIED => Some(IpAddr::V4(self.ipv4)),
+            IpAddr::V6(_) if self.ipv6 != Ipv6Addr::UNSPECIFIED => Some(IpAddr::V6(self.ipv6)),
+            _ => None,
         }
     }
 
@@ -89,7 +94,7 @@ impl PacketCapturer {
      *  Create a new PacketCapturer instance
      */
     pub fn new(sender: CapEventSender) -> CaptureResult {
-        // ! Change this to select device by name maybe?
+        // ! FIXME Change this to select device by name maybe?
         let device = Device::lookup()?.ok_or("No device available for capture")?;
         info!("Using device: {}", device.name);
 
@@ -150,5 +155,73 @@ impl PacketCapturer {
             }
         });
         handle
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::sync::mpsc as ch;
+
+    use super::*;
+    use std::net::IpAddr;
+
+    #[test]
+    fn test_pcap_meta_matches_ip() {
+        let meta = PCAPMeta {
+            mac_addr: MacAddr::new(0, 0, 0, 0, 0, 0),
+            ipv4: Ipv4Addr::new(192, 168, 1, 1),
+            ipv6: Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0),
+            name: "eth0".to_string(),
+        };
+
+        assert!(meta.matches_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert!(!meta.matches_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2))));
+        assert!(!meta.matches_ip(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))));
+    }
+
+    #[test]
+    fn test_pcap_meta_matches() {
+        let meta = PCAPMeta {
+            mac_addr: MacAddr::new(0, 0, 0, 0, 0, 0),
+            ipv4: Ipv4Addr::new(192, 168, 1, 1),
+            ipv6: Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0),
+            name: "eth0".to_string(),
+        };
+
+        assert!(meta.matches(MacAddr::new(0, 0, 0, 0, 0, 0), None));
+        assert!(meta.matches(MacAddr::new(0, 0, 0, 0, 0, 0), Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))));
+        assert!(!meta.matches(MacAddr::new(0, 0, 0, 0, 0, 1), None));
+        assert!(!meta.matches(MacAddr::new(0, 0, 0, 0, 0, 0), Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))));
+        assert!(!meta.matches(MacAddr::new(0, 0, 0, 0, 0, 0), Some(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)))));
+    }
+
+    #[test]
+    fn test_owned_packet_from_packet() {
+        let packet = Packet {
+            header: &PacketHeader {
+                ts: libc::timeval {
+                    tv_sec: 0,
+                    tv_usec: 0,
+                },
+                caplen: 0,
+                len: 0,
+            },
+            data: &[0u8],
+        };
+
+        let owned_packet = OwnedPacket::from(packet);
+
+        assert_eq!(owned_packet.header.ts.tv_sec, 0);
+        assert_eq!(owned_packet.header.ts.tv_usec, 0);
+        assert_eq!(owned_packet.header.caplen, 0);
+        assert_eq!(owned_packet.header.len, 0);
+        assert_eq!(owned_packet.data, &[0u8]);
+    }
+
+    #[test]
+    fn test_packet_capturer_new() {
+        let (sender, _) = ch::unbounded_channel();
+        let result = PacketCapturer::new(sender);
+        assert!(result.is_ok());
     }
 }
