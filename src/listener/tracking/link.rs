@@ -13,7 +13,6 @@ use tokio::sync::mpsc::Sender;
 use crate::{
     listener::{packet::ParsedPacket, tracking::stream_manager::StreamManager},
     prost_net::bandwidth_client::ClientHandlerEvent,
-    Settings,
 };
 
 use super::stream_id::IpPair;

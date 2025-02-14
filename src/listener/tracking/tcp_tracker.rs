@@ -1,8 +1,7 @@
-use std::collections::{BTreeMap, HashSet, VecDeque};
-use std::time::{Duration, SystemTime};
+use std::collections::BTreeMap;
+use std::time::SystemTime;
 
 use pnet::packet::ip::IpNextHeaderProtocol;
-use procfs::net::TcpState;
 
 use crate::{
     tracker::DefaultState,
@@ -15,66 +14,6 @@ fn seq_cmp(a: u32, b: u32) -> i32 {
 }
 fn seq_less_equal(a: u32, b: u32) -> bool {
     seq_cmp(a, b) <= 0
-}
-
-/// TCP statistics, including RTT estimation and received packet tracking.
-#[derive(Debug)]
-pub struct TcpStats {
-    pub rts: u32,
-    pub recv: VecDeque<DataPacket>,
-    received_seqs: HashSet<u32>,
-    pub state: Option<TcpState>,
-    pub smoothed_rtt: Option<f64>,
-    prev_smoothed_rtt: Option<f64>,
-}
-
-impl Default for TcpStats {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl TcpStats {
-    pub fn new() -> Self {
-        TcpStats {
-            rts: 0,
-            recv: VecDeque::with_capacity(1000),
-            received_seqs: HashSet::new(),
-            state: None,
-            smoothed_rtt: None,
-            prev_smoothed_rtt: None,
-        }
-    }
-
-    /// Called when a packet is acknowledged.
-    pub fn register_data_sent(&mut self, p: DataPacket) {
-        if let Some(rtt) = p.rtt {
-            self.update_rtt(rtt);
-        }
-    }
-
-    /// Update the smoothed RTT using an EWMA.
-    pub fn update_rtt(&mut self, new_sample: Duration) -> Option<bool> {
-        let new_rtt = new_sample.as_secs_f64();
-        if self.smoothed_rtt.is_none() {
-            self.smoothed_rtt = Some(new_rtt);
-            return Some(false);
-        }
-        let old_rtt = self.smoothed_rtt.unwrap();
-        let updated_rtt = old_rtt + 0.125 * (new_rtt - old_rtt);
-        self.prev_smoothed_rtt = self.smoothed_rtt;
-        self.smoothed_rtt = Some(updated_rtt);
-        let threshold = 1.1 * updated_rtt;
-        Some(new_rtt > threshold)
-    }
-
-    pub fn register_data_received(&mut self, mut p: DataPacket, seq: u32) {
-        if self.received_seqs.contains(&seq) {
-            p.retransmissions += 1;
-        }
-        self.received_seqs.insert(seq);
-        self.recv.push_back(p);
-    }
 }
 
 /// TCP tracker which now tracks packets from both directions.
@@ -150,7 +89,6 @@ impl TcpTracker {
             if seq_less_equal(seq + sent_packet.payload_len as u32, ack) {
 
                 if let Ok(rtt_duration) = ack_timestamp.duration_since(sent_packet.sent_time) {
-                    println!("{:?} {}", rtt_duration, sent_packet.retransmissions);
                     sent_packet.rtt = Some(rtt_duration);
                 }
                 keys_to_remove.push(seq);
