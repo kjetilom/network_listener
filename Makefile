@@ -5,6 +5,8 @@ BINARY_NAME := network_listener
 
 POSTGRES_DB := pgrdb
 
+SQL_SERVER := scheduler
+
 # The directory containing the source code
 SRC_DIR := src
 
@@ -45,6 +47,16 @@ start-postgres:
 stop-postgres:
 	-sudo docker stop $(POSTGRES_DB) || true
 	-sudo docker rm $(POSTGRES_DB) || true
+
+run_sch: build
+	sudo ./target/release/$(SQL_SERVER) 172.16.0.254:50041
+
+start-grafana:
+	sudo docker run -d --name=grafana -p 3000:3000 grafana/grafana
+
+stop-grafana:
+	-sudo docker stop grafana || true
+	-sudo docker rm grafana || true
 
 # Clean the project
 clean:
