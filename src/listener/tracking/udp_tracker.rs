@@ -4,15 +4,13 @@ use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::UdpState;
 
 use crate::ParsedPacket;
-use crate::{Direction, TransportPacket};
-
-use super::tracker::{DefaultState, RegPkt};
+use crate::{tracker::DefaultState, DataPacket, Direction, TransportPacket};
 
 #[derive(Debug)]
 pub struct UdpTracker {
     pub state: Option<UdpState>,
-    outgoing_packets: VecDeque<RegPkt>,
-    incoming_packets: VecDeque<RegPkt>,
+    outgoing_packets: VecDeque<DataPacket>,
+    incoming_packets: VecDeque<DataPacket>,
 }
 
 impl Default for UdpTracker {
@@ -37,13 +35,14 @@ impl DefaultState for UdpTracker {
     }
 
     fn register_packet(&mut self, packet: &ParsedPacket) {
-        if let TransportPacket::UDP { .. } = packet.transport {
+        if let TransportPacket::UDP { payload_len, .. } = packet.transport {
             let storage = match packet.direction {
                 Direction::Incoming => &mut self.incoming_packets,
                 Direction::Outgoing => &mut self.outgoing_packets,
             };
-            storage.push_back(RegPkt {
-                len: packet.total_length,
+            storage.push_back(DataPacket {
+                payload_len,
+                total_length: packet.total_length,
                 sent_time: packet.timestamp,
                 retransmissions: 0,
                 rtt: None,

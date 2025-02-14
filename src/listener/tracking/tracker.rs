@@ -1,17 +1,8 @@
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 
 use crate::{tcp_tracker::TcpTracker, udp_tracker::UdpTracker, GenericTracker, ParsedPacket};
-
-/// Single struct to represent a sent or received packet with optional RTT.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct RegPkt {
-    pub len: u16,
-    pub sent_time: SystemTime,
-    pub retransmissions: u8,
-    pub rtt: Option<Duration>, // RTT to ack the segment
-}
 
 pub trait DefaultState {
     fn default(protocol: IpNextHeaderProtocol) -> Self;

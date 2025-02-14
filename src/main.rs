@@ -22,7 +22,7 @@ pub struct NetworkListener {
 }
 
 pub enum EventMessage {
-    PausePCAP(std::time::Duration),
+    PausePCAP(tokio::time::Duration),
     ResumePCAP,
 }
 

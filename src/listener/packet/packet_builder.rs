@@ -18,7 +18,7 @@ const WORD_SIZE: usize = 4;
 
 /// time::Duration and SystemTime uses Nanosecond precision
 pub fn timeval_to_system_time(tv: libc::timeval) -> SystemTime {
-    match super::super::Settings::PRECISION {
+    match crate::Settings::PRECISION {
         pcap::Precision::Micro => {
             let dur = time::Duration::new(tv.tv_sec as u64, tv.tv_usec as u32 * 1000);
             UNIX_EPOCH + dur
@@ -113,7 +113,7 @@ impl<'a> ParsedPacket {
         Some((
             IpAddr::V6(ipv6.get_source()),
             IpAddr::V6(ipv6.get_destination()),
-            &payload[super::super::Settings::IPV6HDR as usize..], // reference to the rest of the IPv6 payload
+            &payload[crate::Settings::IPV6HDR as usize..], // reference to the rest of the IPv6 payload
             ipv6.get_next_header(),
             IPV6HDR as u16,
         ))

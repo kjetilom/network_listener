@@ -22,6 +22,7 @@ pub enum TransportPacket {
     UDP {
         src_port: u16,
         dst_port: u16,
+        payload_len: u16,
     },
     ICMP,
     OTHER {
@@ -80,6 +81,7 @@ impl TransportPacket {
                 TransportPacket::UDP {
                     src_port: udp.get_source(),
                     dst_port: udp.get_destination(),
+                    payload_len,
                 }
             }
             IpNextHeaderProtocols::Icmp => TransportPacket::ICMP,

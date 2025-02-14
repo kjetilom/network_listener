@@ -5,10 +5,9 @@ use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::TcpState;
 
 use crate::{
-    Direction, ParsedPacket, {TcpFlags, TransportPacket},
+    tracker::DefaultState,
+    DataPacket, Direction, ParsedPacket, {TcpFlags, TransportPacket},
 };
-
-use super::tracker::{DefaultState, RegPkt};
 
 static ALPHA: f64 = 0.125; // 2/(15+1)
 static THRESHOLD_FACTOR: f64 = 1.1;
@@ -25,8 +24,8 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
 #[derive(Debug)]
 pub struct TcpStats {
     pub rts: u32,
-    pub recv: VecDeque<RegPkt>,
-    pub sent: VecDeque<RegPkt>,
+    pub recv: VecDeque<DataPacket>,
+    pub sent: VecDeque<DataPacket>,
     received_seqs: HashSet<u32>,
     pub state: Option<TcpState>,
     pub smoothed_rtt: Option<f64>,
@@ -52,7 +51,7 @@ impl TcpStats {
         }
     }
 
-    pub fn register_data_received(&mut self, mut p: RegPkt, seq: &u32) {
+    pub fn register_data_received(&mut self, mut p: DataPacket, seq: &u32) {
         if self.received_seqs.contains(seq) {
             p.retransmissions += 1;
         }
@@ -60,7 +59,7 @@ impl TcpStats {
         self.recv.push_back(p);
     }
 
-    pub fn register_data_sent(&mut self, p: RegPkt) {
+    pub fn register_data_sent(&mut self, p: DataPacket) {
         if let Some(rtt) = p.rtt {
             self.update_rtt(rtt);
         }
@@ -94,7 +93,7 @@ impl TcpStats {
 
 #[derive(Debug)]
 pub struct TcpTracker {
-    sent_packets: BTreeMap<u32, RegPkt>,
+    sent_packets: BTreeMap<u32, DataPacket>,
     initial_sequence_local: Option<u32>,
     pub stats: TcpStats,
 }
@@ -128,8 +127,9 @@ impl TcpTracker {
                     // Record data if it’s not just a pure ACK.
                     if !flags.is_ack() || *payload_len != 0 {
                         self.stats.register_data_received(
-                            RegPkt {
-                                len: *payload_len,
+                            DataPacket {
+                                payload_len: *payload_len,
+                                total_length: packet.total_length,
                                 sent_time: packet.timestamp,
                                 retransmissions: 0,
                                 rtt: None,
@@ -160,7 +160,13 @@ impl TcpTracker {
                     } else {
                         self.stats.state = Some(TcpState::Established);
                     }
-                    self.track_outgoing_packet(*sequence, *payload_len, packet.timestamp, flags);
+                    self.track_outgoing_packet(
+                        *sequence,
+                        *payload_len,
+                        packet.total_length,
+                        packet.timestamp,
+                        flags,
+                    );
                 }
             }
         }
@@ -170,6 +176,7 @@ impl TcpTracker {
         &mut self,
         sequence: u32,
         payload_len: u16,
+        total_length: u16,
         timestamp: SystemTime,
         flags: &TcpFlags,
     ) {
@@ -190,8 +197,9 @@ impl TcpTracker {
                         existing.retransmissions += 1;
                     }
                     None => {
-                        let new_packet = RegPkt {
-                            len,
+                        let new_packet = DataPacket {
+                            payload_len: len, // ! FIXME THis might cause some miscalculations
+                            total_length,
                             sent_time: timestamp,
                             retransmissions: 0,
                             rtt: None,
@@ -207,7 +215,7 @@ impl TcpTracker {
         let mut keys_to_remove = Vec::new();
 
         for (&seq, sent_packet) in self.sent_packets.iter_mut() {
-            if seq_less_equal(seq + sent_packet.len as u32, ack) {
+            if seq_less_equal(seq + sent_packet.payload_len as u32, ack) {
                 // If packet is fully acked, calculate RTT
                 if let Ok(rtt_duration) = ack_timestamp.duration_since(sent_packet.sent_time) {
                     sent_packet.rtt = Some(rtt_duration);
@@ -238,7 +246,6 @@ impl DefaultState for TcpTracker {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use pnet::util::MacAddr;
@@ -247,7 +254,7 @@ mod tests {
     use crate::Direction;
     use crate::TransportPacket;
     use std::net::Ipv4Addr;
-    use std::time::Duration;
+    use tokio::time::Duration;
 
     #[test]
     fn test_tcp_tracker() {
@@ -273,7 +280,12 @@ mod tests {
                 acknowledgment: 0,
                 payload_len,
                 flags: TcpFlags::new(0),
-                options: crate::TcpOptions { tsval: None, tsecr: None, scale: None, mss: None },
+                options: crate::TcpOptions {
+                    tsval: None,
+                    tsecr: None,
+                    scale: None,
+                    mss: None,
+                },
                 window_size: 0,
             },
             direction: Direction::Outgoing,
@@ -301,7 +313,12 @@ mod tests {
                 acknowledgment: seq + payload_len as u32,
                 payload_len: 0,
                 flags: flags,
-                options: crate::TcpOptions { tsval: None, tsecr: None, scale: None, mss: None },
+                options: crate::TcpOptions {
+                    tsval: None,
+                    tsecr: None,
+                    scale: None,
+                    mss: None,
+                },
                 window_size: 0,
             },
             direction: Direction::Incoming,

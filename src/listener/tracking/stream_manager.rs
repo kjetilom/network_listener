@@ -1,4 +1,4 @@
-use crate::{stream_id::StreamKey, tracker::{Tracker, TrackerState}, util::regpkt::PacketRegistry, ParsedPacket};
+use crate::{stream_id::StreamKey, tracker::{Tracker, TrackerState}, PacketRegistry, ParsedPacket};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 use tokio::time::Instant;
@@ -144,7 +144,7 @@ impl StreamManager {
 
         for (stream_id, tracker) in self.streams.iter_mut() {
             if tracker.last_registered.elapsed().unwrap().as_secs()
-                >= super::super::Settings::TCP_STREAM_TIMEOUT.as_secs()
+                >= crate::Settings::TCP_STREAM_TIMEOUT.as_secs()
             {
                 ids_to_remove.push(*stream_id);
                 continue;
@@ -175,3 +175,4 @@ impl StreamManager {
             .collect()
     }
 }
+
