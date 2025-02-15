@@ -1,3 +1,3 @@
-DROP TABLE link;
-DROP TABLE link_state;
-DROP TABLE rtt;
+DROP TABLE link CASCADE;
+DROP TABLE link_state CASCADE;
+DROP TABLE rtt CASCADE;

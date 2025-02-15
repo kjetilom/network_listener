@@ -42,7 +42,7 @@ start-postgres:
 	  -e POSTGRES_PASSWORD=password \
 	  -e POSTGRES_DB=metricsdb \
 	  -p 5432:5432 \
-	  -d postgres:13
+	  -d timescale/timescaledb:latest-pg17
 
 stop-postgres:
 	-sudo docker stop $(POSTGRES_DB) || true

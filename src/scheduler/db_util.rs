@@ -82,7 +82,7 @@ pub async fn insert_into(
 /// Uploads bandwidth data (for each LinkState) into the database.
 pub async fn upload_bandwidth(msg: BandwidthMessage, client: &Client) {
     let cols = [
-        "thp_in", "thp_out", "bw", "abw", "latency", "delay", "jitter", "loss", "ts",
+        "thp_in", "thp_out", "bw", "abw", "latency", "delay", "jitter", "loss", "time",
     ];
 
     for ls in &msg.link_state {
@@ -125,7 +125,7 @@ pub async fn upload_bandwidth(msg: BandwidthMessage, client: &Client) {
 /// (Adjust the structure if needed.)
 pub async fn upload_rtt(msg: Rtts, client: &Client) {
     // For RTT data, our table (named "rtt") has columns: rtt and ts.
-    let cols = ["rtt", "ts"];
+    let cols = ["rtt", "time"];
 
     for rttmsg in &msg.rtts {
         // Assuming rttmsg has sender_ip and receiver_ip fields.
