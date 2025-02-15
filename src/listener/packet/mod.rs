@@ -10,3 +10,4 @@ pub use transport_packet::TcpOptions;
 pub use transport_packet::TransportPacket;
 pub use data_packet::DataPacket;
 pub use data_packet::PacketRegistry;
+pub use data_packet::PacketType;

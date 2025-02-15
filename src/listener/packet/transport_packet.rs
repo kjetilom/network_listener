@@ -11,9 +11,7 @@ pub enum TransportPacket {
         sequence: u32,
         acknowledgment: u32,
         flags: TcpFlags,
-        // Maximum size of an IP packet is 65,535 bytes (2^16 - 1)
         payload_len: u16,
-        // TCP options (timestamps, window scale)
         options: TcpOptions,
         src_port: u16,
         dst_port: u16,

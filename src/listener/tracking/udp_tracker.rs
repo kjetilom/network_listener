@@ -1,8 +1,7 @@
-use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::UdpState;
 
+use crate::PacketType;
 use crate::ParsedPacket;
-use crate::{tracker::DefaultState, DataPacket};
 
 #[derive(Debug)]
 pub struct UdpTracker {
@@ -21,14 +20,8 @@ impl UdpTracker {
             state: Some(UdpState::Established),
         }
     }
-}
 
-impl DefaultState for UdpTracker {
-    fn default(_protocol: IpNextHeaderProtocol) -> Self {
-        Self::new()
-    }
-
-    fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<DataPacket> {
-        vec![DataPacket::from_packet(packet)]
+    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<PacketType> {
+        vec![PacketType::from_packet(packet)]
     }
 }

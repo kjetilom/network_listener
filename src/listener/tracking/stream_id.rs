@@ -1,6 +1,7 @@
 use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::net::IpAddr;
+use std::ops::{Deref, DerefMut};
 
 use pnet::packet::ip::IpNextHeaderProtocol;
 use procfs::net::{TcpNetEntry, UdpNetEntry};
@@ -13,6 +14,31 @@ use super::super::packet::TransportPacket;
 #[derive(Debug, Hash, Eq, PartialEq, Clone, Copy)]
 pub struct IpPair {
     pair: (IpAddr, IpAddr),
+}
+
+enum TaggedIpAddr {
+    Local(IpAddr),
+    Remote(IpAddr),
+}
+
+impl Deref for TaggedIpAddr {
+    type Target = IpAddr;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            TaggedIpAddr::Local(ip) => ip,
+            TaggedIpAddr::Remote(ip) => ip,
+        }
+    }
+}
+
+impl DerefMut for TaggedIpAddr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            TaggedIpAddr::Local(ip) => ip,
+            TaggedIpAddr::Remote(ip) => ip,
+        }
+    }
 }
 
 impl IpPair {

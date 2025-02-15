@@ -1,4 +1,4 @@
-use crate::{stream_id::StreamKey, tracker::{Tracker, TrackerState}, Direction, PacketRegistry, ParsedPacket};
+use crate::{stream_id::StreamKey, tracker::{Tracker, TrackerState}, PacketRegistry, PacketType, ParsedPacket};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 use tokio::time::Instant;
@@ -61,14 +61,16 @@ impl StreamManager {
             })
             .register_packet(packet);
 
-        match packet.direction {
-            Direction::Incoming => {
-                self.received.extend(result);
+        for p in result {
+            match p {
+                PacketType::Sent(p) => {
+                    self.sent.push(p);
+                }
+                PacketType::Received(p) => {
+                    self.received.push(p);
+                }
             }
-            Direction::Outgoing => {
-                self.sent.extend(result);
-            }
-        };
+        }
     }
 
     pub fn get_latency_avg(&self) -> Option<f64> {

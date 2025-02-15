@@ -4,8 +4,7 @@ use std::time::SystemTime;
 use pnet::packet::ip::IpNextHeaderProtocol;
 
 use crate::{
-    tracker::DefaultState,
-    DataPacket, Direction, ParsedPacket, TcpFlags, TransportPacket,
+    tracker::DefaultState, Direction, PacketType, ParsedPacket, TcpFlags, TransportPacket
 };
 
 /// Wrap-around aware sequence comparison.
@@ -21,8 +20,8 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
 /// packets from the remote side are stored in `remote_sent_packets`.
 #[derive(Debug)]
 pub struct TcpTracker {
-    local_sent_packets: BTreeMap<u32, DataPacket>,
-    remote_sent_packets: BTreeMap<u32, DataPacket>,
+    local_sent_packets: BTreeMap<u32, PacketType>,
+    remote_sent_packets: BTreeMap<u32, PacketType>,
     pub initial_sequence_local: Option<u32>,
     pub initial_sequence_remote: Option<u32>,
 }
@@ -45,14 +44,12 @@ impl TcpTracker {
 
     /// Helper: Track a packet in the provided map.
     fn track_packet(
-        map: &mut BTreeMap<u32, DataPacket>,
+        map: &mut BTreeMap<u32, PacketType>,
         sequence: u32,
-        payload_len: u16,
-        total_length: u16,
-        timestamp: SystemTime,
+        packet: PacketType,
         flags: &TcpFlags,
     ) {
-        let mut len = payload_len;
+        let mut len = packet.payload_len;
         if flags.is_syn() || flags.is_fin() {
             len += 1;
         }
@@ -62,14 +59,7 @@ impl TcpTracker {
                     existing.retransmissions += 1;
                 }
                 None => {
-                    let new_packet = DataPacket {
-                        payload_len: len,
-                        total_length,
-                        sent_time: timestamp,
-                        retransmissions: 0,
-                        rtt: None,
-                    };
-                    map.insert(sequence, new_packet);
+                    map.insert(sequence, packet);
                 }
             }
         }
@@ -78,10 +68,10 @@ impl TcpTracker {
     /// Helper: Update and remove all packets in the provided map that are
     /// fully acknowledged by `ack`. Also update RTT and register the sent packet.
     fn update_acked_packets(
-        map: &mut BTreeMap<u32, DataPacket>,
+        map: &mut BTreeMap<u32, PacketType>,
         ack: u32,
         ack_timestamp: SystemTime,
-    ) -> Vec<DataPacket> {
+    ) -> Vec<PacketType> {
         let mut acked = Vec::new();
         let mut keys_to_remove = Vec::new();
 
@@ -109,7 +99,7 @@ impl TcpTracker {
     /// Outgoing non-pure-ACK packets are tracked in local_sent_packets.
     /// Incoming non-pure-ACK packets are tracked in remote_sent_packets.
     /// Pure ACKs will update the opposing map and return acknowledged packets.
-    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<DataPacket> {
+    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<PacketType> {
         let mut acked_packets = Vec::new();
 
         if let TransportPacket::TCP {
@@ -120,6 +110,7 @@ impl TcpTracker {
             ..
         } = &packet.transport
         {
+            let pkt = PacketType::from_packet(packet);
             match packet.direction {
                 Direction::Outgoing => {
                     if !(flags.is_ack() && *payload_len == 0) {
@@ -129,9 +120,7 @@ impl TcpTracker {
                         Self::track_packet(
                             &mut self.local_sent_packets,
                             *sequence,
-                            *payload_len,
-                            packet.total_length,
-                            packet.timestamp,
+                            pkt,
                             flags,
                         );
                     } else {
@@ -151,9 +140,7 @@ impl TcpTracker {
                         Self::track_packet(
                             &mut self.remote_sent_packets,
                             *sequence,
-                            *payload_len,
-                            packet.total_length,
-                            packet.timestamp,
+                            pkt,
                             flags,
                         );
                     } else {
@@ -175,7 +162,7 @@ impl DefaultState for TcpTracker {
     fn default(_protocol: IpNextHeaderProtocol) -> Self {
         Self::new()
     }
-    fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<DataPacket> {
+    fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<PacketType> {
         self.register_packet(packet)
     }
 }

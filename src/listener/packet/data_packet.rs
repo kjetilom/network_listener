@@ -104,6 +104,48 @@ pub struct DataPacket {
     pub rtt: Option<tokio::time::Duration>, // TODO: Change to u32 micros duration is 13 bytes
 }
 
+#[derive(Debug)]
+pub enum PacketType {
+    Sent(DataPacket),
+    Received(DataPacket),
+}
+
+impl PacketType {
+    pub fn from_packet(packet: &crate::ParsedPacket) -> Self {
+        match packet.direction {
+            crate::Direction::Incoming => PacketType::Received(DataPacket::from_packet(packet)),
+            crate::Direction::Outgoing => PacketType::Sent(DataPacket::from_packet(packet)),
+        }
+    }
+
+    pub fn direction (&self) -> crate::Direction {
+        match self {
+            PacketType::Sent(_) => crate::Direction::Outgoing,
+            PacketType::Received(_) => crate::Direction::Incoming,
+        }
+    }
+}
+
+impl Deref for PacketType {
+    type Target = DataPacket;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            PacketType::Sent(packet) => packet,
+            PacketType::Received(packet) => packet,
+        }
+    }
+}
+
+impl DerefMut for PacketType {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            PacketType::Sent(packet) => packet,
+            PacketType::Received(packet) => packet,
+        }
+    }
+}
+
 impl DataPacket {
     pub fn new(
         payload_len: u16,

@@ -1,32 +1,17 @@
 use crate::listener::packet::ParsedPacket;
-use crate::listener::tracking::tracker::DefaultState;
-use crate::DataPacket;
+use crate::PacketType;
 use pnet::packet::ip::IpNextHeaderProtocol;
 
 #[derive(Debug)]
-pub struct GenericTracker;
-
-impl Default for GenericTracker {
-    fn default() -> Self {
-        Self::new()
-    }
+pub struct GenericTracker {
+    pub protocol: IpNextHeaderProtocol,
 }
 
 impl GenericTracker {
-    pub fn new() -> Self {
-        GenericTracker
+    pub fn new(protocol: IpNextHeaderProtocol) -> Self {
+        GenericTracker {protocol}
     }
-
-    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<DataPacket> {
-        vec![DataPacket::from_packet(packet)]
-    }
-}
-
-impl DefaultState for GenericTracker {
-    fn default(_protocol: IpNextHeaderProtocol) -> Self {
-        Self::new()
-    }
-    fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<DataPacket> {
-        self.register_packet(packet)
+    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<PacketType> {
+        vec![PacketType::from_packet(packet)]
     }
 }
