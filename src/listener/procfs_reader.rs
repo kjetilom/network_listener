@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use crate::stream_id::IpPair;
+
 // use super::stream_id::StreamId;
 use super::{
     parser::NetlinkData,
-    tracking::stream_id::{from_tcp_net_entry, from_udp_net_entry, IpPair, StreamKey},
+    tracking::stream_id::{from_tcp_net_entry, from_udp_net_entry, StreamKey},
 };
 use neli_wifi::{AsyncSocket, Interface};
 use pnet::packet::ip::IpNextHeaderProtocols;
@@ -44,7 +46,6 @@ pub async fn proc_net() -> NetStat {
             NetEntry::Udp { entry: udp_entry },
         );
     }
-
     nstat
 }
 

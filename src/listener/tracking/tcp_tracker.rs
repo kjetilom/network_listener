@@ -74,10 +74,8 @@ impl TcpTracker {
     ) -> Vec<PacketType> {
         let mut acked = Vec::new();
         let mut keys_to_remove = Vec::new();
-
         for (&seq, sent_packet) in map.iter_mut() {
             if seq_less_equal(seq + sent_packet.payload_len as u32, ack) {
-
                 if let Ok(rtt_duration) = ack_timestamp.duration_since(sent_packet.sent_time) {
                     sent_packet.rtt = Some(rtt_duration);
                 }
@@ -113,7 +111,14 @@ impl TcpTracker {
             let pkt = PacketType::from_packet(packet);
             match packet.direction {
                 Direction::Outgoing => {
-                    if !(flags.is_ack() && *payload_len == 0) {
+                    if flags.is_ack() && *payload_len == 0 {
+                        // Pure ACK from outgoing side acknowledges remote packets.
+                        acked_packets = Self::update_acked_packets(
+                            &mut self.remote_sent_packets,
+                            *acknowledgment,
+                            packet.timestamp,
+                        );
+                    } else {
                         if self.initial_sequence_local.is_none() {
                             self.initial_sequence_local = Some(*sequence);
                         }
@@ -123,17 +128,17 @@ impl TcpTracker {
                             pkt,
                             flags,
                         );
-                    } else {
-                        // Pure ACK from outgoing side acknowledges remote packets.
-                        acked_packets = Self::update_acked_packets(
-                            &mut self.remote_sent_packets,
-                            *acknowledgment,
-                            packet.timestamp,
-                        );
                     }
                 }
                 Direction::Incoming => {
-                    if !(flags.is_ack() && *payload_len == 0) {
+                    if flags.is_ack() && *payload_len == 0 {
+                        // Pure ACK from incoming side acknowledges local packets.
+                        acked_packets = Self::update_acked_packets(
+                            &mut self.local_sent_packets,
+                            *acknowledgment,
+                            packet.timestamp,
+                        );
+                    } else {
                         if self.initial_sequence_remote.is_none() {
                             self.initial_sequence_remote = Some(*sequence);
                         }
@@ -142,13 +147,6 @@ impl TcpTracker {
                             *sequence,
                             pkt,
                             flags,
-                        );
-                    } else {
-                        // Pure ACK from incoming side acknowledges local packets.
-                        acked_packets = Self::update_acked_packets(
-                            &mut self.local_sent_packets,
-                            *acknowledgment,
-                            packet.timestamp,
                         );
                     }
                 }

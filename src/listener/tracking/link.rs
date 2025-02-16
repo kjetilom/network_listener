@@ -23,7 +23,7 @@ type Streams = HashMap<IpPair, StreamManager>;
 #[derive(Debug)]
 pub struct LinkManager {
     links: Streams,             // Private field
-    vip_links: HashSet<IpAddr>, // Links we care about (Empty at startup)
+    vip_links: HashSet<IpPair>, // Links we care about (Empty at startup)
     client_sender: Sender<ClientHandlerEvent>,
     pcap_meta: Arc<PCAPMeta>,
 }
@@ -89,16 +89,17 @@ impl LinkManager {
 
     pub async fn do_something_with_vip_links(&self) {
         for link in self.vip_links.iter() {
-            if let Some(stream) = self.get_link_by_ext_ip(*link) {
+            if let Some(stream) = self.links.get(link) {
                 if let Some(last_iperf) = stream.last_iperf {
                     if last_iperf.elapsed().as_secs() < 10 {
                         continue;
                     }
                 }
             }
+            let ip = link.remote();
             self.client_sender
                 .send(ClientHandlerEvent::DoIperf3(
-                    link.to_string(),
+                    ip.to_string(),
                     crate::IPERF3_PORT,
                     1,
                 ))
@@ -109,7 +110,7 @@ impl LinkManager {
 
     pub fn add_important_link(&mut self, ip_addr: Result<IpAddr, AddrParseError>) {
         if let Ok(ip_addr) = ip_addr {
-            self.vip_links.insert(ip_addr);
+            self.vip_links.insert(IpPair::new(self.pcap_meta.ipv4.into(), ip_addr));
         } else {
             info!("Failed to parse IP address");
         }
@@ -124,11 +125,9 @@ impl LinkManager {
     }
 
     pub fn collect_external_ips(&self) -> Vec<IpAddr> {
-        let my_ip = self.pcap_meta.ipv4.into(); // ! Add support for ipv6 later
         self.links
             .keys()
-            .map(|ip_pair| ip_pair.get_non_matching(my_ip))
-            .flatten()
+            .map(|ip_pair| ip_pair.remote())
             .collect()
     }
 
@@ -211,10 +210,10 @@ pub struct Link {
 
 impl Link {
     pub fn to_proto(&self) -> LinkStateProto {
-        // !FIXME THIS IS BAD
+        // !FIXME THIS IS BAD CHANGE SENDER/RECERIVER TO LOCAL/REMOTE
         self.state.to_proto(
-            self.ip_pair.get_pair().0.to_string(),
-            self.ip_pair.get_pair().1.to_string(),
+            self.ip_pair.local().to_string(),
+            self.ip_pair.remote().to_string(),
         )
     }
 }

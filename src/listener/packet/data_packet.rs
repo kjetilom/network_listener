@@ -23,15 +23,19 @@ impl PacketRegistry {
     }
 
     pub fn push(&mut self, value: DataPacket) {
-        self.sum_rtt.0 += value.rtt.unwrap_or_default().as_secs_f64();
-        self.sum_rtt.1 += 1;
+        if let Some(rtt) = value.rtt {
+            self.sum_rtt.0 += rtt.as_secs_f64();
+            self.sum_rtt.1 += 1;
+        }
         self.sum_data += value.total_length as u32;
         self.retransmissions += value.retransmissions as u16;
 
         if self.len() == self.capacity() {
             let old = self.pop_front().unwrap();
-            self.sum_rtt.0 -= old.rtt.unwrap_or_default().as_secs_f64();
-            self.sum_rtt.1 -= 1;
+            if let Some(rtt) = old.rtt {
+                self.sum_rtt.0 -= rtt.as_secs_f64();
+                self.sum_rtt.1 -= 1;
+            }
             self.sum_data -= old.total_length as u32;
             self.retransmissions -= old.retransmissions as u16;
         }
@@ -48,6 +52,9 @@ impl PacketRegistry {
         if self.is_empty() {
             None
         } else {
+            if self.sum_rtt.1 == 0 {
+                return None;
+            }
             Some(self.sum_rtt.0 / self.sum_rtt.1 as f64)
         }
     }

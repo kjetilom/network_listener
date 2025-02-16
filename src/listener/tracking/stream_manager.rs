@@ -1,4 +1,8 @@
-use crate::{stream_id::StreamKey, tracker::{Tracker, TrackerState}, PacketRegistry, PacketType, ParsedPacket};
+use crate::{
+    stream_id::StreamKey,
+    tracker::{Tracker, TrackerState},
+    PacketRegistry, PacketType, ParsedPacket,
+};
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
 use tokio::time::Instant;
@@ -54,7 +58,8 @@ impl StreamManager {
 
     pub fn record_packet(&mut self, packet: &ParsedPacket) {
         let stream_id = StreamKey::from_packet(packet);
-        let result = self.streams
+        let result = self
+            .streams
             .entry(stream_id)
             .or_insert_with(|| {
                 Tracker::<TrackerState>::new(packet.timestamp, packet.transport.get_ip_proto())
@@ -78,21 +83,9 @@ impl StreamManager {
     }
 
     pub fn periodic(&mut self) {
-        self.update_states();
-    }
-
-    fn update_states(&mut self) {
-        let mut ids_to_remove: Vec<StreamKey> = Vec::new();
-
-        for (stream_id, tracker) in self.streams.iter_mut() {
-            if tracker.last_registered.elapsed().unwrap().as_secs()
-                >= crate::Settings::TCP_STREAM_TIMEOUT.as_secs()
-            {
-                ids_to_remove.push(*stream_id);
-                continue;
-            }
-        }
-        self.streams.retain(|k, _| !ids_to_remove.contains(k));
+        self.streams.retain(|_, t| {
+            t.last_registered.elapsed().unwrap() < crate::Settings::TCP_STREAM_TIMEOUT
+        });
     }
 
     pub fn take_streams(&mut self, keys: Vec<StreamKey>) -> Vec<Tracker<TrackerState>> {
@@ -117,4 +110,3 @@ impl StreamManager {
             .collect()
     }
 }
-

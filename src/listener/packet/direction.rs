@@ -1,6 +1,6 @@
 use pnet::datalink::MacAddr;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Direction {
     Incoming,
     Outgoing,
