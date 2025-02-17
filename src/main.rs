@@ -55,9 +55,11 @@ impl NetworkListener {
         let parser_h = parser.dispatch_parser();
         let server_h = server.dispatch_server();
         let bw_server_h = bw_server.dispatch_server();
+        let pathload_h = network_listener::probe::pathload::dispatch_server();
 
         self.handles.push(parser_h);
         self.handles.push(bw_client_h);
+        self.handles.push(pathload_h);
         self.result_handles.push(cap_h);
         self.result_handles.push(server_h);
         self.result_handles.push(bw_server_h);

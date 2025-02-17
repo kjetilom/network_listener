@@ -62,4 +62,5 @@ pub enum CapEvent {
     Packet(OwnedPacket),
     IperfResponse(IperfResponse),
     Protobuf(PbfMsg),
+    PathloadResponse(String),
 }

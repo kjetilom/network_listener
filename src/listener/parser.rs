@@ -110,6 +110,9 @@ impl Parser {
                         CapEvent::Protobuf(pbf) => {
                             info!("Received protobuf: {:?}", pbf);
                         }
+                        CapEvent::PathloadResponse(s) => {
+                            info!("Received pathload response: {:?}", s);
+                        }
                     }
                 },
                 Some(periodic_data) = prx.recv() => {
