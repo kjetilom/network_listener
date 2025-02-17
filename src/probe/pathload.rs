@@ -23,35 +23,38 @@ pub fn dispatch_server() -> tokio::task::JoinHandle<()> {
     })
 }
 
-pub async fn dispatch_client(sender: CapEventSender, ip_addr: String) -> tokio::task::JoinHandle<Result<()>> {
+pub fn dispatch_pathload_client(sender: CapEventSender, ip_addr: String) {
     tokio::spawn(async move {
-        info!("Starting pathload_rcv");
-        let mut cmd = Command::new("pathload_rcv");
+        do_iperf_test(sender, ip_addr).await;
+    });
+}
 
-        cmd.args(["-q", "-s", &ip_addr, "-N", "/dev/stdout"]);
-        cmd.stdout(Stdio::piped());
+pub async fn do_iperf_test(sender: CapEventSender, ip_addr: String) {
+    info!("Starting pathload_rcv");
+    let mut cmd = Command::new("pathload_rcv");
 
-        let mut child = cmd.spawn().expect("Failed to start pathload_rcv");
+    cmd.args(["-q", "-s", &ip_addr, "-N", "/dev/stdout"]);
+    cmd.stdout(Stdio::piped());
 
-        let stdout = child.stdout.take().expect("Failed to capture stdout from pathload_rcv");
+    let mut child = cmd.spawn().expect("Failed to start pathload_rcv");
 
-        let mut reader = BufReader::new(stdout).lines();
+    let stdout = child.stdout.take().expect("Failed to capture stdout from pathload_rcv");
 
-        tokio::spawn(async move {
-            let status = child.wait().await.expect("Failed to wait on child");
-            info!("pathload client exited with: {}", status);
-            return;
-        });
+    let mut reader = BufReader::new(stdout).lines();
 
-        while let Some(line) = reader.next_line().await? {
-            if line.starts_with("DATE=") {
-                sender.send(CapEvent::PathloadResponse(line)).unwrap_or_else(
-                    |e| {
-                        info!("Failed to send pathload response: {}", e)
-                    }
-                );
-            }
+    tokio::spawn(async move {
+        let status = child.wait().await.expect("Failed to wait on child");
+        info!("pathload client exited with: {}", status);
+        return;
+    });
+
+    while let Some(line) = reader.next_line().await.unwrap() {
+        if line.starts_with("DATE=") {
+            sender.send(CapEvent::PathloadResponse(line)).unwrap_or_else(
+                |e| {
+                    info!("Failed to send pathload response: {}", e)
+                }
+            );
         }
-        Ok(())
-    })
+    }
 }

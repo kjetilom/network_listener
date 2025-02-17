@@ -1,4 +1,5 @@
 use crate::probe::iperf::dispatch_iperf_client;
+use crate::probe::pathload::dispatch_pathload_client;
 use crate::proto_bw::DataMsg;
 use crate::{proto_bw, CapEventSender};
 use anyhow::{Error, Result};
@@ -34,6 +35,7 @@ pub enum ClientHandlerEvent {
     BroadcastHello { message: String },
     Stop,
     DoIperf3(String, u16, u16),
+    DoPathloadTest(String),
     SendBandwidth(DataMsg),
 }
 
@@ -134,6 +136,9 @@ impl ClientHandler {
                 }
                 ClientHandlerEvent::DoIperf3(ip, port, duration) => {
                     dispatch_iperf_client(ip, port, duration, self.cap_ev_tx.clone());
+                }
+                ClientHandlerEvent::DoPathloadTest(ip) => {
+                    dispatch_pathload_client(self.cap_ev_tx.clone(), ip);
                 }
                 ClientHandlerEvent::SendBandwidth(bw) => {
                     tokio::spawn(async move {
