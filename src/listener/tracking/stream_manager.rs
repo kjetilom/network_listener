@@ -1,7 +1,5 @@
 use crate::{
-    stream_id::StreamKey,
-    tracker::{Tracker, TrackerState},
-    PacketRegistry, PacketType, ParsedPacket,
+    stream_id::StreamKey, tracker::{Tracker, TrackerState}, DataPacket, PacketRegistry, PacketType, ParsedPacket
 };
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 use std::collections::HashMap;
@@ -48,7 +46,11 @@ impl StreamManager {
         }
     }
 
-    pub fn get_abw(&self) -> f64 {
+    pub fn drain_rtts(&mut self) -> Vec<DataPacket> {
+        self.sent.get_rtts()
+    }
+
+    pub fn abw(&self) -> f64 {
         self.abw
     }
 

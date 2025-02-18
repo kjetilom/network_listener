@@ -22,6 +22,16 @@ impl PacketRegistry {
         }
     }
 
+    pub fn get_rtts(&mut self) -> Vec<DataPacket> {
+        self.packets.drain(..).filter_map(|packet| {
+            if packet.rtt.is_some() {
+                Some(packet)
+            } else {
+                None
+            }
+        }).collect()
+    }
+
     pub fn push(&mut self, value: DataPacket) {
         if let Some(rtt) = value.rtt {
             self.sum_rtt.0 += rtt.as_secs_f64();
@@ -167,6 +177,13 @@ impl DataPacket {
             sent_time,
             retransmissions,
             rtt,
+        }
+    }
+
+    pub fn to_proto_rtt(self) -> crate::proto_bw::Rtt {
+        crate::proto_bw::Rtt {
+            rtt: self.rtt.map(|rtt| rtt.as_secs_f64()).unwrap_or(0.0),
+            timestamp: self.sent_time.duration_since(std::time::UNIX_EPOCH).unwrap().as_millis().try_into().unwrap(),
         }
     }
 

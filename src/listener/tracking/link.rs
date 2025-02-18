@@ -5,7 +5,9 @@ use std::{
     sync::Arc,
 };
 
-use crate::proto_bw::{data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto};
+use crate::proto_bw::{
+    data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto, RttMessage, Rtts,
+};
 
 use log::{info, warn};
 use tokio::sync::mpsc::Sender;
@@ -113,7 +115,8 @@ impl LinkManager {
 
     pub fn add_important_link(&mut self, ip_addr: Result<IpAddr, AddrParseError>) {
         if let Ok(ip_addr) = ip_addr {
-            self.vip_links.insert(IpPair::new(self.pcap_meta.ipv4.into(), ip_addr));
+            self.vip_links
+                .insert(IpPair::new(self.pcap_meta.ipv4.into(), ip_addr));
         } else {
             info!("Failed to parse IP address");
         }
@@ -125,13 +128,16 @@ impl LinkManager {
             .send(ClientHandlerEvent::SendBandwidth(bw_message))
             .await
             .unwrap_or(warn!("Failed to send bandwidth message"));
+
+        let rtt_message = self.get_rtt_message();
+        self.client_sender
+            .send(ClientHandlerEvent::SendBandwidth(rtt_message))
+            .await
+            .unwrap_or(warn!("Failed to send RTT message"));
     }
 
     pub fn collect_external_ips(&self) -> Vec<IpAddr> {
-        self.links
-            .keys()
-            .map(|ip_pair| ip_pair.remote())
-            .collect()
+        self.links.keys().map(|ip_pair| ip_pair.remote()).collect()
     }
 
     pub async fn send_init_clients_msg(&mut self) {
@@ -152,6 +158,24 @@ impl LinkManager {
         }
     }
 
+    pub fn get_rtt_message(&mut self) -> DataMsg {
+        let messages: Vec<RttMessage> = self.links.iter_mut()
+            .map(|(ip_pair, stream_manager)| {
+                RttMessage {
+                    sender_ip: ip_pair.local().to_string(),
+                    receiver_ip: ip_pair.remote().to_string(),
+                    rtt: stream_manager
+                    .drain_rtts()
+                    .into_iter()
+                    .map(|rtt| rtt.to_proto_rtt())
+                    .collect(),
+                }
+            }).collect();
+        DataMsg {
+            data: Some(data_msg::Data::Rtts(Rtts { rtts: messages })),
+        }
+    }
+
     pub fn get_link_states(&self) -> Vec<Link> {
         self.links
             .iter()
@@ -160,7 +184,7 @@ impl LinkManager {
                     thp_in: 0.0,
                     thp_out: 0.0,
                     bw: None,
-                    abw: Some(stream_manager.get_abw()),
+                    abw: Some(stream_manager.tcp_thput()),
                     latency: stream_manager.get_latency_avg(),
                     delay: None,
                     jitter: None,

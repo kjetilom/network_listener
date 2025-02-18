@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use rand::random;
 use surge_ping::{Client, Config, PingIdentifier, PingSequence, SurgeError, ICMP};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 use crate::{CapEvent, CapEventSender};
 
