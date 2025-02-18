@@ -1,6 +1,7 @@
 use listener::capture::{OwnedPacket, PCAPMeta, PacketCapturer};
 use probe::iperf_json::IperfResponse;
 use prost_net::bandwidth_server::PbfMsg;
+use surge_ping::SurgeError;
 use std::error::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -63,4 +64,5 @@ pub enum CapEvent {
     IperfResponse(IperfResponse),
     Protobuf(PbfMsg),
     PathloadResponse(String),
+    PingResponse(Result<Duration, SurgeError>),
 }

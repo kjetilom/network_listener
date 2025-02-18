@@ -2,7 +2,6 @@ use std::process::Stdio;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use anyhow::Result;
 use log::info;
 use tokio::process::Command;
 

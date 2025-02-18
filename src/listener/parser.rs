@@ -113,6 +113,9 @@ impl Parser {
                         CapEvent::PathloadResponse(s) => {
                             info!("Received pathload response: {:?}", s);
                         }
+                        CapEvent::PingResponse(res) => {
+                            info!("Received ping response: {:?}", res);
+                        }
                     }
                 },
                 Some(periodic_data) = prx.recv() => {

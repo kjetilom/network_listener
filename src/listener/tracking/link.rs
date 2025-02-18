@@ -106,7 +106,8 @@ impl LinkManager {
                 .await
                 .unwrap();
 
-            self.client_sender.send(ClientHandlerEvent::DoPathloadTest(ip.to_string())).await.unwrap();
+            // Do pathload test (Disabled for now)
+            //self.client_sender.send(ClientHandlerEvent::DoPathloadTest(ip.to_string())).await.unwrap();
         }
     }
 

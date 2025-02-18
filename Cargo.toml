@@ -26,6 +26,8 @@ pcap-async = "0.4.1"
 libc = "0.2.169"
 procfs = "0.17.0"
 num-traits = "0.2"
+surge-ping = "0.8.1"
+rand = "0.9"
 
 # Wifi stuff
 rtnetlink = "0.14.1"
