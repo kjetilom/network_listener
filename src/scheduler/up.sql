@@ -35,6 +35,7 @@ CREATE TABLE
         PRIMARY KEY (time, id)
     );
 
+-- Create a view to calculate the average latency for each link.
 CREATE VIEW
     latency AS
 SELECT
@@ -51,6 +52,7 @@ ORDER BY
     metric,
     time ASC;
 
+-- Links that are bidirectional.
 CREATE VIEW
     links AS
 SELECT
@@ -65,6 +67,55 @@ FROM
 WHERE
     link.id < l.id;
 
+-- Create joined view for rtt and link.
+CREATE VIEW
+    rtts3 AS
+SELECT
+    rtt.rtt,
+    rtt.time,
+    CONCAT (l.sender_ip, ' -> ', l.receiver_ip) AS metric
+FROM
+    rtt
+    JOIN links l ON rtt.link_id = l.id1
+ORDER BY
+    time ASC;
+
+
+-- Create a view to calculate the average rtt for each link.
+CREATE VIEW
+    rtts1 AS
+SELECT
+    time_bucket ('1 second', rtt.time) AS time,
+    AVG(rtt.rtt) AS value,
+    CONCAT (l.sender_ip, ' -> ', l.receiver_ip) AS metric
+FROM
+    rtt
+    JOIN links l ON rtt.link_id = l.id1
+GROUP BY
+    time,
+    metric
+ORDER BY
+    time ASC;
+
+-- Create a view to calculate the average rtt for each link.
+CREATE VIEW
+    rtts2 AS
+SELECT
+    time_bucket ('10 second', rtt.time) AS time,
+    AVG(rtt.rtt) AS value,
+    CONCAT (l.sender_ip, ' -> ', l.receiver_ip) AS metric
+FROM
+    rtt
+    JOIN links l ON rtt.link_id = l.id2
+GROUP BY
+    time,
+    metric
+ORDER BY
+    time ASC;
+
+
+
+-- Create a view to calculate the average latency for each link.
 CREATE VIEW
     latency1 AS
 SELECT
@@ -80,6 +131,7 @@ GROUP BY
 ORDER BY
     time ASC;
 
+-- Create a view to calculate the average latency for each link.
 CREATE VIEW
     latency2 AS
 SELECT

@@ -19,7 +19,7 @@ pcap = "2.2.0"
 chrono = "0.4.39"
 log = "0.4.25"
 env_logger = "0.11.6"
-clap = { version = "4.5.29", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 fern = "0.7.1"
 tokio = { version = "1.42.0", features = ["full"] }
 pcap-async = "0.4.1"
@@ -28,6 +28,7 @@ procfs = "0.17.0"
 num-traits = "0.2"
 surge-ping = "0.8.1"
 rand = "0.9"
+yata = "0.7.0"
 
 # Wifi stuff
 rtnetlink = "0.14.1"

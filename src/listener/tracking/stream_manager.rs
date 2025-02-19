@@ -51,7 +51,7 @@ impl StreamManager {
     }
 
     pub fn abw(&self) -> f64 {
-        self.abw
+        self.tcp_thput // ! FIXME !
     }
 
     pub fn tcp_thput(&self) -> f64 {

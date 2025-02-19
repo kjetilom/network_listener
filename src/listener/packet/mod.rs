@@ -2,6 +2,9 @@ mod direction;
 mod packet_builder;
 mod transport_packet;
 mod data_packet;
+mod estimation;
+
+pub use estimation::TimeSeries;
 
 pub use direction::Direction;
 pub use packet_builder::ParsedPacket;

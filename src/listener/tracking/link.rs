@@ -98,15 +98,15 @@ impl LinkManager {
                     }
                 }
             }
-            let ip = link.remote();
-            self.client_sender
-                .send(ClientHandlerEvent::DoIperf3(
-                    ip.to_string(),
-                    crate::IPERF3_PORT,
-                    1,
-                ))
-                .await
-                .unwrap();
+            // let ip = link.remote();
+            // self.client_sender
+            //     .send(ClientHandlerEvent::DoIperf3(
+            //         ip.to_string(),
+            //         crate::IPERF3_PORT,
+            //         1,
+            //     ))
+            //     .await
+            //     .unwrap();
 
             // Do pathload test (Disabled for now)
             //self.client_sender.send(ClientHandlerEvent::DoPathloadTest(ip.to_string())).await.unwrap();

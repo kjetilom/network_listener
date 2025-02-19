@@ -57,6 +57,8 @@ impl TcpTracker {
             match map.get_mut(&sequence) {
                 Some(existing) => {
                     existing.retransmissions += 1;
+                    // If we don't do this we will calculate a way too high RTT
+                    existing.sent_time = packet.sent_time;
                 }
                 None => {
                     map.insert(sequence, packet);
