@@ -130,10 +130,13 @@ impl LinkManager {
             .unwrap_or(warn!("Failed to send bandwidth message"));
 
         let rtt_message = self.get_rtt_message();
-        self.client_sender
+        match self.client_sender
             .send(ClientHandlerEvent::SendBandwidth(rtt_message))
-            .await
-            .unwrap_or(warn!("Failed to send RTT message"));
+            .await {
+                Ok(_) => (),
+                Err(e) => warn!("Failed to send rtt message: {}", e),
+            }
+
     }
 
     pub fn collect_external_ips(&self) -> Vec<IpAddr> {

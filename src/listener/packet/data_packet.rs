@@ -207,7 +207,11 @@ impl PacketRegistry {
 
         for packet in packet_iter {
             let prev_packet = current_burst.last().unwrap();
-            let sent_diff = packet.sent_time.duration_since(prev_packet.sent_time).unwrap();
+            let sent_diff = match packet.sent_time.duration_since(prev_packet.sent_time) {
+                Ok(sent_diff) => sent_diff,
+                Err(_) => continue,
+            };
+
             if sent_diff.as_secs_f64() > self.min_rtt {
                 bursts.push(current_burst);
                 current_burst = vec![packet];
