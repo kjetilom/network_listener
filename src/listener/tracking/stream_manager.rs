@@ -34,7 +34,7 @@ impl StreamManager {
     }
 
     pub fn drain_rtts(&mut self) -> Vec<DataPacket> {
-        self.sent.get_rtts()
+        self.sent.get_rtts(true)
     }
 
     pub fn tcp_thput(&self) -> f64 {

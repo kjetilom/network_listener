@@ -4,6 +4,7 @@ use std::{
     collections::VecDeque,
     ops::{Deref, DerefMut}, time::{Duration, SystemTime},
 };
+use num_traits::Float;
 use yata::methods::EMA;
 use yata::prelude::*;
 
@@ -11,6 +12,7 @@ use yata::prelude::*;
 pub struct PacketRegistry {
     packets: VecDeque<DataPacket>,
     sum_rtt: (f64, u16),
+    min_rtt: f64,
     last_ema: EMA,
     sum_data: u32,
     retransmissions: u16,
@@ -23,6 +25,7 @@ impl PacketRegistry {
         PacketRegistry {
             packets: VecDeque::with_capacity(size),
             sum_rtt: (0.0, 0),
+            min_rtt: f64::MAX,
             last_ema: EMA::new(20, &0.0).unwrap(),
             sum_data: 0,
             retransmissions: 0,
@@ -31,8 +34,16 @@ impl PacketRegistry {
         }
     }
 
-    pub fn get_rtts(&mut self) -> Vec<DataPacket> {
-        self.packets
+    pub fn iter_packets_rtt(&self) -> impl Iterator<Item = &DataPacket> {
+        self.packets.iter().filter(|p| p.rtt.is_some())
+    }
+
+    pub fn iter_packets_rtt_mut(&mut self) -> impl Iterator<Item = &mut DataPacket> {
+        self.packets.iter_mut().filter(|p| p.rtt.is_some())
+    }
+
+    pub fn get_rtts(&mut self, normalize_rtts: bool) -> Vec<DataPacket> {
+        let ret: Vec<DataPacket> = self.packets
             .drain(..)
             .filter_map(|packet| {
                 if packet.rtt.is_some() {
@@ -40,8 +51,14 @@ impl PacketRegistry {
                 } else {
                     None
                 }
-            })
-            .collect()
+            }).collect();
+
+        if normalize_rtts {
+            let bursts = self.bursts(ret.into_iter());
+            self.normalize_rtt_bursts(bursts).into_iter().flatten().collect()
+        } else {
+            ret
+        }
     }
 
     pub fn get_rtts_ema(&mut self) -> Vec<DataPacket> {
@@ -73,6 +90,8 @@ impl PacketRegistry {
         if let Some(rtt) = packet.rtt {
             self.sum_rtt.0 += rtt.as_secs_f64();
             self.sum_rtt.1 += 1;
+
+            self.min_rtt = self.min_rtt.min(rtt.as_secs_f64());
         }
         self.sum_data += packet.total_length as u32;
         self.retransmissions += packet.retransmissions as u16;
@@ -176,6 +195,54 @@ impl PacketRegistry {
             .iter()
             .cloned()
             .fold(0.0, f64::max);
+    }
+
+    pub fn bursts(&self, mut packet_iter: impl Iterator<Item = DataPacket>) -> Vec<Vec<DataPacket>> {
+        let mut bursts = Vec::new();
+
+        let mut current_burst = match packet_iter.next() {
+            Some(packet) => vec![packet],
+            None => return bursts,
+        };
+
+        for packet in packet_iter {
+            let prev_packet = current_burst.last().unwrap();
+            let sent_diff = packet.sent_time.duration_since(prev_packet.sent_time).unwrap();
+            if sent_diff.as_secs_f64() > self.min_rtt {
+                bursts.push(current_burst);
+                current_burst = vec![packet];
+            } else {
+                current_burst.push(packet);
+            }
+        }
+        bursts.push(current_burst);
+        bursts
+    }
+
+    fn normalize_rtt_bursts(&self, bursts: Vec<Vec<DataPacket>>) -> Vec<Vec<DataPacket>> {
+        let mut normalized_bursts = Vec::new();
+        for burst in bursts {
+            // Not useful data.
+            if burst.len() <= 1 {
+                continue;
+            }
+            // Example: rtts [1, 2, 3, 10, 9, 8] -> normalized [1, 2.8, 4.6, 6.4, 8.2, 10]
+            let (min, max) = burst.iter().map(|packet| packet.rtt.unwrap().as_secs_f64()).fold((f64::MAX, 0.0), |acc, x| {
+                (acc.0.min(x), acc.1.max(x))
+            });
+
+            let increase = (max - min) / (burst.len() as f64 - 1.0);
+            let mut prev_rtt = min - increase; // Start at min - increase to start at min
+            let normalized_rtts: Vec<DataPacket> = burst.iter().map(|packet| {
+                prev_rtt = prev_rtt + increase;
+                DataPacket {
+                    rtt: Some(tokio::time::Duration::from_secs_f64(prev_rtt)),
+                    ..*packet
+                }
+            }).collect();
+            normalized_bursts.push(normalized_rtts);
+        }
+        normalized_bursts
     }
 
     pub fn estimate_available_bandwidth_bbr(&mut self) -> Option<f64> {
@@ -338,6 +405,7 @@ impl DataPacket {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,6 +488,32 @@ mod tests {
 
         let ema = registry.last_ema;
         assert_eq!(ema.peek(), 1.2596373106345802);
+    }
 
+    #[test]
+    fn test_drain_rtts_all_some_packet_with_rtt() {
+        let mut registry = PacketRegistry::new(5);
+        let packets = vec![
+            DataPacket::new(100, 100, std::time::SystemTime::now(), 0, Some(tokio::time::Duration::from_secs(1))),
+            DataPacket::new(100, 100, std::time::SystemTime::now(), 0, Some(tokio::time::Duration::from_secs(1))),
+            DataPacket::new(100, 100, std::time::SystemTime::now(), 0, Some(tokio::time::Duration::from_secs(2))),
+            DataPacket::new(100, 100, std::time::SystemTime::now(), 0, Some(tokio::time::Duration::from_secs(2))),
+            DataPacket::new(100, 100, std::time::SystemTime::now(), 0, Some(tokio::time::Duration::from_secs(1))),
+        ];
+        registry.extend(packets.clone());
+        assert_eq!(registry.len(), 5);
+        assert_eq!(registry.capacity(), 5);
+        assert_eq!(registry.mean_rtt(), Some(1.4));
+        assert_eq!(registry.min_rtt, 1.0);
+        assert_eq!(registry.avg_pkt_size(), 100.0);
+        assert_eq!(registry.retransmissions(), 0);
+
+        let rtts = registry.get_rtts(true);
+        assert_eq!(rtts.len(), 5);
+        assert_eq!(rtts[0].rtt, Some(tokio::time::Duration::from_secs(1)));
+        assert_eq!(rtts[1].rtt, Some(tokio::time::Duration::from_secs_f64(1.25)));
+        assert_eq!(rtts[2].rtt, Some(tokio::time::Duration::from_secs_f64(1.5)));
+        assert_eq!(rtts[3].rtt, Some(tokio::time::Duration::from_secs_f64(1.75)));
+        assert_eq!(rtts[4].rtt, Some(tokio::time::Duration::from_secs(2)));
     }
 }
