@@ -149,7 +149,7 @@ impl LinkManager {
             .unwrap();
     }
 
-    pub fn get_bw_message(&self) -> DataMsg {
+    pub fn get_bw_message(&mut self) -> DataMsg {
         let links = self.get_link_states();
         DataMsg {
             data: Some(data_msg::Data::Bandwidth(BandwidthMessage {
@@ -176,15 +176,15 @@ impl LinkManager {
         }
     }
 
-    pub fn get_link_states(&self) -> Vec<Link> {
+    pub fn get_link_states(&mut self) -> Vec<Link> {
         self.links
-            .iter()
+            .iter_mut()
             .map(|(ip_pair, stream_manager)| {
                 let state = LinkState {
                     thp_in: 0.0,
                     thp_out: 0.0,
-                    bw: None,
-                    abw: Some(stream_manager.tcp_thput()),
+                    bw: Some(stream_manager.tcp_thput()),
+                    abw: Some(stream_manager.abw()),
                     latency: stream_manager.get_latency_avg(),
                     delay: None,
                     jitter: None,

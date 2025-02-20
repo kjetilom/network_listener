@@ -12,10 +12,6 @@ pub struct StreamManager {
     streams: HashMap<StreamKey, Tracker<TrackerState>>,
     sent: PacketRegistry,
     received: PacketRegistry,
-    abw: f64,
-    max_rtt: i64,
-    min_rtt: i64,
-    mean_rtt: i64,
     tcp_thput: f64,
     pub last_iperf: Option<Instant>,
 }
@@ -26,10 +22,6 @@ impl StreamManager {
             streams: HashMap::new(),
             sent: PacketRegistry::new(5000),
             received: PacketRegistry::new(5000),
-            abw: 0.0,
-            max_rtt: 0,
-            min_rtt: 0,
-            mean_rtt: 0,
             tcp_thput: 0.0,
             last_iperf: None,
         }
@@ -39,23 +31,18 @@ impl StreamManager {
         // Check if in out is very different
         self.last_iperf = Some(Instant::now());
         self.tcp_thput = bps;
-        if let Some(stream) = stream {
-            self.max_rtt = stream.sender.max_rtt.unwrap_or(0);
-            self.min_rtt = stream.sender.min_rtt.unwrap_or(0);
-            self.mean_rtt = stream.sender.mean_rtt.unwrap_or(0);
-        }
     }
 
     pub fn drain_rtts(&mut self) -> Vec<DataPacket> {
         self.sent.get_rtts()
     }
 
-    pub fn abw(&self) -> f64 {
-        self.tcp_thput // ! FIXME !
-    }
-
     pub fn tcp_thput(&self) -> f64 {
         self.tcp_thput
+    }
+
+    pub fn abw(&mut self) -> f64 {
+        self.sent.estimate_available_bandwidth_bbr().unwrap_or(0.0)
     }
 
     pub fn record_packet(&mut self, packet: &ParsedPacket) {

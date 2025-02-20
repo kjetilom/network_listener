@@ -2,7 +2,7 @@
 
 use std::{
     collections::VecDeque,
-    ops::{Deref, DerefMut},
+    ops::{Deref, DerefMut}, time::{Duration, SystemTime},
 };
 use yata::methods::EMA;
 use yata::prelude::*;
@@ -14,6 +14,8 @@ pub struct PacketRegistry {
     last_ema: EMA,
     sum_data: u32,
     retransmissions: u16,
+    max_delivery_rate_samples: VecDeque<f64>,
+    max_delivery_rate: f64,
 }
 
 impl PacketRegistry {
@@ -24,6 +26,8 @@ impl PacketRegistry {
             last_ema: EMA::new(20, &0.0).unwrap(),
             sum_data: 0,
             retransmissions: 0,
+            max_delivery_rate_samples: VecDeque::new(),
+            max_delivery_rate: 0.0,
         }
     }
 
@@ -126,6 +130,79 @@ impl PacketRegistry {
         self.packets.clear();
         self.sum_rtt = (0.0, 0);
         self.sum_data = 0;
+    }
+
+    pub fn estimate_available_bandwidth(&self, time_window: Duration) -> Option<f64> {
+        if self.is_empty() {
+            return None;
+        }
+
+        let now = SystemTime::now();
+        let mut total_bytes = 0;
+
+        // Iterate in reverse order (most recent packets first)
+        for packet in self.packets.iter().rev() {
+            let packet_age = now.duration_since(packet.sent_time).ok()?;
+
+            if packet_age > time_window {
+                break; // Stop when we reach the beginning of the time window
+            }
+
+            total_bytes += packet.total_length as u64;
+        }
+
+        if total_bytes == 0 {
+            return None;
+        }
+
+        // Calculate throughput in bits per second
+        let time_window_seconds = time_window.as_secs_f64();
+        let bits_per_second = (total_bytes as f64 * 8.0) / time_window_seconds;
+
+        Some(bits_per_second)
+    }
+
+    const MAX_SAMPLES: usize = 10;
+
+    pub fn update_max_delivery_rate(&mut self, delivery_rate: f64) {
+        self.max_delivery_rate_samples.push_back(delivery_rate);
+        if self.max_delivery_rate_samples.len() > Self::MAX_SAMPLES {
+            self.max_delivery_rate_samples.pop_front();
+        }
+
+        // Update max_delivery_rate to the maximum value in the samples
+        self.max_delivery_rate = self
+            .max_delivery_rate_samples
+            .iter()
+            .cloned()
+            .fold(0.0, f64::max);
+    }
+
+    pub fn estimate_available_bandwidth_bbr(&mut self) -> Option<f64> {
+        if self.is_empty() {
+            return None;
+        }
+
+        // Calculate delivery rate for each packet with RTT
+        for packet in self.packets.iter() {
+            if let Some(rtt) = packet.rtt {
+                let rtt_seconds = rtt.as_secs_f64();
+                let delivery_rate = packet.total_length as f64 * 8.0 / rtt_seconds; // bits per second
+                self.max_delivery_rate_samples.push_back(delivery_rate);
+                if self.max_delivery_rate_samples.len() > Self::MAX_SAMPLES {
+                    self.max_delivery_rate_samples.pop_front();
+                }
+
+                // Update max_delivery_rate to the maximum value in the samples
+                self.max_delivery_rate = self
+                    .max_delivery_rate_samples
+                    .iter()
+                    .cloned()
+                    .fold(0.0, f64::max);
+                }
+        }
+
+        Some(self.max_delivery_rate)
     }
 }
 
