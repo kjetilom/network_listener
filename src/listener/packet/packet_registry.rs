@@ -193,7 +193,7 @@ impl PacketRegistry {
                 Err(_) => continue,
             };
 
-            if sent_diff.as_secs_f64() > self.min_rtt / 2.0 { // ! We might need to base bursts on relative time.
+            if sent_diff.as_secs_f64() > self.min_rtt / 3.0 { // ! We might need to base bursts on relative time.
                 bursts.push(current_burst);
                 current_burst = vec![packet];
             } else {
@@ -231,36 +231,37 @@ impl PacketRegistry {
 
     fn normalize_rtt_bursts(&mut self, bursts: Vec<Vec<DataPacket>>) -> Vec<Vec<DataPacket>> {
         let mut normalized_bursts = Vec::new();
+
         for burst in bursts {
             // Not useful data.
-            if burst.len() <= 4 {
+            if burst.len() <= 3 {
                 continue;
             }
 
-            let (min_rtt, max_rtt, avg_pkt_size) = Self::get_abw_params(&burst);
+            let (_min_rtt, _max_rtt, avg_pkt_size) = Self::get_abw_params(&burst);
 
             let (gout, gack) = Self::gout_gack(burst.last().unwrap(), burst.first().unwrap());
             if gout == 0.0 || gack == 0.0 {
                 continue;
             }
-
-            if gout / gack < 5.0 {
-                if self.pgm_data.len() == 150 {
+            let gout_gack = gout / gack;
+            if gout_gack < 6.0 {
+                if self.pgm_data.len() >= 250 {
                     self.pgm_data.pop_front();
                 }
                 self.pgm_data.push_back((gout / gack, avg_pkt_size / gack));
             }
 
-            let increase = (max_rtt - min_rtt) / (burst.len() as f64 - 1.0);
-            let mut prev_rtt = min_rtt - increase; // Start at min - increase to start at min
-            let normalized_rtts: Vec<DataPacket> = burst.iter().map(|packet| {
-                prev_rtt = prev_rtt + increase;
-                DataPacket {
-                    rtt: Some(tokio::time::Duration::from_secs_f64(prev_rtt)),
-                    ..*packet
-                }
-            }).collect();
-            normalized_bursts.push(normalized_rtts);
+            // let increase = (max_rtt - min_rtt) / (burst.len() as f64 - 1.0);
+            // let mut prev_rtt = min_rtt - increase; // Start at min - increase to start at min
+            // let normalized_rtts: Vec<DataPacket> = burst.iter().map(|packet| {
+            //     prev_rtt = prev_rtt + increase;
+            //     DataPacket {
+            //         rtt: Some(tokio::time::Duration::from_secs_f64(prev_rtt)),
+            //         ..*packet
+            //     }
+            // }).collect();
+            normalized_bursts.push(burst);
         }
         normalized_bursts
     }
