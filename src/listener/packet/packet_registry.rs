@@ -193,7 +193,7 @@ impl PacketRegistry {
                 Err(_) => continue,
             };
 
-            if sent_diff.as_secs_f64() > self.min_rtt {
+            if sent_diff.as_secs_f64() > self.min_rtt / 2.0 { // ! We might need to base bursts on relative time.
                 bursts.push(current_burst);
                 current_burst = vec![packet];
             } else {
@@ -233,7 +233,7 @@ impl PacketRegistry {
         let mut normalized_bursts = Vec::new();
         for burst in bursts {
             // Not useful data.
-            if burst.len() <= 5 {
+            if burst.len() <= 4 {
                 continue;
             }
 
