@@ -82,8 +82,6 @@ impl TcpTracker {
                     sent_packet.rtt = Some(rtt_duration);
                 }
                 keys_to_remove.push(seq);
-            } else {
-                break;
             }
         }
 

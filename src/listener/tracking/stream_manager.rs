@@ -42,7 +42,7 @@ impl StreamManager {
     }
 
     pub fn abw(&mut self) -> f64 {
-        self.sent.estimate_available_bandwidth_bbr().unwrap_or(0.0)
+        0.0
     }
 
     pub fn record_packet(&mut self, packet: &ParsedPacket) {
