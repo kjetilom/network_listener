@@ -11,7 +11,7 @@ use super::DataPacket;
 pub struct PacketRegistry {
     packets: VecDeque<DataPacket>,
     // Probe gap model dps (gout/gack, burst_avg_packet_size/gack)
-    pgm_data: Vec<(f64, f64)>,
+    pgm_data: VecDeque<(f64, f64)>,
     sum_rtt: (f64, u16),
     min_rtt: f64,
     last_ema: EMA,
@@ -23,7 +23,7 @@ impl PacketRegistry {
     pub fn new(size: usize) -> Self {
         PacketRegistry {
             packets: VecDeque::with_capacity(size),
-            pgm_data: Vec::new(),
+            pgm_data: VecDeque::new(),
             sum_rtt: (0.0, 0),
             min_rtt: f64::MAX,
             last_ema: EMA::new(20, &0.0).unwrap(),
@@ -245,7 +245,10 @@ impl PacketRegistry {
             }
 
             if gout / gack < 5.0 {
-                self.pgm_data.push((gout / gack, avg_pkt_size / gack));
+                if self.pgm_data.len() == 150 {
+                    self.pgm_data.pop_front();
+                }
+                self.pgm_data.push_back((gout / gack, avg_pkt_size / gack));
             }
 
             let increase = (max_rtt - min_rtt) / (burst.len() as f64 - 1.0);
