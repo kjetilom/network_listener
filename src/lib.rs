@@ -42,7 +42,7 @@ impl Settings {
     pub const SYN_ACK_TIMEOUT: Duration = Duration::from_secs(10); // 75
     pub const FIN_WAIT_TIMEOUT: Duration = Duration::from_secs(675);
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(8);
-    pub const LONGER_INTERVAL: Duration = Duration::from_secs(20);
+    pub const LONGER_INTERVAL: Duration = Duration::from_secs(5);
     pub const SCHEDULER_DEST: &str = "172.16.0.254:50041";
     pub const BW_SERVER_PORT: u16 = 40042;
     pub const TCPHDR: i32 = 60;

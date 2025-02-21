@@ -193,7 +193,7 @@ impl PacketRegistry {
                 Err(_) => continue,
             };
 
-            if sent_diff.as_secs_f64() > self.min_rtt / 3.0 { // ! We might need to base bursts on relative time.
+            if sent_diff.as_secs_f64() > self.min_rtt / 4.0 { // ! We might need to base bursts on relative time.
                 bursts.push(current_burst);
                 current_burst = vec![packet];
             } else {
@@ -234,7 +234,7 @@ impl PacketRegistry {
 
         for burst in bursts {
             // Not useful data.
-            if burst.len() <= 3 {
+            if burst.len() <= 5 {
                 continue;
             }
 
@@ -245,8 +245,8 @@ impl PacketRegistry {
                 continue;
             }
             let gout_gack = gout / gack;
-            if gout_gack < 6.0 {
-                if self.pgm_data.len() >= 250 {
+            if gout_gack < 5.0 {
+                if self.pgm_data.len() >= 50 {
                     self.pgm_data.pop_front();
                 }
                 self.pgm_data.push_back((gout / gack, avg_pkt_size / gack));
