@@ -10,6 +10,8 @@ use super::DataPacket;
 #[derive(Debug)]
 pub struct PacketRegistry {
     packets: VecDeque<DataPacket>,
+    // Probe gap model dps (gout/gack, burst_avg_packet_size/gack)
+    pgm_data: Vec<(f64, f64)>,
     sum_rtt: (f64, u16),
     min_rtt: f64,
     last_ema: EMA,
@@ -21,6 +23,7 @@ impl PacketRegistry {
     pub fn new(size: usize) -> Self {
         PacketRegistry {
             packets: VecDeque::with_capacity(size),
+            pgm_data: Vec::new(),
             sum_rtt: (0.0, 0),
             min_rtt: f64::MAX,
             last_ema: EMA::new(20, &0.0).unwrap(),
@@ -54,6 +57,35 @@ impl PacketRegistry {
         } else {
             ret
         }
+    }
+
+    pub fn passive_pgm_abw(&self) -> Option<f64> {
+        if self.pgm_data.is_empty() {
+            return None;
+        }
+
+        let n = self.pgm_data.len() as f64;
+        // gout / gack
+        let y: Vec<f64> = self.pgm_data.iter().map(|(gout_gack, _)| *gout_gack).collect();
+        // Packet size / gack
+        let x: Vec<f64> = self.pgm_data.iter().map(|(_, lgack)| *lgack).collect();
+
+        // Compute sums needed for least squares regression.
+        let sum_x: f64 = x.iter().sum();
+        let sum_y: f64 = y.iter().sum();
+        let sum_xy: f64 = x.iter().zip(y.iter()).map(|(xi, yi)| xi * yi).sum();
+        let sum_x2: f64 = x.iter().map(|xi| xi * xi).sum();
+
+        // Compute the slope and intercept of the line of best fit.
+        let numerator = n * sum_xy - sum_x * sum_y;
+        let denom = n * sum_x2 - sum_x * sum_x;
+        let a = numerator / denom;
+        let b = (sum_y - a * sum_x) / n;
+
+        if a != 0.0 {
+            return Some((1.0 - b) / a)
+        }
+        None
     }
 
     pub fn get_rtts_ema(&mut self) -> Vec<DataPacket> {
@@ -146,36 +178,6 @@ impl PacketRegistry {
         self.sum_data = 0;
     }
 
-    pub fn estimate_available_bandwidth(&self, time_window: Duration) -> Option<f64> {
-        if self.is_empty() {
-            return None;
-        }
-
-        let now = SystemTime::now();
-        let mut total_bytes = 0;
-
-        // Iterate in reverse order (most recent packets first)
-        for packet in self.packets.iter().rev() {
-            let packet_age = now.duration_since(packet.sent_time).ok()?;
-
-            if packet_age > time_window {
-                break; // Stop when we reach the beginning of the time window
-            }
-
-            total_bytes += packet.total_length as u64;
-        }
-
-        if total_bytes == 0 {
-            return None;
-        }
-
-        // Calculate throughput in bits per second
-        let time_window_seconds = time_window.as_secs_f64();
-        let bits_per_second = (total_bytes as f64 * 8.0) / time_window_seconds;
-
-        Some(bits_per_second)
-    }
-
     pub fn bursts(&self, mut packet_iter: impl Iterator<Item = DataPacket>) -> Vec<Vec<DataPacket>> {
         let mut bursts = Vec::new();
 
@@ -215,7 +217,19 @@ impl PacketRegistry {
         (min_rtt, max_rtt, sum_sizes / burst.len() as f64)
     }
 
-    fn normalize_rtt_bursts(&self, bursts: Vec<Vec<DataPacket>>) -> Vec<Vec<DataPacket>> {
+    fn gout_gack(last: &DataPacket, first: &DataPacket) -> (f64, f64) {
+        let gout = match last.sent_time.duration_since(first.sent_time) {
+            Ok(gout) => gout.as_secs_f64(),
+            Err(_) => 0.0,
+        };
+        let gack = match (last.sent_time + last.rtt.unwrap()).duration_since(first.sent_time + first.rtt.unwrap()) {
+            Ok(gack) => gack.as_secs_f64(),
+            Err(_) => 0.0,
+        };
+        (gout, gack)
+    }
+
+    fn normalize_rtt_bursts(&mut self, bursts: Vec<Vec<DataPacket>>) -> Vec<Vec<DataPacket>> {
         let mut normalized_bursts = Vec::new();
         for burst in bursts {
             // Not useful data.
@@ -224,22 +238,14 @@ impl PacketRegistry {
             }
 
             let (min_rtt, max_rtt, avg_pkt_size) = Self::get_abw_params(&burst);
-            let gout = match burst.last().unwrap().sent_time.duration_since(burst.first().unwrap().sent_time) {
-                Ok(gout) => gout.as_secs_f64(),
-                Err(_) => continue,
-            };
-            let gack = match
-                (burst.last().unwrap().sent_time + burst.last().unwrap().rtt.unwrap()).duration_since(
-                burst.first().unwrap().sent_time + burst.first().unwrap().rtt.unwrap()) {
-                Ok(gack) => gack.as_secs_f64(),
-                Err(_) => continue,
-                };
 
+            let (gout, gack) = Self::gout_gack(burst.last().unwrap(), burst.first().unwrap());
             if gout == 0.0 || gack == 0.0 {
                 continue;
             }
+
             if gout / gack < 5.0 {
-                println!("[{}, {}],", gout / gack, avg_pkt_size / gack);
+                self.pgm_data.push((gout / gack, avg_pkt_size / gack));
             }
 
             let increase = (max_rtt - min_rtt) / (burst.len() as f64 - 1.0);

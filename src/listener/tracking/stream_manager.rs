@@ -42,7 +42,7 @@ impl StreamManager {
     }
 
     pub fn abw(&mut self) -> f64 {
-        0.0
+        self.sent.passive_pgm_abw().unwrap_or(0.0)
     }
 
     pub fn record_packet(&mut self, packet: &ParsedPacket) {
