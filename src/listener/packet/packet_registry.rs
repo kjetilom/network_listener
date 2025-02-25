@@ -10,7 +10,7 @@ use super::DataPacket;
 #[derive(Debug)]
 pub struct PacketRegistry {
     packets: VecDeque<DataPacket>,
-    // Probe gap model dps (gout/gack, burst_avg_packet_size/gack)
+    // Probe gap model dps (gin/gack, burst_avg_packet_size/gack)
     pgm_data: VecDeque<(f64, f64)>,
     sum_rtt: (f64, u16),
     min_rtt: f64,
@@ -65,8 +65,8 @@ impl PacketRegistry {
         }
 
         let n = self.pgm_data.len() as f64;
-        // gout / gack
-        let y: Vec<f64> = self.pgm_data.iter().map(|(gout_gack, _)| *gout_gack).collect();
+        // gin / gack
+        let y: Vec<f64> = self.pgm_data.iter().map(|(gin_gack, _)| *gin_gack).collect();
         // Packet size / gack
         let x: Vec<f64> = self.pgm_data.iter().map(|(_, lgack)| *lgack).collect();
 
@@ -217,16 +217,16 @@ impl PacketRegistry {
         (min_rtt, max_rtt, sum_sizes / burst.len() as f64)
     }
 
-    fn gout_gack(last: &DataPacket, first: &DataPacket) -> (f64, f64) {
-        let gout = match last.sent_time.duration_since(first.sent_time) {
-            Ok(gout) => gout.as_secs_f64(),
+    fn gin_gack(last: &DataPacket, first: &DataPacket) -> (f64, f64) {
+        let gin = match last.sent_time.duration_since(first.sent_time) {
+            Ok(gin) => gin.as_secs_f64(),
             Err(_) => 0.0,
         };
         let gack = match (last.sent_time + last.rtt.unwrap()).duration_since(first.sent_time + first.rtt.unwrap()) {
             Ok(gack) => gack.as_secs_f64(),
             Err(_) => 0.0,
         };
-        (gout, gack)
+        (gin, gack)
     }
 
     fn normalize_rtt_bursts(&mut self, bursts: Vec<Vec<DataPacket>>) -> Vec<Vec<DataPacket>> {
@@ -240,27 +240,17 @@ impl PacketRegistry {
 
             let (_min_rtt, _max_rtt, avg_pkt_size) = Self::get_abw_params(&burst);
 
-            let (gout, gack) = Self::gout_gack(burst.last().unwrap(), burst.first().unwrap());
-            if gout == 0.0 || gack == 0.0 {
+            let (gin, gack) = Self::gin_gack(burst.last().unwrap(), burst.first().unwrap());
+            if gin == 0.0 || gack == 0.0 {
                 continue;
             }
-            let gout_gack = gout / gack;
-            if gout_gack < 5.0 {
+            let gin_gack = gack / gin;
+            if gin_gack < 5.0 {
                 if self.pgm_data.len() >= 50 {
                     self.pgm_data.pop_front();
                 }
-                self.pgm_data.push_back((gout / gack, avg_pkt_size / gack));
+                self.pgm_data.push_back((gack / gin, avg_pkt_size / gin));
             }
-
-            // let increase = (max_rtt - min_rtt) / (burst.len() as f64 - 1.0);
-            // let mut prev_rtt = min_rtt - increase; // Start at min - increase to start at min
-            // let normalized_rtts: Vec<DataPacket> = burst.iter().map(|packet| {
-            //     prev_rtt = prev_rtt + increase;
-            //     DataPacket {
-            //         rtt: Some(tokio::time::Duration::from_secs_f64(prev_rtt)),
-            //         ..*packet
-            //     }
-            // }).collect();
             normalized_bursts.push(burst);
         }
         normalized_bursts
