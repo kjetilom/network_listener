@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    ops::{Deref, DerefMut}, time::{Duration, SystemTime},
+    ops::{Deref, DerefMut}, time::{Duration, SystemTime}
 };
 use num_traits::Float;
 use yata::methods::EMA;
@@ -12,6 +12,7 @@ pub struct PacketRegistry {
     packets: VecDeque<DataPacket>,
     // Probe gap model dps (gin/gack, burst_avg_packet_size/gack)
     pgm_data: VecDeque<(f64, f64)>,
+    gin_gack: Vec<(f64, f64)>,
     sum_rtt: (f64, u16),
     min_rtt: f64,
     last_ema: EMA,
@@ -24,6 +25,7 @@ impl PacketRegistry {
         PacketRegistry {
             packets: VecDeque::with_capacity(size),
             pgm_data: VecDeque::new(),
+            gin_gack: Vec::new(),
             sum_rtt: (0.0, 0),
             min_rtt: f64::MAX,
             last_ema: EMA::new(20, &0.0).unwrap(),
@@ -41,21 +43,79 @@ impl PacketRegistry {
     }
 
     pub fn get_rtts(&mut self, normalize_rtts: bool) -> Vec<DataPacket> {
-        let ret: Vec<DataPacket> = self.packets
-            .drain(..)
-            .filter_map(|packet| {
-                if packet.rtt.is_some() {
-                    Some(packet)
-                } else {
-                    None
-                }
-            }).collect();
 
-        if normalize_rtts {
-            let bursts = self.bursts(ret.into_iter());
-            self.normalize_rtt_bursts(bursts).into_iter().flatten().collect()
-        } else {
-            ret
+        self.get_gin_gacks();
+        for (x, r) in self.filter_gin_gacks() {
+            self.pgm_data.push_back((r/x, 1400.0/x));
+        }
+        self.gin_gack.clear();
+        self.packets.clear();
+        while self.pgm_data.len() > 100 {
+            self.pgm_data.pop_front();
+        }
+        Vec::new()
+        // let ret: Vec<DataPacket> = self.packets
+        //     .drain(..)
+        //     .filter_map(|packet| {
+        //         if packet.rtt.is_some() {
+        //             Some(packet)
+        //         } else {
+        //             None
+        //         }
+        //     }).collect();
+
+        // if normalize_rtts {
+        //     let bursts = self.bursts(ret.into_iter());
+        //     self.normalize_rtt_bursts(bursts).into_iter().flatten().collect()
+        // } else {
+        //     ret
+        // }
+    }
+
+    pub fn filter_gin_gacks(&mut self) -> Vec<(f64, f64)> {
+        // Get the average of the 10% smallest gin values.
+        // Calculate the average gack and gin for these values:
+        self.gin_gack.sort_by(
+            |(gin1, _), (gin2, _)| gin1.partial_cmp(gin2).unwrap()
+        );
+
+        let n = (self.gin_gack.len() as f64 * 0.1).ceil() as usize;
+        let gmin_in = self.gin_gack.iter().take(n).map(|(gin, _)| *gin).sum::<f64>() / n as f64;
+        let gmin_out = self.gin_gack.iter().take(n).map(|(_, gack)| *gack).sum::<f64>() / n as f64;
+
+        println!("Gmin in: {}, Gmin out: {}", gmin_in, gmin_out);
+
+        let g_max_in = gmin_out;
+
+        let filtered: Vec<(f64, f64)> = self.gin_gack.iter().filter(|(gin, gout)| {
+            gin < &g_max_in && gout > &gmin_out
+        }).cloned().collect();
+
+        filtered
+    }
+
+    pub fn get_gin_gacks(&mut self) {
+        if self.min_rtt == f64::MAX {
+            return
+        }
+        let group_groups = group_group_by_burst(
+            group_by_ack_time(
+            self.iter_packets_rtt()
+            .cloned()
+            .collect()
+        ), Duration::from_secs_f64(self.min_rtt));
+
+        for burst in group_groups {
+            for (ack1, ack2) in burst.iter().zip(burst.iter().skip(1)) {
+                let (gin, gack) = Self::gin_gack(ack2.last().unwrap(), ack1.first().unwrap());
+                let sub = match ack2.len() {
+                    0 => 0.0,
+                    _ => 1.0,
+                };
+                if gin != 0.0 && gack != 0.0 {
+                    self.gin_gack.push((gin/(ack2.len() as f64 - sub), gack/(ack2.len() as f64 - sub)));
+                }
+            }
         }
     }
 
@@ -133,6 +193,16 @@ impl PacketRegistry {
         self.retransmissions -= packet.retransmissions as u16;
     }
 
+    // pub fn push(&mut self, value: DataPacket) {
+    //     self.add_values(&value);
+
+    //     if self.len() == self.capacity() {
+    //         let old = self.pop_front().unwrap();
+    //         self.sub_values(&old);
+    //     }
+    //     self.push_back(value);
+    // }
+
     pub fn push(&mut self, value: DataPacket) {
         self.add_values(&value);
 
@@ -140,7 +210,17 @@ impl PacketRegistry {
             let old = self.pop_front().unwrap();
             self.sub_values(&old);
         }
-        self.push_back(value);
+
+        let mut insert_idx = self.len();
+        // Iter backwards to find the correct index to insert the packet.
+        // Packets should be sorted by sent_time in increasing order.
+        for packet in self.iter().rev() {
+            if packet.sent_time <= value.sent_time {
+                break;
+            }
+            insert_idx -= 1;
+        }
+        self.insert(insert_idx, value);
     }
 
     pub fn extend(&mut self, values: Vec<DataPacket>) {
@@ -234,7 +314,7 @@ impl PacketRegistry {
 
         for burst in bursts {
             // Not useful data.
-            if burst.len() <= 5 {
+            if burst.len() <= 2 {
                 continue;
             }
 
@@ -245,8 +325,8 @@ impl PacketRegistry {
                 continue;
             }
             let gin_gack = gack / gin;
-            if gin_gack < 5.0 {
-                if self.pgm_data.len() >= 50 {
+            if gin_gack < 6.0 {
+                if self.pgm_data.len() >= 100 {
                     self.pgm_data.pop_front();
                 }
                 self.pgm_data.push_back((gack / gin, avg_pkt_size / gin));
@@ -271,18 +351,78 @@ impl DerefMut for PacketRegistry {
     }
 }
 
+pub fn group_group_by_burst(groups: Vec<Vec<DataPacket>>, burst_len: tokio::time::Duration) -> Vec<Vec<Vec<DataPacket>>> {
+    let mut result = Vec::new();
+    let mut current_group = Vec::new();
+    let mut last_sent_time: SystemTime = SystemTime::UNIX_EPOCH;
+
+    for group in groups {
+        if current_group.is_empty() {
+            // Start a new group
+            last_sent_time = group.last().unwrap().sent_time;
+            current_group.push(group);
+        } else if group.first().unwrap().sent_time.duration_since(last_sent_time).unwrap() <= burst_len {
+            // Continue the current group
+            last_sent_time = group.last().unwrap().sent_time;
+            current_group.push(group);
+
+        } else {
+            // Conclude the current group and start a new one
+            result.push(current_group);
+            last_sent_time = group.last().unwrap().sent_time;
+            current_group = vec![group];
+        }
+    }
+
+    // Push any leftover group
+    if !current_group.is_empty() {
+        result.push(current_group);
+    }
+
+    result
+}
+
+pub fn group_by_ack_time(packets: VecDeque<DataPacket>) -> Vec<Vec<DataPacket>> {
+    let mut result = Vec::new();
+    let mut current_group = Vec::new();
+    let mut last_ack_time: Option<SystemTime> = None;
+
+    for packet in packets {
+        if current_group.is_empty() {
+            // Start a new group
+            current_group.push(packet);
+            last_ack_time = packet.ack_time;
+        } else if packet.ack_time == last_ack_time {
+            // Continue the current group
+            current_group.push(packet);
+        } else {
+            // Conclude the current group and start a new one
+            result.push(current_group);
+            current_group = vec![packet];
+            last_ack_time = packet.ack_time;
+        }
+    }
+
+    // Push any leftover group
+    if !current_group.is_empty() {
+        result.push(current_group);
+    }
+    result
+}
+
 
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     fn create_packets(packet_size: u16, rtt: Duration, rtt_increase: Duration, count: u8) -> Vec<DataPacket> {
         let mut packets = Vec::new();
         let mut sent_time = std::time::SystemTime::now();
         let mut rtt = rtt;
         for _ in 0..count {
-            packets.push(DataPacket::new(packet_size, packet_size, sent_time, 0, Some(rtt)));
+            packets.push(DataPacket::new(packet_size, packet_size, sent_time, Some(sent_time + rtt), 0, Some(rtt)));
             rtt = rtt + rtt_increase;
             sent_time += Duration::from_millis(1);
         }
@@ -349,11 +489,11 @@ mod tests {
     fn test_drain_rtts_all_some_packet_with_rtt() {
         let mut registry = PacketRegistry::new(5);
         let packets = vec![
-            DataPacket::new(100, 100, std::time::SystemTime::now(), 0, Some(tokio::time::Duration::from_secs(1))),
-            DataPacket::new(100, 100, std::time::SystemTime::now(), 0, Some(tokio::time::Duration::from_secs(1))),
-            DataPacket::new(100, 100, std::time::SystemTime::now(), 0, Some(tokio::time::Duration::from_secs(2))),
-            DataPacket::new(100, 100, std::time::SystemTime::now(), 0, Some(tokio::time::Duration::from_secs(2))),
-            DataPacket::new(100, 100, std::time::SystemTime::now(), 0, Some(tokio::time::Duration::from_secs(1))),
+            DataPacket::new(100, 100, std::time::SystemTime::now(), None, 0, Some(tokio::time::Duration::from_secs(1))),
+            DataPacket::new(100, 100, std::time::SystemTime::now(), None, 0, Some(tokio::time::Duration::from_secs(1))),
+            DataPacket::new(100, 100, std::time::SystemTime::now(), None, 0, Some(tokio::time::Duration::from_secs(2))),
+            DataPacket::new(100, 100, std::time::SystemTime::now(), None, 0, Some(tokio::time::Duration::from_secs(2))),
+            DataPacket::new(100, 100, std::time::SystemTime::now(), None, 0, Some(tokio::time::Duration::from_secs(1))),
         ];
         registry.extend(packets.clone());
         assert_eq!(registry.len(), 5);
@@ -393,16 +533,16 @@ mod tests {
         let time = std::time::SystemTime::now();
         for i in 0..100 {
             let dur = std::time::Duration::from_millis(i*2);
-            let packet = DataPacket::new(100, 100, time+dur, 0, Some(tokio::time::Duration::from_secs(1)));
+            let packet = DataPacket::new(100, 100, time+dur, None, 0, Some(tokio::time::Duration::from_secs(1)));
             registry.push(packet);
         }
 
         let old_packets = vec![
-            DataPacket::new(100, 100, time, 0, Some(tokio::time::Duration::from_secs(1))),
-            DataPacket::new(100, 100, time+std::time::Duration::from_millis(2), 0, Some(tokio::time::Duration::from_secs(1))),
-            DataPacket::new(100, 100, time+std::time::Duration::from_millis(4), 0, Some(tokio::time::Duration::from_secs(1))),
-            DataPacket::new(100, 100, time+std::time::Duration::from_millis(6), 0, Some(tokio::time::Duration::from_secs(1))),
-            DataPacket::new(100, 100, time+std::time::Duration::from_millis(8), 0, Some(tokio::time::Duration::from_secs(1))),
+            DataPacket::new(100, 100, time, None, 0, Some(tokio::time::Duration::from_secs(1))),
+            DataPacket::new(100, 100, time+std::time::Duration::from_millis(2), None, 0, Some(tokio::time::Duration::from_secs(1))),
+            DataPacket::new(100, 100, time+std::time::Duration::from_millis(4), None, 0, Some(tokio::time::Duration::from_secs(1))),
+            DataPacket::new(100, 100, time+std::time::Duration::from_millis(6), None, 0, Some(tokio::time::Duration::from_secs(1))),
+            DataPacket::new(100, 100, time+std::time::Duration::from_millis(8), None, 0, Some(tokio::time::Duration::from_secs(1))),
         ];
         registry.extend(old_packets.clone());
         // Check if registry is sorted

@@ -80,6 +80,7 @@ impl TcpTracker {
             if seq_less_equal(seq + sent_packet.payload_len as u32, ack) {
                 if let Ok(rtt_duration) = ack_timestamp.duration_since(sent_packet.sent_time) {
                     sent_packet.rtt = Some(rtt_duration);
+                    sent_packet.ack_time = Some(ack_timestamp);
                 }
                 keys_to_remove.push(seq);
             }

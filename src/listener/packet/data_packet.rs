@@ -17,6 +17,7 @@ pub struct DataPacket {
     pub payload_len: u16,
     pub total_length: u16,
     pub sent_time: std::time::SystemTime, // TODO: Change to relative time (system time is ~16 bytes)
+    pub ack_time: Option<std::time::SystemTime>,
     pub retransmissions: u8,
     pub rtt: Option<tokio::time::Duration>, // TODO: Change to u32 micros duration is 13 bytes
 }
@@ -68,6 +69,7 @@ impl DataPacket {
         payload_len: u16,
         total_length: u16,
         sent_time: std::time::SystemTime,
+        ack_time: Option<std::time::SystemTime>,
         retransmissions: u8,
         rtt: Option<tokio::time::Duration>,
     ) -> Self {
@@ -75,6 +77,7 @@ impl DataPacket {
             payload_len,
             total_length,
             sent_time,
+            ack_time,
             retransmissions,
             rtt,
         }
@@ -99,6 +102,7 @@ impl DataPacket {
                 payload_len,
                 total_length: packet.total_length,
                 sent_time: packet.timestamp,
+                ack_time: None,
                 retransmissions: 0,
                 rtt: None,
             },
@@ -106,6 +110,7 @@ impl DataPacket {
                 payload_len,
                 total_length: packet.total_length,
                 sent_time: packet.timestamp,
+                ack_time: None,
                 retransmissions: 0,
                 rtt: None,
             },
@@ -113,9 +118,21 @@ impl DataPacket {
                 payload_len: 0,
                 total_length: packet.total_length,
                 sent_time: packet.timestamp,
+                ack_time: None,
                 retransmissions: 0,
                 rtt: None,
             },
         }
     }
+
+    pub fn cmp_by_sent_time(&self, b: &DataPacket) -> std::cmp::Ordering {
+        self.sent_time.cmp(&b.sent_time)
+    }
+}
+
+
+pub struct PgmDataPacket {
+    pub total_length: u16,
+    pub sent_time: std::time::SystemTime,
+    pub ack_time: std::time::SystemTime,
 }
