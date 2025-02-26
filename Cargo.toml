@@ -16,19 +16,20 @@ path = "src/scheduler/scheduler.rs"
 [dependencies]
 pnet = "0.35.0"
 pcap = "2.2.0"
-chrono = "0.4.39"
-log = "0.4.25"
+chrono = "0.4.40"
+log = "0.4.26"
 env_logger = "0.11.6"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5.31", features = ["derive"] }
 fern = "0.7.1"
 tokio = { version = "1.42.0", features = ["full"] }
 pcap-async = "0.4.1"
-libc = "0.2.169"
+libc = "0.2.170"
 procfs = "0.17.0"
 num-traits = "0.2"
 surge-ping = "0.8.1"
 rand = "0.9"
 yata = "0.7.0"
+itertools = "0.14.0"
 
 # Wifi stuff
 rtnetlink = "0.14.1"
@@ -38,9 +39,9 @@ mac_address = "1.1.8"
 # neli = { version = "0.6.4", features = ["async"] }
 prost = "0.13"
 prost-types = "0.13"
-anyhow = "1.0.95"
-serde = { version = "1.0.134", features = ["derive"] }
-serde_json = "1.0.64"
+anyhow = "1.0.96"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.139"
 tonic = "0.12.3"
 futures = "0.3.17"
 tokio-util = "0.7"

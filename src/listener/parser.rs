@@ -130,10 +130,10 @@ impl Parser {
                     }
                 },
                 _ = interval.tick() => {
+                    self.link_manager.send_bandwidth().await;
                     self.link_manager.periodic().await;
                 },
                 _ = longer_interval.tick() => {
-                    self.link_manager.send_bandwidth().await;
                     self.link_manager.send_init_clients_msg().await;
                 },
                 else => {

@@ -34,7 +34,7 @@ impl StreamManager {
     }
 
     pub fn drain_rtts(&mut self) -> Vec<DataPacket> {
-        self.sent.get_rtts(true)
+        self.sent.get_rtts()
     }
 
     pub fn tcp_thput(&self) -> f64 {
@@ -68,7 +68,7 @@ impl StreamManager {
     }
 
     pub fn get_latency_avg(&self) -> Option<f64> {
-        self.sent.mean_rtt()
+        self.sent.min_rtt()
     }
 
     pub fn periodic(&mut self) {

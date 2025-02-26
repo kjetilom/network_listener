@@ -5,7 +5,7 @@ mod data_packet;
 mod estimation;
 mod packet_registry;
 
-pub use estimation::TimeSeries;
+pub use estimation::PABWESender;
 
 pub use direction::Direction;
 pub use packet_builder::ParsedPacket;

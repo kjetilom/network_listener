@@ -176,7 +176,6 @@ impl LinkManager {
                     .collect(),
                 }
             }).collect();
-        messages.clear(); // !FIXME REMOVE THIS. TESTING ONLY
         DataMsg {
             data: Some(data_msg::Data::Rtts(Rtts { rtts: messages })),
         }
