@@ -18,7 +18,7 @@ impl PacketRegistry {
     pub fn new(size: usize) -> Self {
         PacketRegistry {
             packets: VecDeque::with_capacity(size),
-            pgm_estimator: PABWESender::new(Some(Duration::from_secs(240))),
+            pgm_estimator: PABWESender::new(Some(Duration::from_secs(30))),
             min_rtt: f64::MAX,
             sum_data: 0,
             retransmissions: 0,
@@ -101,6 +101,15 @@ impl PacketRegistry {
 
     pub fn retransmissions(&self) -> u16 {
         self.retransmissions
+    }
+
+    pub fn avg_burst_thp(&self) -> Option<f64> {
+        let thpts = PABWESender::get_burst_thp(self.iter_packets_rtt().cloned().collect(), Duration::from_secs_f64(self.min_rtt));
+        if thpts.is_empty() {
+            None
+        } else {
+            Some(thpts.iter().sum::<f64>() / thpts.len() as f64)
+        }
     }
 
     pub fn loss(&self) -> f64 {

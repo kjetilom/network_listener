@@ -85,7 +85,7 @@ impl DataPacket {
 
     pub fn to_proto_rtt(self) -> crate::proto_bw::Rtt {
         crate::proto_bw::Rtt {
-            rtt: self.rtt.map(|rtt| rtt.as_secs_f64()/self.total_length as f64).unwrap_or(0.0),
+            rtt: self.rtt.map(|rtt| rtt.as_secs_f64()).unwrap_or(0.0),
             timestamp: self
                 .sent_time
                 .duration_since(std::time::UNIX_EPOCH)

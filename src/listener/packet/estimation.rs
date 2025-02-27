@@ -30,44 +30,46 @@ impl PABWESender {
 
     /// Adds a new data point.
     fn push(&mut self, dp: GinGout) {
-        self.latest = SystemTime::max(self.latest, dp.timestamp);
         self.dps.push(dp);
-        if let Some(window) = self.window {
-            self.dps.retain(|dp| self.latest.duration_since(dp.timestamp).unwrap() < window);
-        }
     }
 
     fn iter_ack_stream(&mut self, ack_stream: Vec<Vec<DataPacket>>) -> &Self {
-        for (ack1, ack2) in ack_stream.iter().zip(ack_stream.iter().skip(1)) {
-            let send_start = ack1.first().unwrap().sent_time;
-            let send_end = ack2.last().unwrap().sent_time;
-            let ack_start = ack1.first().unwrap().ack_time.unwrap();
-            let ack_end = ack2.last().unwrap().ack_time.unwrap();
-
-            let gin = match send_end.duration_since(send_start) {
-                Ok(duration) => duration.as_secs_f64(),
-                Err(_) => 0.0,
-            };
-            let gout = match ack_end.duration_since(ack_start) {
+        for (prev, curr) in ack_stream.iter().zip(ack_stream.iter().skip(1)) {
+            // Compute the gap in (gin) as the duration between:
+            //   - The last sent time in the previous ACK group (ack1)
+            //   - The first sent time in the current ACK group (ack2)
+            let prev_last_sent = prev.first().unwrap().sent_time;
+            let curr_first_sent = curr.last().unwrap().sent_time;
+            let sent_gap = match curr_first_sent.duration_since(prev_last_sent) {
                 Ok(duration) => duration.as_secs_f64(),
                 Err(_) => 0.0,
             };
 
-            if gin == 0.0 || gout == 0.0 {
+            // Compute the gap out (gout) similarly using ACK times.
+            let prev_last_ack = prev.first().unwrap().ack_time.unwrap();
+            let curr_first_ack = curr.last().unwrap().ack_time.unwrap();
+            let ack_gap = match curr_first_ack.duration_since(prev_last_ack) {
+                Ok(duration) => duration.as_secs_f64(),
+                Err(_) => 0.0,
+            };
+
+            // Skip pairs where either gap is zero.
+            if sent_gap == 0.0 || ack_gap == 0.0{
                 continue;
             }
 
-            // Get average packet length
-            let mut len = 0.0 as f64;
-            for (packet1, packet2) in ack1.iter().zip(ack2.iter()) {
-                len += packet1.total_length as f64;
-                len += packet2.total_length as f64;
-            }
-            let dplen = (ack1.len() + ack2.len()) as f64 - 1.0;
+            // Calculate average packet length for the current group.
+            let dplen = curr.len() as f64;
+            let avg_len = curr.iter().map(|p| p.total_length as f64).sum::<f64>() / dplen;
 
-            len /= dplen + 1.0;
-
-            self.push(GinGout { gout: gout/dplen, gin: gin/dplen, len, timestamp: send_start});
+            self.push(GinGout {
+                // Divide by dplen to express the gap per packet if needed.
+                gin: sent_gap,
+                gout: ack_gap,
+                len: avg_len,
+                // Use the first sent time of the current group as the timestamp.
+                timestamp: curr_first_sent,
+            });
         }
         self
     }
@@ -76,10 +78,51 @@ impl PABWESender {
         let mut chunks = Vec::new();
         let mut chunk = Vec::new();
         for packet in packets {
+            if packet.total_length < 1000 {
+                continue;
+            }
             if chunk.is_empty() {
                 chunk.push(packet);
             } else {
                 if packet.ack_time.unwrap() == chunk.last().unwrap().ack_time.unwrap() {
+                    chunk.push(packet);
+                } else {
+                    chunks.push(chunk);
+                    chunk = Vec::new();
+                    chunk.push(packet);
+                }
+            }
+        }
+        if chunk.len() > 0 {
+            chunks.push(chunk);
+        }
+        chunks
+    }
+
+    pub fn get_burst_thp(packets: Vec<DataPacket>, min_rtt: Duration) -> Vec<f64> {
+        let bursts = PABWESender::group_bursts(packets, min_rtt);
+        let mut thp = Vec::new();
+        for burst in bursts {
+            let mut burst_len = 0.0;
+            let burst_time = burst.last().unwrap().ack_time.unwrap().duration_since(burst.first().unwrap().ack_time.unwrap()).unwrap();
+            for packet in burst {
+                burst_len += packet.total_length as f64;
+            }
+            let burst_thpt = burst_len / burst_time.as_secs_f64();
+            thp.push(burst_thpt);
+        }
+        thp
+    }
+
+    fn group_bursts(packets: Vec<DataPacket>, min_rtt: Duration) -> Vec<Vec<DataPacket>> {
+        let mut chunks = Vec::new();
+        let mut chunk: Vec<DataPacket> = Vec::new();
+        for packet in packets {
+            if chunk.is_empty() {
+                chunk.push(packet);
+            } else {
+                let diff = packet.sent_time.duration_since(chunk.first().unwrap().sent_time).unwrap();
+                if diff < min_rtt {
                     chunk.push(packet);
                 } else {
                     chunks.push(chunk);
@@ -110,12 +153,10 @@ impl PABWESender {
         let gmin_in = self.dps.iter().take(n).map(|dp| dp.gin).sum::<f64>() / n as f64;
         let gmin_out = self.dps.iter().take(n).map(|dp| dp.gout).sum::<f64>() / n as f64;
 
-        println!("Gmin in: {}, Gmin out: {}", gmin_in, gmin_out);
-
         let g_max_in = gmin_out;
 
         let filtered = self.dps.iter().filter(|dp| {
-            dp.gin < g_max_in && dp.gout/dp.gin < 5.0 && dp.len > 1300.0 && dp.len < 1600.0
+            dp.gin < g_max_in
         }).cloned().collect();
         // Return the middle 80% of the data points.
         filtered
@@ -136,6 +177,8 @@ impl PABWESender {
         }
 
         let dps = self.filter_gin_gacks();
+
+        self.dps.retain(|dp| dp.timestamp.elapsed().unwrap() < self.window.unwrap());
 
         let mut sum_x = 0.0;
         let mut sum_y = 0.0;
@@ -175,6 +218,7 @@ impl PABWESender {
         } else {
             None
         }
+
     }
 }
 

@@ -164,7 +164,7 @@ impl LinkManager {
     }
 
     pub fn get_rtt_message(&mut self) -> DataMsg {
-        let mut messages: Vec<RttMessage> = self.links.iter_mut()
+        let messages: Vec<RttMessage> = self.links.iter_mut()
             .map(|(ip_pair, stream_manager)| {
                 RttMessage {
                     sender_ip: ip_pair.local().to_string(),
