@@ -41,6 +41,10 @@ impl StreamManager {
         self.tcp_thput
     }
 
+    pub fn get_loss(&self) -> f64 {
+        self.sent.loss()
+    }
+
     pub fn abw(&mut self) -> f64 {
         self.sent.passive_pgm_abw().unwrap_or(0.0)
     }

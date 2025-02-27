@@ -51,7 +51,7 @@ impl PacketRegistry {
     }
 
     pub fn get_rtts(&mut self) -> Vec<DataPacket> {
-        let rtts: Vec<DataPacket> = self.packets.drain(..).filter(|p| p.rtt.is_some() && p.retransmissions == 0).collect();
+        let rtts: Vec<DataPacket> = self.packets.drain(..).filter(|p| p.rtt.is_some()).collect();
         self.pgm_estimator.iter_packets(&rtts);
         rtts
     }
@@ -82,6 +82,15 @@ impl PacketRegistry {
         }
     }
 
+    pub fn avg_rtt(&self) -> Option<f64> {
+        let rtts: Vec<f64> = self.iter_packets_rtt().map(|p| p.rtt.unwrap().as_secs_f64()).collect();
+        if rtts.is_empty() {
+            None
+        } else {
+            Some(rtts.iter().sum::<f64>() / rtts.len() as f64)
+        }
+    }
+
     pub fn min_rtt(&self) -> Option<f64> {
         if self.min_rtt == f64::MAX {
             None
@@ -92,6 +101,14 @@ impl PacketRegistry {
 
     pub fn retransmissions(&self) -> u16 {
         self.retransmissions
+    }
+
+    pub fn loss(&self) -> f64 {
+        if self.retransmissions == 0 {
+            0.0
+        } else {
+            self.retransmissions as f64 / self.len() as f64
+        }
     }
 }
 

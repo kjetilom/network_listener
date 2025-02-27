@@ -193,7 +193,7 @@ impl LinkManager {
                     latency: stream_manager.get_latency_avg(),
                     delay: None,
                     jitter: None,
-                    loss: None,
+                    loss: Some(stream_manager.get_loss()),
                 };
                 Link {
                     ip_pair: *ip_pair, // Copy IpPair

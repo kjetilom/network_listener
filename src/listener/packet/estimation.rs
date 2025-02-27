@@ -1,6 +1,4 @@
 use std::time::SystemTime;
-use itertools::Itertools;
-
 use super::DataPacket;
 use tokio::time::Duration;
 /// A structure holding a pair of gap measurements and the associated packet length.
