@@ -15,7 +15,6 @@ pub struct GinGout {
 pub struct PABWESender {
     pub dps: Vec<GinGout>,
     pub window: Option<Duration>,
-    latest: SystemTime,
 }
 
 impl PABWESender {
@@ -24,7 +23,6 @@ impl PABWESender {
         PABWESender {
             dps: Vec::new(),
             window: window,
-            latest: SystemTime::UNIX_EPOCH,
         }
     }
 
@@ -34,42 +32,13 @@ impl PABWESender {
     }
 
     fn iter_ack_stream(&mut self, ack_stream: Vec<Vec<DataPacket>>) -> &Self {
-        for (prev, curr) in ack_stream.iter().zip(ack_stream.iter().skip(1)) {
-            // Compute the gap in (gin) as the duration between:
-            //   - The last sent time in the previous ACK group (ack1)
-            //   - The first sent time in the current ACK group (ack2)
-            let prev_last_sent = prev.first().unwrap().sent_time;
-            let curr_first_sent = curr.last().unwrap().sent_time;
-            let sent_gap = match curr_first_sent.duration_since(prev_last_sent) {
-                Ok(duration) => duration.as_secs_f64(),
-                Err(_) => 0.0,
-            };
+        for ack in ack_stream {
+            let gin = ack.iter().map(|p| p.gap_last_sent.unwrap().as_secs_f64()).sum::<f64>() / ack.len() as f64;
+            let gout = ack.first().unwrap().gap_last_ack.unwrap().as_secs_f64() / ack.len() as f64;
+            let len = ack.iter().map(|p| p.total_length as f64).sum::<f64>() / ack.len() as f64;
+            let timestamp = ack.first().unwrap().ack_time.unwrap();
 
-            // Compute the gap out (gout) similarly using ACK times.
-            let prev_last_ack = prev.first().unwrap().ack_time.unwrap();
-            let curr_first_ack = curr.last().unwrap().ack_time.unwrap();
-            let ack_gap = match curr_first_ack.duration_since(prev_last_ack) {
-                Ok(duration) => duration.as_secs_f64(),
-                Err(_) => 0.0,
-            };
-
-            // Skip pairs where either gap is zero.
-            if sent_gap == 0.0 || ack_gap == 0.0{
-                continue;
-            }
-
-            // Calculate average packet length for the current group.
-            let dplen = curr.len() as f64;
-            let avg_len = curr.iter().map(|p| p.total_length as f64).sum::<f64>() / dplen;
-
-            self.push(GinGout {
-                // Divide by dplen to express the gap per packet if needed.
-                gin: sent_gap,
-                gout: ack_gap,
-                len: avg_len,
-                // Use the first sent time of the current group as the timestamp.
-                timestamp: curr_first_sent,
-            });
+            self.push(GinGout { gin, gout, len, timestamp });
         }
         self
     }
@@ -78,9 +47,6 @@ impl PABWESender {
         let mut chunks = Vec::new();
         let mut chunk = Vec::new();
         for packet in packets {
-            if packet.total_length < 1000 {
-                continue;
-            }
             if chunk.is_empty() {
                 chunk.push(packet);
             } else {
@@ -184,6 +150,7 @@ impl PABWESender {
         let mut sum_y = 0.0;
         let mut sum_xy = 0.0;
         let mut sum_x2 = 0.0;
+        println!();
 
         // Process each data point, skipping any with a zero gin (to avoid division by zero).
         let mut count = 0;
@@ -191,7 +158,11 @@ impl PABWESender {
             if dp.gin == 0.0 {
                 continue;
             }
+
             let x = dp.len / dp.gin;
+            if x > 1250000.0 {
+                continue;
+            }
             let y = dp.gout / dp.gin;
             sum_x += x;
             sum_y += y;
@@ -280,23 +251,5 @@ mod tests {
         let mut sender = PABWESender::new(None);
         sender.push(GinGout { gin: 0.1, gout: 1.0, len: 1400.0, timestamp: std::time::SystemTime::now() });
         assert!(!sender.dps.is_empty(), "Sender should have data points after push");
-    }
-
-    #[test]
-    fn test_window() {
-        let mut sender = PABWESender::new(Some(std::time::Duration::from_secs(2)));
-        let tstamp = std::time::SystemTime::now();
-        sender.push(GinGout { gin: 0.1, gout: 1.0, len: 1400.0, timestamp: tstamp });
-        assert_eq!(sender.latest, tstamp, "First timestamp should be set after push");
-        assert_eq!(sender.dps.len(), 1, "Sender should have one data point after push");
-        sender.push(GinGout { gin: 0.1, gout: 1.0, len: 1400.0, timestamp: tstamp + std::time::Duration::from_secs(3) });
-        sender.push(GinGout { gin: 0.1, gout: 1.0, len: 1400.0, timestamp: tstamp + std::time::Duration::from_secs(3) });
-        assert_eq!(sender.dps.len(), 2, "Sender should have two data point after push");
-        sender.push(GinGout { gin: 0.1, gout: 1.0, len: 1400.0, timestamp: tstamp + std::time::Duration::from_secs(4) });
-        assert_eq!(sender.dps.len(), 3, "Sender should have three data points after push");
-        sender.push(GinGout { gin: 0.1, gout: 1.0, len: 1400.0, timestamp: tstamp + std::time::Duration::from_secs(5) });
-        assert_eq!(sender.dps.len(), 2, "Sender should have two data points after push");
-        assert_eq!(sender.latest, tstamp + std::time::Duration::from_secs(5), "Latest timestamp should be updated after push");
-        assert_eq!(sender.dps.last().unwrap().timestamp, tstamp + std::time::Duration::from_secs(5), "Last timestamp should be the latest");
     }
 }

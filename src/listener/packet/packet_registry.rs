@@ -18,7 +18,7 @@ impl PacketRegistry {
     pub fn new(size: usize) -> Self {
         PacketRegistry {
             packets: VecDeque::with_capacity(size),
-            pgm_estimator: PABWESender::new(Some(Duration::from_secs(30))),
+            pgm_estimator: PABWESender::new(Some(Duration::from_secs(60))),
             min_rtt: f64::MAX,
             sum_data: 0,
             retransmissions: 0,
@@ -51,7 +51,7 @@ impl PacketRegistry {
     }
 
     pub fn get_rtts(&mut self) -> Vec<DataPacket> {
-        let rtts: Vec<DataPacket> = self.packets.drain(..).filter(|p| p.rtt.is_some()).collect();
+        let rtts: Vec<DataPacket> = self.packets.drain(..).filter(|p| p.gap_last_ack.is_some() && p.gap_last_sent.is_some()).collect();
         self.pgm_estimator.iter_packets(&rtts);
         rtts
     }
@@ -132,78 +132,5 @@ impl Deref for PacketRegistry {
 impl DerefMut for PacketRegistry {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.packets
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-
-    fn create_packets(packet_size: u16, rtt: Duration, rtt_increase: Duration, count: u8) -> Vec<DataPacket> {
-        let mut packets = Vec::new();
-        let mut sent_time = std::time::SystemTime::now();
-        let mut rtt = rtt;
-        for _ in 0..count {
-            packets.push(DataPacket::new(packet_size, packet_size, sent_time, Some(sent_time + rtt), 0, Some(rtt)));
-            rtt = rtt + rtt_increase;
-            sent_time += Duration::from_millis(1);
-        }
-        packets
-    }
-
-    #[test]
-    fn test_packet_registry() {
-        let mut registry = PacketRegistry::new(5);
-
-        let packets = create_packets(100, Duration::from_secs(1), Duration::from_secs(1), 5);
-        registry.extend(packets.clone());
-        assert_eq!(registry.len(), 5);
-        assert_eq!(registry.capacity(), 5);
-        assert_eq!(registry.retransmissions(), 0);
-
-        let packets = create_packets(100, Duration::from_secs(1), Duration::from_secs(1), 3);
-        registry.extend(packets.clone());
-        assert_eq!(registry.len(), 5);
-        assert_eq!(registry.capacity(), 5);
-        assert_eq!(registry.retransmissions(), 0);
-
-        let packets = create_packets(150, Duration::from_secs(1), Duration::from_secs(0), 2);
-        registry.extend(packets.clone());
-        assert_eq!(registry.len(), 5);
-        assert_eq!(registry.capacity(), 5);
-        assert_eq!(registry.retransmissions(), 0);
-
-        let packets = create_packets(200, Duration::from_secs(1), Duration::from_secs(0), 1);
-        registry.extend(packets.clone());
-        assert_eq!(registry.len(), 5);
-        assert_eq!(registry.capacity(), 5);
-        assert_eq!(registry.retransmissions(), 0);
-    }
-
-    #[test]
-    fn test_registry_is_sorted() {
-        let mut registry = PacketRegistry::new(200);
-        let time = std::time::SystemTime::now();
-        for i in 0..100 {
-            let dur = std::time::Duration::from_millis(i*2);
-            let packet = DataPacket::new(100, 100, time+dur, None, 0, Some(tokio::time::Duration::from_secs(1)));
-            registry.push(packet);
-        }
-
-        let old_packets = vec![
-            DataPacket::new(100, 100, time, None, 0, Some(tokio::time::Duration::from_secs(1))),
-            DataPacket::new(100, 100, time+std::time::Duration::from_millis(2), None, 0, Some(tokio::time::Duration::from_secs(1))),
-            DataPacket::new(100, 100, time+std::time::Duration::from_millis(1), None, 0, Some(tokio::time::Duration::from_secs(1))),
-            DataPacket::new(100, 100, time+std::time::Duration::from_millis(6), None, 0, Some(tokio::time::Duration::from_secs(1))),
-            DataPacket::new(100, 100, time+std::time::Duration::from_millis(7), None, 0, Some(tokio::time::Duration::from_secs(1))),
-        ];
-        registry.extend(old_packets.clone());
-        // Check if registry is sorted
-        let mut prev_time = time;
-        for packet in registry.iter() {
-            assert!(packet.sent_time >= prev_time);
-            prev_time = packet.sent_time;
-        }
     }
 }

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::SystemTime;
 
+use tokio::time::Duration;
 use pnet::packet::ip::IpNextHeaderProtocol;
 
 use crate::{
@@ -24,6 +25,10 @@ pub struct TcpTracker {
     remote_sent_packets: BTreeMap<u32, PacketType>,
     pub initial_sequence_local: Option<u32>,
     pub initial_sequence_remote: Option<u32>,
+    last_ack_local: Option<SystemTime>,
+    last_ack_remote: Option<SystemTime>,
+    last_sent_local: Option<SystemTime>,
+    last_sent_remote: Option<SystemTime>,
 }
 
 impl Default for TcpTracker {
@@ -39,6 +44,10 @@ impl TcpTracker {
             remote_sent_packets: BTreeMap::new(),
             initial_sequence_local: None,
             initial_sequence_remote: None,
+            last_ack_local: None,
+            last_ack_remote: None,
+            last_sent_local: None,
+            last_sent_remote: None,
         }
     }
 
@@ -94,6 +103,32 @@ impl TcpTracker {
         acked
     }
 
+    fn get_last_sent(&self, direction: Direction) -> Option<SystemTime> {
+        match direction {
+            Direction::Outgoing => self.last_sent_local,
+            Direction::Incoming => self.last_sent_remote,
+        }
+    }
+
+    fn set_last_sent(&mut self, direction: Direction, new: SystemTime) {
+        match direction {
+            Direction::Outgoing => self.last_sent_local = Some(new),
+            Direction::Incoming => self.last_sent_remote = Some(new),
+        }
+    }
+
+    fn get_gap_last_sent(&mut self, direction: Direction, new: SystemTime) -> Option<Duration> {
+        let gap: Option<Duration> = match self.get_last_sent(direction) {
+            Some(last_sent) => match new.duration_since(last_sent) {
+                Ok(d) => Some(d),
+                Err(_) => None,
+            },
+            None => None,
+        };
+        self.set_last_sent(direction, new);
+        gap
+    }
+
     /// Register a packet from the stream.
     /// Outgoing non-pure-ACK packets are tracked in local_sent_packets.
     /// Incoming non-pure-ACK packets are tracked in remote_sent_packets.
@@ -109,7 +144,9 @@ impl TcpTracker {
             ..
         } = &packet.transport
         {
-            let pkt = PacketType::from_packet(packet);
+            let mut pkt = PacketType::from_packet(packet);
+            pkt.gap_last_sent = self.get_gap_last_sent(packet.direction, packet.timestamp);
+
             match packet.direction {
                 Direction::Outgoing => {
                     if flags.is_ack() && *payload_len == 0 {
@@ -119,6 +156,17 @@ impl TcpTracker {
                             *acknowledgment,
                             packet.timestamp,
                         );
+                        if let Some(last_ack) = self.last_ack_remote {
+                            let gap = match packet.timestamp.duration_since(last_ack) {
+                                Ok(d) => d,
+                                Err(_) => packet.timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap(),
+                            };
+                            acked_packets.iter_mut().for_each(|p| {
+                                p.gap_last_ack = Some(gap);
+                            });
+                        }
+                        self.last_ack_remote = Some(packet.timestamp);
+
                     } else {
                         if self.initial_sequence_local.is_none() {
                             self.initial_sequence_local = Some(*sequence);
@@ -139,6 +187,16 @@ impl TcpTracker {
                             *acknowledgment,
                             packet.timestamp,
                         );
+                        if let Some(last_ack) = self.last_ack_local {
+                            let gap = match packet.timestamp.duration_since(last_ack) {
+                                Ok(d) => d,
+                                Err(_) => packet.timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap(),
+                            };
+                            acked_packets.iter_mut().for_each(|p| {
+                                p.gap_last_ack = Some(gap);
+                            });
+                        }
+                        self.last_ack_local = Some(packet.timestamp);
                     } else {
                         if self.initial_sequence_remote.is_none() {
                             self.initial_sequence_remote = Some(*sequence);

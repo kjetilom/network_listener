@@ -18,6 +18,8 @@ pub struct DataPacket {
     pub total_length: u16,
     pub sent_time: std::time::SystemTime, // TODO: Change to relative time (system time is ~16 bytes)
     pub ack_time: Option<std::time::SystemTime>,
+    pub gap_last_ack: Option<std::time::Duration>,
+    pub gap_last_sent: Option<std::time::Duration>,
     pub retransmissions: u8,
     pub rtt: Option<tokio::time::Duration>, // TODO: Change to u32 micros duration is 13 bytes
 }
@@ -70,6 +72,8 @@ impl DataPacket {
         total_length: u16,
         sent_time: std::time::SystemTime,
         ack_time: Option<std::time::SystemTime>,
+        gap_last_ack: Option<std::time::Duration>,
+        gap_last_sent: Option<std::time::Duration>,
         retransmissions: u8,
         rtt: Option<tokio::time::Duration>,
     ) -> Self {
@@ -78,6 +82,8 @@ impl DataPacket {
             total_length,
             sent_time,
             ack_time,
+            gap_last_ack,
+            gap_last_sent,
             retransmissions,
             rtt,
         }
@@ -103,6 +109,8 @@ impl DataPacket {
                 total_length: packet.total_length,
                 sent_time: packet.timestamp,
                 ack_time: None,
+                gap_last_ack: None,
+                gap_last_sent: None,
                 retransmissions: 0,
                 rtt: None,
             },
@@ -111,6 +119,8 @@ impl DataPacket {
                 total_length: packet.total_length,
                 sent_time: packet.timestamp,
                 ack_time: None,
+                gap_last_ack: None,
+                gap_last_sent: None,
                 retransmissions: 0,
                 rtt: None,
             },
@@ -119,6 +129,8 @@ impl DataPacket {
                 total_length: packet.total_length,
                 sent_time: packet.timestamp,
                 ack_time: None,
+                gap_last_ack: None,
+                gap_last_sent: None,
                 retransmissions: 0,
                 rtt: None,
             },
