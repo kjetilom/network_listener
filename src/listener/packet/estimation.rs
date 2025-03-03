@@ -38,6 +38,10 @@ impl PABWESender {
             let len = ack.iter().map(|p| p.total_length as f64).sum::<f64>() / ack.len() as f64;
             let timestamp = ack.first().unwrap().ack_time.unwrap();
 
+            if len < 1000.0 {
+                continue;
+            }
+
             self.push(GinGout { gin, gout, len, timestamp });
         }
         self
@@ -144,8 +148,6 @@ impl PABWESender {
 
         let dps = self.filter_gin_gacks();
 
-        self.dps.retain(|dp| dp.timestamp.elapsed().unwrap() < self.window.unwrap());
-
         let mut sum_x = 0.0;
         let mut sum_y = 0.0;
         let mut sum_xy = 0.0;
@@ -160,6 +162,7 @@ impl PABWESender {
             }
 
             let x = dp.len / dp.gin;
+            // ! This is bad.
             if x > 1250000.0 {
                 continue;
             }
