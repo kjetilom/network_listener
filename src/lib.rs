@@ -41,7 +41,7 @@ impl Settings {
     pub const LONGER_INTERVAL: Duration = Duration::from_secs(20);
     pub const SCHEDULER_DEST: &str = "172.16.0.254:50041";
     pub const BW_SERVER_PORT: u16 = 40042;
-    pub const NEAREST_LINK_PHY_CAP: f64 = 50000000.0; // 1250000.0*5 bytes/sec
+    pub const NEAREST_LINK_PHY_CAP: f64 = 5000000.0; // 1250000.0 bytes/sec
     pub const TCPHDR: i32 = 60;
     pub const IPHDR: i32 = 60;
     pub const IPV6HDR: i32 = 40;
