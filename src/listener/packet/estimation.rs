@@ -182,10 +182,12 @@ impl PABWESender {
             if dp.gin == 0.0 {
                 continue;
             }
-
+            if dp.len < 1000.0 {
+                continue;
+            }
             let x = dp.len / dp.gin;
 
-            if x > crate::Settings::NEAREST_LINK_PHY_CAP {
+            if x > crate::Settings::NEAREST_LINK_PHY_CAP/8.0 {
                 continue;
             }
             let y = dp.gout / dp.gin;
@@ -211,7 +213,7 @@ impl PABWESender {
 
         if a.abs() > f64::EPSILON {
             let res = (1.0 - b) / a;
-            if res > 0.0 && res < crate::Settings::NEAREST_LINK_PHY_CAP {
+            if res > 0.0 && res < crate::Settings::NEAREST_LINK_PHY_CAP/8.0 {
                 return Some(res);
             }
         }

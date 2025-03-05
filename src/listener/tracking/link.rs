@@ -79,37 +79,8 @@ impl LinkManager {
     }
 
     pub async fn periodic(&mut self) {
-        println!();
         for (_, stream_manager) in self.links.iter_mut() {
             stream_manager.periodic();
-        }
-        for link in self.get_link_states() {
-            println!("{}", link);
-        }
-        self.do_something_with_vip_links().await;
-    }
-
-    pub async fn do_something_with_vip_links(&self) {
-        for link in self.vip_links.iter() {
-            if let Some(stream) = self.links.get(link) {
-                if let Some(last_iperf) = stream.last_iperf {
-                    if last_iperf.elapsed().as_secs() < 10 {
-                        continue;
-                    }
-                }
-            }
-            // let ip = link.remote();
-            // self.client_sender
-            //     .send(ClientHandlerEvent::DoIperf3(
-            //         ip.to_string(),
-            //         crate::IPERF3_PORT,
-            //         1,
-            //     ))
-            //     .await
-            //     .unwrap();
-
-            // Do pathload test (Disabled for now)
-            //self.client_sender.send(ClientHandlerEvent::DoPathloadTest(ip.to_string())).await.unwrap();
         }
     }
 
@@ -123,14 +94,13 @@ impl LinkManager {
     }
 
     pub async fn send_bandwidth(&mut self) {
+        let rtt_message = self.get_rtt_message();
         let bw_message = self.get_bw_message();
+
         self.client_sender
             .send(ClientHandlerEvent::SendBandwidth(bw_message))
             .await
             .unwrap_or(warn!("Failed to send bandwidth message"));
-
-        let rtt_message = self.get_rtt_message();
-         // ! FIXMELATER
 
         match self.client_sender
             .send(ClientHandlerEvent::SendBandwidth(rtt_message))
@@ -242,7 +212,6 @@ pub struct Link {
 
 impl Link {
     pub fn to_proto(&self) -> LinkStateProto {
-        // !FIXME THIS IS BAD CHANGE SENDER/RECERIVER TO LOCAL/REMOTE
         self.state.to_proto(
             self.ip_pair.local().to_string(),
             self.ip_pair.remote().to_string(),

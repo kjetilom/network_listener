@@ -83,7 +83,7 @@ impl PacketRegistry {
 
     pub fn passive_pgm_abw(&mut self) -> Option<f64> {
         if let Some(res) = self.pgm_estimator.passive_pgm_abw() {
-            let dps = self.pgm_estimator.drain();
+            self.pgm_estimator.dps.clear();
             return Some(res)
         }
         None
