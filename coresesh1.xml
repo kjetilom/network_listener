@@ -62,47 +62,47 @@
     <link node1="11" node2="8">
       <iface1 id="1" name="veth11.1.1"/>
       <iface2 id="0" name="eth0" mac="00:00:00:aa:00:0a" ip4="10.0.3.20" ip4_mask="24" ip6="2001:0:0:3::14" ip6_mask="64"/>
-      <options delay="0" bandwidth="10000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="0"/>
+      <options delay="1000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="10"/>
     </link>
     <link node1="11" node2="7">
       <iface1 id="2" name="veth11.2.1"/>
       <iface2 id="0" name="eth0" mac="00:00:00:aa:00:0b" ip4="10.0.3.21" ip4_mask="24" ip6="2001:0:0:3::15" ip6_mask="64"/>
-      <options delay="0" bandwidth="10000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="0"/>
+      <options delay="1000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="10"/>
     </link>
     <link node1="5" node2="13">
       <iface1 id="0" name="eth0" mac="00:00:00:aa:00:06" ip4="10.0.2.20" ip4_mask="24" ip6="2001:0:0:2::14" ip6_mask="64"/>
       <iface2 id="0" name="veth13.0.1"/>
-      <options delay="0" bandwidth="10000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="0"/>
+      <options delay="1000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="10"/>
     </link>
     <link node1="6" node2="13">
       <iface1 id="0" name="eth0" mac="00:00:00:aa:00:07" ip4="10.0.2.21" ip4_mask="24" ip6="2001:0:0:2::15" ip6_mask="64"/>
       <iface2 id="1" name="veth13.1.1"/>
-      <options delay="0" bandwidth="10000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="0"/>
+      <options delay="1000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="10"/>
     </link>
     <link node1="1" node2="2">
       <iface1 id="2" name="veth1.2.1"/>
       <iface2 id="0" name="eth0" ip4="10.0.1.1" ip4_mask="24" ip6="2001:0:0:1::1" ip6_mask="64"/>
-      <options delay="5000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="0"/>
+      <options delay="1000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="10"/>
     </link>
     <link node1="10" node2="1">
       <iface1 id="0" name="eth0" ip4="10.0.1.21" ip4_mask="24" ip6="2001:0:0:1::15" ip6_mask="64"/>
       <iface2 id="1" name="veth1.1.1"/>
-      <options delay="0" bandwidth="0" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="0"/>
+      <options delay="1000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="10"/>
     </link>
     <link node1="13" node2="2">
       <iface1 id="2" name="veth13.2.1"/>
       <iface2 id="1" name="eth1" ip4="10.0.2.1" ip4_mask="24" ip6="2001:0:0:2::1" ip6_mask="64"/>
-      <options delay="5000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="0"/>
+      <options delay="1000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="10"/>
     </link>
     <link node1="9" node2="1">
       <iface1 id="0" name="eth0" ip4="10.0.1.20" ip4_mask="24" ip6="2001:0:0:1::14" ip6_mask="64"/>
       <iface2 id="0" name="veth1.0.1"/>
-      <options delay="0" bandwidth="0" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="0"/>
+      <options delay="1000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="10"/>
     </link>
     <link node1="2" node2="11">
       <iface1 id="2" name="eth2" ip4="10.0.3.1" ip4_mask="24" ip6="2001:0:0:3::1" ip6_mask="64"/>
       <iface2 id="0" name="veth11.0.1"/>
-      <options delay="5000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="0"/>
+      <options delay="1000" bandwidth="5000000" loss="0.0" dup="0" jitter="0" unidirectional="0" buffer="10"/>
     </link>
   </links>
   <session_origin lat="47.579166412353516" lon="-122.13232421875" alt="2.0" scale="150.0"/>
