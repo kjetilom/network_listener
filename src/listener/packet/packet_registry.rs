@@ -82,8 +82,11 @@ impl PacketRegistry {
     }
 
     pub fn passive_pgm_abw(&mut self) -> Option<f64> {
-        let dps = self.pgm_estimator.drain(); // ! Data collection
-        self.pgm_estimator.passive_pgm_abw()
+        if let Some(res) = self.pgm_estimator.passive_pgm_abw() {
+            let dps = self.pgm_estimator.drain();
+            return Some(res)
+        }
+        None
     }
 
     pub fn get_rtts(&mut self) -> Vec<DataPacket> {

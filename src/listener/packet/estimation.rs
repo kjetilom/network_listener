@@ -49,41 +49,20 @@ impl PABWESender {
 
     fn iter_ack_stream(&mut self, ack_stream: Vec<Vec<DataPacket>>) -> &Self {
         for ack_group in ack_stream {
-            let valid_dps: Vec<GinGout> = ack_group
-                .iter()
-                .filter_map(|packet| GinGout::from_data_packet(packet))
-                .collect();
 
-            if valid_dps.is_empty() {
-                continue;
-            }
+            let sum_gin: f64 = ack_group.iter().map(|packet| packet.gap_last_sent.unwrap().as_secs_f64()).sum();
+            let gout = ack_group.first().unwrap().gap_last_ack.unwrap().as_secs_f64();
+            let sum_len: f64 = ack_group.iter().map(|packet| packet.total_length as f64).sum();
+            let timestamp = ack_group.last().unwrap().ack_time.unwrap();
 
-            // Aggregate values
-            let count = valid_dps.len() as f64;
-            let sum_gin: f64 = valid_dps.iter().map(|dp| dp.gin).sum();
-            let gout: f64 = valid_dps.first().unwrap().gout;
-            let sum_len: f64 = valid_dps.iter().map(|dp| dp.len).sum();
-            let max_timestamp = valid_dps
-                .iter()
-                .map(|dp| dp.timestamp)
-                .max()
-                .unwrap_or(SystemTime::UNIX_EPOCH);
-
-            let avg_gin = sum_gin / count;
-            let avg_gout = gout / count;
-            let avg_len = sum_len / count;
-
-            if avg_len < 1000.0 {
-                continue;
-            }
-
-            // Store the new aggregated value
-            self.push(GinGout {
-                gin: avg_gin,
-                gout: avg_gout,
-                len: avg_len,
-                timestamp: max_timestamp,
-            });
+            self.push(
+                GinGout::new(
+                    sum_gin/ack_group.len() as f64,
+                    gout/ack_group.len() as f64,
+                    sum_len/ack_group.len() as f64,
+                    timestamp,
+                )
+            )
         }
         self
     }
@@ -173,7 +152,6 @@ impl PABWESender {
         let filtered = self.dps.iter().filter(|dp| {
             dp.gin < g_max_in
         }).cloned().collect();
-        // Return the middle 80% of the data points.
         filtered
     }
 
@@ -232,9 +210,9 @@ impl PABWESender {
         let b = (sum_y - a * sum_x) / n;
 
         if a.abs() > f64::EPSILON {
-            let res = Some((1.0 - b) / a);
-            if res > Some(0.0) && res < Some(crate::Settings::NEAREST_LINK_PHY_CAP) {
-                return res;
+            let res = (1.0 - b) / a;
+            if res > 0.0 && res < crate::Settings::NEAREST_LINK_PHY_CAP {
+                return Some(res);
             }
         }
         None
