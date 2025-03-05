@@ -90,13 +90,13 @@ impl PacketRegistry {
     }
 
     pub fn get_rtts(&mut self) -> Vec<DataPacket> {
-        let rtts = self.iter_packets_rtt().cloned().collect();
-        let rtts2: Vec<DataPacket> = self
+        //let rtts = self.iter_packets_rtt().cloned().collect();
+        let rtts: Vec<DataPacket> = self
             .packets
             .drain(..)
             .filter(|p| p.gap_last_ack.is_some() && p.gap_last_sent.is_some())
             .collect();
-        self.pgm_estimator.iter_packets(&rtts2);
+        self.pgm_estimator.iter_packets(&rtts);
         rtts
     }
 
