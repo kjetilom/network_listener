@@ -89,6 +89,17 @@ impl DataPacket {
         }
     }
 
+    pub fn get_gin_gout(&self) -> Option<(f64, f64, std::time::SystemTime)> {
+        match (self.gap_last_sent, self.gap_last_ack, self.ack_time) {
+            (Some(gin), Some(gout), Some(ack_time)) => Some((
+                gin.as_secs_f64(),
+                gout.as_secs_f64(),
+                ack_time,
+            )),
+            _ => None,
+        }
+    }
+
     pub fn to_proto_rtt(self) -> crate::proto_bw::Rtt {
         crate::proto_bw::Rtt {
             rtt: self.rtt.map(|rtt| rtt.as_secs_f64()).unwrap_or(0.0),

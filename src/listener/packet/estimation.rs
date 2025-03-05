@@ -10,6 +10,24 @@ pub struct GinGout {
     pub timestamp: SystemTime,
 }
 
+impl GinGout {
+    pub fn new(gin: f64, gout: f64, len: f64, timestamp: SystemTime) -> Self {
+        GinGout { gin, gout, len, timestamp }
+    }
+
+    pub fn get_dp(&self) -> (f64, f64, SystemTime) {
+        (self.len / self.gin, self.gout / self.gin, self.timestamp)
+    }
+
+    pub fn from_data_packet(packet: &DataPacket) -> Option<Self> {
+        let (gin, gout, timestamp) = match packet.get_gin_gout() {
+            Some((gin, gout, timestamp)) => (gin, gout, timestamp),
+            None => return None,
+        };
+        Some(GinGout { gin, gout, len: packet.total_length as f64, timestamp })
+    }
+}
+
 /// A sender that collects gap data points (dps) for available bandwidth estimation.
 #[derive(Debug)]
 pub struct PABWESender {
@@ -18,7 +36,6 @@ pub struct PABWESender {
 }
 
 impl PABWESender {
-    /// Creates a new, empty PABWESender.
     pub fn new(window: Option<Duration>) -> Self {
         PABWESender {
             dps: Vec::new(),
@@ -26,23 +43,47 @@ impl PABWESender {
         }
     }
 
-    /// Adds a new data point.
     fn push(&mut self, dp: GinGout) {
         self.dps.push(dp);
     }
 
     fn iter_ack_stream(&mut self, ack_stream: Vec<Vec<DataPacket>>) -> &Self {
-        for ack in ack_stream {
-            let gin = ack.iter().map(|p| p.gap_last_sent.unwrap().as_secs_f64()).sum::<f64>() / ack.len() as f64;
-            let gout = ack.first().unwrap().gap_last_ack.unwrap().as_secs_f64() / ack.len() as f64;
-            let len = ack.iter().map(|p| p.total_length as f64).sum::<f64>() / ack.len() as f64;
-            let timestamp = ack.first().unwrap().ack_time.unwrap();
+        for ack_group in ack_stream {
+            let valid_dps: Vec<GinGout> = ack_group
+                .iter()
+                .filter_map(|packet| GinGout::from_data_packet(packet))
+                .collect();
 
-            if len < 1000.0 {
+            if valid_dps.is_empty() {
                 continue;
             }
 
-            self.push(GinGout { gin, gout, len, timestamp });
+            // Aggregate values
+            let count = valid_dps.len() as f64;
+            let sum_gin: f64 = valid_dps.iter().map(|dp| dp.gin).sum();
+            let gout: f64 = valid_dps.first().unwrap().gout;
+            let sum_len: f64 = valid_dps.iter().map(|dp| dp.len).sum();
+            let max_timestamp = valid_dps
+                .iter()
+                .map(|dp| dp.timestamp)
+                .max()
+                .unwrap_or(SystemTime::UNIX_EPOCH);
+
+            let avg_gin = sum_gin / count;
+            let avg_gout = gout / count;
+            let avg_len = sum_len / count;
+
+            if avg_len < 1000.0 {
+                continue;
+            }
+
+            // Store the new aggregated value
+            self.push(GinGout {
+                gin: avg_gin,
+                gout: avg_gout,
+                len: avg_len,
+                timestamp: max_timestamp,
+            });
         }
         self
     }
@@ -84,6 +125,10 @@ impl PABWESender {
         thp
     }
 
+    pub fn drain(&mut self) -> Vec<GinGout> {
+        self.dps.drain(..).collect()
+    }
+
     fn group_bursts(packets: Vec<DataPacket>, min_rtt: Duration) -> Vec<Vec<DataPacket>> {
         let mut chunks = Vec::new();
         let mut chunk: Vec<DataPacket> = Vec::new();
@@ -120,7 +165,7 @@ impl PABWESender {
         );
 
         let n = (self.dps.len() as f64 * 0.1).ceil() as usize;
-        let gmin_in = self.dps.iter().take(n).map(|dp| dp.gin).sum::<f64>() / n as f64;
+        let _gmin_in = self.dps.iter().take(n).map(|dp| dp.gin).sum::<f64>() / n as f64;
         let gmin_out = self.dps.iter().take(n).map(|dp| dp.gout).sum::<f64>() / n as f64;
 
         let g_max_in = gmin_out;
@@ -152,7 +197,6 @@ impl PABWESender {
         let mut sum_y = 0.0;
         let mut sum_xy = 0.0;
         let mut sum_x2 = 0.0;
-        println!();
 
         // Process each data point, skipping any with a zero gin (to avoid division by zero).
         let mut count = 0;
@@ -162,8 +206,8 @@ impl PABWESender {
             }
 
             let x = dp.len / dp.gin;
-            // ! This is bad.
-            if x > 1250000.0 {
+
+            if x > crate::Settings::NEAREST_LINK_PHY_CAP {
                 continue;
             }
             let y = dp.gout / dp.gin;
@@ -188,11 +232,12 @@ impl PABWESender {
         let b = (sum_y - a * sum_x) / n;
 
         if a.abs() > f64::EPSILON {
-            Some((1.0 - b) / a)
-        } else {
-            None
+            let res = Some((1.0 - b) / a);
+            if res > Some(0.0) && res < Some(crate::Settings::NEAREST_LINK_PHY_CAP) {
+                return res;
+            }
         }
-
+        None
     }
 }
 

@@ -217,8 +217,6 @@ impl Parser {
                         }
                     }
 
-                    s.end.sum_sent.retransmits;
-
                     self.link_manager.insert_iperf_result(
                         ip_pair,
                         s.end

@@ -10,9 +10,7 @@ pub mod logging;
 pub mod probe;
 pub mod prost_net;
 pub mod scheduler;
-pub mod util;
 
-pub use util::rolling_sum::RollingSum;
 pub use listener::packet::*;
 pub use listener::tracking::*;
 pub use prost_net::bandwidth_client::ClientEvent;
@@ -39,12 +37,11 @@ impl Settings {
     pub const TSTAMP_TYPE: pcap::TimestampType = pcap::TimestampType::Adapter;
     pub const PRECISION: pcap::Precision = pcap::Precision::Micro;
     pub const TCP_STREAM_TIMEOUT: Duration = Duration::from_secs(5); //from_secs(900);
-    pub const SYN_ACK_TIMEOUT: Duration = Duration::from_secs(10); // 75
-    pub const FIN_WAIT_TIMEOUT: Duration = Duration::from_secs(675);
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(15);
     pub const LONGER_INTERVAL: Duration = Duration::from_secs(20);
     pub const SCHEDULER_DEST: &str = "172.16.0.254:50041";
     pub const BW_SERVER_PORT: u16 = 40042;
+    pub const NEAREST_LINK_PHY_CAP: f64 = 10000000.0; // 1250000.0 bytes/sec
     pub const TCPHDR: i32 = 60;
     pub const IPHDR: i32 = 60;
     pub const IPV6HDR: i32 = 40;

@@ -1,15 +1,16 @@
+use super::estimation::PABWESender;
+use super::DataPacket;
 use std::{
     collections::VecDeque,
-    ops::{Deref, DerefMut}, time::Duration
+    ops::{Deref, DerefMut},
+    time::{Duration, SystemTime},
 };
-use super::DataPacket;
-use super::estimation::PABWESender;
 
 #[derive(Debug)]
 pub struct PacketRegistry {
     packets: VecDeque<DataPacket>,
     pgm_estimator: PABWESender,
-    min_rtt: f64,
+    min_rtt: (f64, SystemTime),
     sum_data: u32,
     retransmissions: u16,
 }
@@ -19,9 +20,31 @@ impl PacketRegistry {
         PacketRegistry {
             packets: VecDeque::with_capacity(size),
             pgm_estimator: PABWESender::new(Some(Duration::from_secs(60))),
-            min_rtt: f64::MAX,
+            min_rtt: (f64::MAX, SystemTime::now()),
             sum_data: 0,
             retransmissions: 0,
+        }
+    }
+
+    pub fn min_rtt(&self) -> Option<f64> {
+        if self.min_rtt.0 == f64::MAX {
+            None
+        } else {
+            Some(self.min_rtt.0)
+        }
+    }
+
+    fn reset_min_rtt(&mut self) {
+        let min_rtt = self
+            .packets
+            .iter()
+            .filter(|p| p.rtt.is_some())
+            .min_by(|a, b| a.rtt.unwrap().cmp(&b.rtt.unwrap()));
+
+        if let Some(min_rtt) = min_rtt {
+            self.min_rtt = (min_rtt.rtt.unwrap().as_secs_f64(), min_rtt.ack_time.unwrap());
+        } else {
+            self.min_rtt = (f64::MAX, SystemTime::now());
         }
     }
 
@@ -35,7 +58,19 @@ impl PacketRegistry {
 
     fn add_values(&mut self, packet: &DataPacket) {
         if let Some(rtt) = packet.rtt {
-            self.min_rtt = self.min_rtt.min(rtt.as_secs_f64());
+            let rtt = rtt.as_secs_f64();
+            if self.min_rtt.0 > rtt {
+                self.min_rtt.0 = rtt;
+                self.min_rtt.1 = packet.ack_time.unwrap();
+            }
+            match packet.ack_time.unwrap().duration_since(self.min_rtt.1) {
+                Ok(d) => {
+                    if d.as_secs_f64() > self.min_rtt.0 {
+                        self.reset_min_rtt();
+                    }
+                }
+                Err(_) => {}
+            }
         }
         self.sum_data += packet.total_length as u32;
         self.retransmissions += packet.retransmissions as u16;
@@ -47,11 +82,16 @@ impl PacketRegistry {
     }
 
     pub fn passive_pgm_abw(&mut self) -> Option<f64> {
+        let dps = self.pgm_estimator.drain(); // ! Data collection
         self.pgm_estimator.passive_pgm_abw()
     }
 
     pub fn get_rtts(&mut self) -> Vec<DataPacket> {
-        let rtts: Vec<DataPacket> = self.packets.drain(..).filter(|p| p.gap_last_ack.is_some() && p.gap_last_sent.is_some()).collect();
+        let rtts: Vec<DataPacket> = self
+            .packets
+            .drain(..)
+            .filter(|p| p.gap_last_ack.is_some() && p.gap_last_sent.is_some())
+            .collect();
         self.pgm_estimator.iter_packets(&rtts);
         rtts
     }
@@ -83,19 +123,14 @@ impl PacketRegistry {
     }
 
     pub fn avg_rtt(&self) -> Option<f64> {
-        let rtts: Vec<f64> = self.iter_packets_rtt().map(|p| p.rtt.unwrap().as_secs_f64()).collect();
+        let rtts: Vec<f64> = self
+            .iter_packets_rtt()
+            .map(|p| p.rtt.unwrap().as_secs_f64())
+            .collect();
         if rtts.is_empty() {
             None
         } else {
             Some(rtts.iter().sum::<f64>() / rtts.len() as f64)
-        }
-    }
-
-    pub fn min_rtt(&self) -> Option<f64> {
-        if self.min_rtt == f64::MAX {
-            None
-        } else {
-            Some(self.min_rtt)
         }
     }
 
@@ -104,7 +139,10 @@ impl PacketRegistry {
     }
 
     pub fn avg_burst_thp(&self) -> Option<f64> {
-        let thpts = PABWESender::get_burst_thp(self.iter_packets_rtt().cloned().collect(), Duration::from_secs_f64(self.min_rtt));
+        let thpts = PABWESender::get_burst_thp(
+            self.iter_packets_rtt().cloned().collect(),
+            Duration::from_secs_f64(self.min_rtt.0),
+        );
         if thpts.is_empty() {
             None
         } else {

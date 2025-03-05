@@ -93,9 +93,20 @@ impl PacketCapturer {
     /**
      *  Create a new PacketCapturer instance
      */
-    pub fn new(sender: CapEventSender) -> CaptureResult {
-        // ! FIXME Change this to select device by name maybe?
-        let device = Device::lookup()?.ok_or("No device available for capture")?;
+    pub fn device_by_name(name: &str) -> Result<Device> {
+        let device = Device::list()?.into_iter().find(|d| d.name == name);
+        match device {
+            Some(d) => Ok(d),
+            None => Err(anyhow::anyhow!("No device found with name: {}", name)),
+        }
+    }
+
+    pub fn new(sender: CapEventSender, name: Option<&str>) -> CaptureResult {
+        let device = match name {
+            Some(name) => Self::device_by_name(name)?,
+            None => Device::lookup()?.ok_or("No device available for capture")?,
+        };
+
         info!("Using device: {}", device.name);
 
         let cap = Capture::from_device(device.clone())?
@@ -221,7 +232,7 @@ mod tests {
     #[test]
     fn test_packet_capturer_new() {
         let (sender, _) = ch::unbounded_channel();
-        let result = PacketCapturer::new(sender);
+        let result = PacketCapturer::new(sender, None);
         assert!(result.is_ok());
     }
 }

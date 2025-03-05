@@ -27,7 +27,7 @@ impl StreamManager {
         }
     }
 
-    pub fn record_iperf_result(&mut self, bps: f64, stream: Option<&crate::IperfStream>) {
+    pub fn record_iperf_result(&mut self, bps: f64, _stream: Option<&crate::IperfStream>) {
         // Check if in out is very different
         self.last_iperf = Some(Instant::now());
         self.tcp_thput = bps;

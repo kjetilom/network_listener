@@ -56,7 +56,6 @@ async fn run_server(listen_addr: &str, client: Client) -> Result<(), Box<dyn Err
                     println!("Received hello message: {}", hello.message);
                 },
                 data_msg::Data::Rtts(rtts) => {
-                    println!("Received RTT message, Size: {}", rtts.encoded_len());
                     upload_rtt(rtts, &client).await;
                 }
             }

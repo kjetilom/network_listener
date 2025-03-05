@@ -43,7 +43,7 @@ impl NetworkListener {
         let (sender, receiver) = unbounded_channel();
         let (client_sender, client_receiver) = channel::<ClientHandlerEvent>(100);
 
-        let (pcap, pcap_meta) = PacketCapturer::new(sender.clone())?;
+        let (pcap, pcap_meta) = PacketCapturer::new(sender.clone(), None)?; // ! FIXME
         let pcap_meta = Arc::new(pcap_meta);
         let (parser, ctx) = Parser::new(receiver, pcap_meta.clone(), client_sender)?;
         let client_handler = ClientHandler::new(ctx, client_receiver, sender.clone());
