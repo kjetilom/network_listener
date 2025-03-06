@@ -10,11 +10,13 @@ pub mod logging;
 pub mod probe;
 pub mod prost_net;
 pub mod scheduler;
+pub mod config;
 
 pub use listener::packet::*;
 pub use listener::tracking::*;
 pub use prost_net::bandwidth_client::ClientEvent;
 pub use probe::iperf_json::Stream2 as IperfStream;
+pub use config::AppConfig;
 
 pub const IPERF3_PORT: u16 = 5201;
 
@@ -27,6 +29,11 @@ pub mod proto_bw {
 }
 
 use tokio::time::Duration;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    pub static ref CONFIG: AppConfig = config::load_config();
+}
 
 pub struct Settings {}
 

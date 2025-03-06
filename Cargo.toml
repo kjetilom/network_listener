@@ -25,10 +25,12 @@ tokio = { version = "1.42.0", features = ["full"] }
 pcap-async = "0.4.1"
 libc = "0.2.170"
 procfs = "0.17.0"
-surge-ping = "0.8.1"
+surge-ping = "0.8.2"
 rand = "0.9"
 yata = "0.7.0"
 itertools = "0.14.0"
+toml = "0.8.20"
+lazy_static = "1.5.0"
 
 # Wifi stuff
 rtnetlink = "0.14.1"
@@ -38,13 +40,13 @@ mac_address = "1.1.8"
 # neli = { version = "0.6.4", features = ["async"] }
 prost = "0.13"
 prost-types = "0.13"
-anyhow = "1.0.96"
+anyhow = "1.0.97"
 serde = { version = "1.0.218", features = ["derive"] }
-serde_json = "1.0.139"
+serde_json = "1.0.140"
 tonic = "0.12.3"
 futures = "0.3.17"
 tokio-util = "0.7"
-bytes = "1.10.0"
+bytes = "1.10.1"
 # Postgres stuff
 tokio-postgres = { version="0.7", features=["with-chrono-0_4"] }
 

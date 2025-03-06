@@ -3,7 +3,7 @@ use network_listener::listener::{capture::PacketCapturer, parser::Parser};
 use network_listener::logging::logger;
 use network_listener::probe::iperf::IperfServer;
 use network_listener::prost_net::bandwidth_client::ClientHandlerEvent;
-use network_listener::{prost_net, IPERF3_PORT};
+use network_listener::{prost_net, CONFIG, IPERF3_PORT};
 use prost_net::bandwidth_client::ClientHandler;
 use prost_net::bandwidth_server::BwServer;
 use std::error::Error;
@@ -112,6 +112,7 @@ impl NetworkListener {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     logger::setup_logging()?;
+    println!("{:?}, {:?}, {}, {}", CONFIG.client.ip, CONFIG.client.iface, CONFIG.server.ip, CONFIG.server.port);
     // let _ = tokio::spawn(network_listener::grafana::client::start_client());
     let mut netlistener = NetworkListener::new()?;
     netlistener.start()?;

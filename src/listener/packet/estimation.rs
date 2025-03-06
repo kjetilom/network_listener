@@ -187,7 +187,9 @@ impl PABWESender {
             }
             let x = dp.len / dp.gin;
 
-            if x > crate::Settings::NEAREST_LINK_PHY_CAP/8.0 {
+            let phy_cap = crate::Settings::NEAREST_LINK_PHY_CAP/8.0;
+
+            if x > phy_cap || dp.len / dp.gout > phy_cap {
                 continue;
             }
             let y = dp.gout / dp.gin;
