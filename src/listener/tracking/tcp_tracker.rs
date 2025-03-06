@@ -8,12 +8,31 @@ use crate::{
     tracker::DefaultState, Direction, PacketType, ParsedPacket, TcpFlags, TransportPacket
 };
 
+const MAX_BURST_LENGTH: usize = 100;
+
 /// Wrap-around aware sequence comparison.
 fn seq_cmp(a: u32, b: u32) -> i32 {
     a.wrapping_sub(b) as i32
 }
 fn seq_less_equal(a: u32, b: u32) -> bool {
     seq_cmp(a, b) <= 0
+}
+
+/// A burst of packets.
+/// Is stored before being returned to the packet_registry for processing
+pub struct Burst {
+    last_sent: SystemTime,
+    last_ack: SystemTime,
+    packets: Vec<Vec<PacketType>>,
+}
+
+struct TcpStream {
+    packets: BTreeMap<u32, PacketType>,
+    initial_sequence: Option<u32>,
+    last_ack: Option<SystemTime>,
+    last_sent: Option<SystemTime>,
+    cur_burst: Burst,
+    min_rtt: Option<Duration>,
 }
 
 /// TCP tracker which now tracks packets from both directions.

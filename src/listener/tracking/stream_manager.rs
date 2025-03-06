@@ -59,16 +59,21 @@ impl StreamManager {
             })
             .register_packet(packet);
 
+        let mut sent = Vec::new();
+        let mut received = Vec::new();
         for p in result {
             match p {
                 PacketType::Sent(p) => {
-                    self.sent.push(p);
+                    sent.push(p);
                 }
                 PacketType::Received(p) => {
-                    self.received.push(p);
+                    received.push(p);
                 }
             }
         }
+
+        self.sent.extend(sent);
+        self.received.extend(received);
     }
 
     pub fn get_latency_avg(&self) -> Option<f64> {

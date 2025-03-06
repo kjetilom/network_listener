@@ -121,6 +121,7 @@ impl PacketRegistry {
     }
 
     pub fn extend(&mut self, values: Vec<DataPacket>) {
+        // This is a vector of packets acked by one ack
         for value in values {
             self.push(value);
         }

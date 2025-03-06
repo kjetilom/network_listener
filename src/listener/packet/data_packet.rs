@@ -1,6 +1,6 @@
 // Used to store packets which are acked, or sent (udp) or received (tcp) packets.
 
-use std::ops::{Deref, DerefMut};
+use std::{ops::{Deref, DerefMut}, time::Duration};
 
 /// Single struct to represent a sent or received packet.
 /// Should be as small as possible to reduce memory usage.
@@ -86,6 +86,19 @@ impl DataPacket {
             gap_last_sent,
             retransmissions,
             rtt,
+        }
+    }
+
+    pub fn empty() -> Self {
+        DataPacket {
+            payload_len: 0,
+            total_length: 0,
+            sent_time: std::time::SystemTime::UNIX_EPOCH,
+            ack_time: None,
+            gap_last_ack: None,
+            gap_last_sent: None,
+            retransmissions: 0,
+            rtt: None,
         }
     }
 
