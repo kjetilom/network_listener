@@ -1,6 +1,6 @@
 // Used to store packets which are acked, or sent (udp) or received (tcp) packets.
 
-use std::{ops::{Deref, DerefMut}, time::Duration};
+use std::ops::{Deref, DerefMut};
 
 /// Single struct to represent a sent or received packet.
 /// Should be as small as possible to reduce memory usage.

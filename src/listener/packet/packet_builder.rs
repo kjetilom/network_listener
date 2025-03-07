@@ -82,6 +82,24 @@ impl<'a> ParsedPacket {
         })
     }
 
+    pub fn is_pure_ack(&self) -> bool {
+        match &self.transport {
+            TransportPacket::TCP { flags, payload_len, .. } => {
+                flags.is_ack() && *payload_len == 0
+            }
+            _ => false,
+        }
+    }
+
+    pub fn get_src_dst_port(&self) -> Option<(u16, u16)> {
+        match &self.transport {
+            TransportPacket::TCP { dst_port, src_port, .. } | TransportPacket::UDP { dst_port, src_port, .. } => {
+                Some((*src_port, *dst_port))
+            }
+            _ => None,
+        }
+    }
+
     /// Returns (src_ip, dst_ip, payload, protocol)
     fn get_ip_info(
         eth: &'a EthernetPacket,

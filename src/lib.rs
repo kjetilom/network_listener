@@ -43,7 +43,7 @@ impl Settings {
     pub const TIMEOUT: i32 = 0;
     pub const TSTAMP_TYPE: pcap::TimestampType = pcap::TimestampType::Adapter;
     pub const PRECISION: pcap::Precision = pcap::Precision::Micro;
-    pub const TCP_STREAM_TIMEOUT: Duration = Duration::from_secs(5); //from_secs(900);
+    pub const TCP_STREAM_TIMEOUT: Duration = Duration::from_secs(20); //from_secs(900);
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(15);
     pub const LONGER_INTERVAL: Duration = Duration::from_secs(20);
     pub const SCHEDULER_DEST: &str = "172.16.0.254:50041";

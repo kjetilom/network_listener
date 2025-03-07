@@ -58,6 +58,12 @@ impl LinkManager {
         if packet.src_ip.is_multicast() || packet.dst_ip.is_multicast() {
             return;
         }
+
+        if let Some((src_port, dst_port)) = packet.get_src_dst_port() {
+            if dst_port == crate::Settings::BW_SERVER_PORT || src_port == crate::Settings::BW_SERVER_PORT {
+                return;
+            }
+        }
         let ip_pair = IpPair::from_packet(&packet);
 
         self.links

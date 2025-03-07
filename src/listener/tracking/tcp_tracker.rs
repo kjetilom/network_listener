@@ -5,10 +5,8 @@ use tokio::time::Duration;
 use pnet::packet::ip::IpNextHeaderProtocol;
 
 use crate::{
-    tracker::DefaultState, Direction, PacketType, ParsedPacket, TcpFlags, TransportPacket
+    tracker::DefaultState, Direction, PacketType, ParsedPacket, TransportPacket
 };
-
-const MAX_BURST_LENGTH: usize = 100;
 
 /// Wrap-around aware sequence comparison.
 fn seq_cmp(a: u32, b: u32) -> i32 {
@@ -20,19 +18,159 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
 
 /// A burst of packets.
 /// Is stored before being returned to the packet_registry for processing
+#[derive(Debug)]
 pub struct Burst {
-    last_sent: SystemTime,
-    last_ack: SystemTime,
-    packets: Vec<Vec<PacketType>>,
+    packets: Vec<Acked>,
 }
 
+impl Default for Burst {
+    fn default() -> Self {
+        Burst {
+            packets: Vec::new(),
+        }
+    }
+}
+
+impl Burst {
+    fn flatten(self) -> Vec<PacketType> {
+        self.packets
+            .into_iter()
+            .flat_map(|acked| acked.acked_packets)
+            .collect()
+    }
+}
+
+#[derive(Debug)]
+pub struct Acked {
+    acked_packets: Vec<PacketType>,
+    ack_time: SystemTime,
+    first_sent_time: SystemTime,
+    last_sent_time: SystemTime,
+}
+
+impl Acked {
+    fn from_acked(acked_packets: Vec<PacketType>, ack_time: SystemTime) -> Self {
+        let first_sent_time = acked_packets.first().unwrap().sent_time;
+        let last_sent_time = acked_packets.last().unwrap().sent_time;
+        Acked {
+            acked_packets,
+            ack_time,
+            first_sent_time,
+            last_sent_time,
+        }
+    }
+}
+
+#[derive(Debug)]
 struct TcpStream {
     packets: BTreeMap<u32, PacketType>,
-    initial_sequence: Option<u32>,
-    last_ack: Option<SystemTime>,
+    last_ack: SystemTime,
     last_sent: Option<SystemTime>,
     cur_burst: Burst,
-    min_rtt: Option<Duration>,
+    min_rtt: Duration,
+}
+
+impl TcpStream {
+    fn get_gap_last_sent(&mut self, new: SystemTime) -> Option<Duration> {
+        let gap: Option<Duration> = match self.last_sent {
+            Some(last_sent) => match new.duration_since(last_sent) {
+                Ok(d) => Some(d),
+                Err(_) => None,
+            },
+            None => None,
+        };
+        self.last_sent = Some(new);
+        gap
+    }
+
+    fn get_gap_last_ack(&mut self, new: SystemTime) -> Option<Duration> {
+        let gap: Option<Duration> = match self.last_ack.duration_since(new) {
+            Ok(d) => Some(d),
+            Err(_) => None,
+        };
+        self.last_ack = new;
+        gap
+    }
+
+    fn register_packet(&mut self, packet: &ParsedPacket) -> Option<Burst> {
+        let mut acked_packets = Vec::new();
+        let mut ret = None;
+
+        if let TransportPacket::TCP {
+            sequence,
+            acknowledgment,
+            payload_len,
+            flags,
+            ..
+        } = &packet.transport
+        {
+            let mut pkt = PacketType::from_packet(packet);
+            if let Some(last_sent) = self.last_sent {
+                if let Ok(d) = packet.timestamp.duration_since(last_sent) {
+                    if d > self.min_rtt * 4 {
+                        // Indiana Jones moment (Replace self.cur_burst with default)
+                        ret = Some(std::mem::take(&mut self.cur_burst));
+                    }
+                }
+            }
+
+            if flags.is_ack() && *payload_len == 0 {
+                // Pure ACK acknowledges local packets.
+                pkt.gap_last_ack = self.get_gap_last_ack(packet.timestamp);
+                acked_packets = self.update_acked_packets(*acknowledgment, pkt);
+            } else {
+                // Set new last sent time and calculate gap
+                pkt.gap_last_sent = self.get_gap_last_sent(packet.timestamp);
+                self.track_packet(*sequence, pkt);
+            }
+        }
+        if acked_packets.len() > 0 {
+            self.cur_burst.packets.push(Acked::from_acked(acked_packets, packet.timestamp));
+        }
+        ret
+    }
+
+    fn track_packet(&mut self, sequence: u32, packet: PacketType) {
+        match self.packets.get_mut(&sequence) {
+            Some(existing) => {
+                existing.retransmissions += 1;
+                // If we don't do this we will calculate a way too high RTT
+                existing.sent_time = packet.sent_time;
+            }
+            None => {
+                self.packets.insert(sequence, packet);
+            }
+        }
+    }
+
+    /// Update and remove all packets in the provided map that are
+    /// fully acknowledged. Also update RTT and register the "sent" packet.
+    fn update_acked_packets(&mut self, ack: u32, pkt: PacketType) -> Vec<PacketType> {
+        let mut acked = Vec::new();
+        let mut keys_to_remove = Vec::new();
+        for (&seq, sent_packet) in self.packets.iter_mut() {
+            if seq_less_equal(seq.wrapping_add(sent_packet.payload_len as u32), ack) {
+                if let Ok(rtt_duration) = pkt.sent_time.duration_since(sent_packet.sent_time) {
+                    self.min_rtt = std::cmp::min(self.min_rtt, rtt_duration);
+                    sent_packet.rtt = Some(rtt_duration);
+                    sent_packet.ack_time = Some(pkt.sent_time);
+                    sent_packet.gap_last_ack = pkt.gap_last_ack;
+                }
+                keys_to_remove.push(seq);
+            } else {
+                break;
+            }
+        }
+
+        for seq in keys_to_remove {
+            if let Some(p) = self.packets.remove(&seq) {
+                acked.push(p);
+            }
+        }
+
+        acked.sort_by(|a, b| a.sent_time.cmp(&b.sent_time));
+        acked
+    }
 }
 
 /// TCP tracker which now tracks packets from both directions.
@@ -40,14 +178,8 @@ struct TcpStream {
 /// packets from the remote side are stored in `remote_sent_packets`.
 #[derive(Debug)]
 pub struct TcpTracker {
-    local_sent_packets: BTreeMap<u32, PacketType>,
-    remote_sent_packets: BTreeMap<u32, PacketType>,
-    pub initial_sequence_local: Option<u32>,
-    pub initial_sequence_remote: Option<u32>,
-    last_ack_local: Option<SystemTime>,
-    last_ack_remote: Option<SystemTime>,
-    last_sent_local: Option<SystemTime>,
-    last_sent_remote: Option<SystemTime>,
+    sent: TcpStream,
+    received: TcpStream,
 }
 
 impl Default for TcpTracker {
@@ -59,178 +191,45 @@ impl Default for TcpTracker {
 impl TcpTracker {
     pub fn new() -> Self {
         TcpTracker {
-            local_sent_packets: BTreeMap::new(),
-            remote_sent_packets: BTreeMap::new(),
-            initial_sequence_local: None,
-            initial_sequence_remote: None,
-            last_ack_local: None,
-            last_ack_remote: None,
-            last_sent_local: None,
-            last_sent_remote: None,
-        }
-    }
-
-    /// Helper: Track a packet in the provided map.
-    fn track_packet(
-        map: &mut BTreeMap<u32, PacketType>,
-        sequence: u32,
-        packet: PacketType,
-        flags: &TcpFlags,
-    ) {
-        let mut len = packet.payload_len;
-        if flags.is_syn() || flags.is_fin() {
-            len += 1;
-        }
-        if len > 0 {
-            match map.get_mut(&sequence) {
-                Some(existing) => {
-                    existing.retransmissions += 1;
-                    // If we don't do this we will calculate a way too high RTT
-                    existing.sent_time = packet.sent_time;
-                }
-                None => {
-                    map.insert(sequence, packet);
-                }
-            }
-        }
-    }
-
-    /// Helper: Update and remove all packets in the provided map that are
-    /// fully acknowledged by `ack`. Also update RTT and register the sent packet.
-    fn update_acked_packets(
-        map: &mut BTreeMap<u32, PacketType>,
-        ack: u32,
-        ack_timestamp: SystemTime,
-    ) -> Vec<PacketType> {
-        let mut acked = Vec::new();
-        let mut keys_to_remove = Vec::new();
-        for (&seq, sent_packet) in map.iter_mut() {
-            if seq_less_equal(seq + sent_packet.payload_len as u32, ack) {
-                if let Ok(rtt_duration) = ack_timestamp.duration_since(sent_packet.sent_time) {
-                    sent_packet.rtt = Some(rtt_duration);
-                    sent_packet.ack_time = Some(ack_timestamp);
-                }
-                keys_to_remove.push(seq);
-            }
-        }
-
-        for seq in keys_to_remove {
-            if let Some(p) = map.remove(&seq) {
-                acked.push(p);
-            }
-        }
-        acked
-    }
-
-    fn get_last_sent(&self, direction: Direction) -> Option<SystemTime> {
-        match direction {
-            Direction::Outgoing => self.last_sent_local,
-            Direction::Incoming => self.last_sent_remote,
-        }
-    }
-
-    fn set_last_sent(&mut self, direction: Direction, new: SystemTime) {
-        match direction {
-            Direction::Outgoing => self.last_sent_local = Some(new),
-            Direction::Incoming => self.last_sent_remote = Some(new),
-        }
-    }
-
-    fn get_gap_last_sent(&mut self, direction: Direction, new: SystemTime) -> Option<Duration> {
-        let gap: Option<Duration> = match self.get_last_sent(direction) {
-            Some(last_sent) => match new.duration_since(last_sent) {
-                Ok(d) => Some(d),
-                Err(_) => None,
+            sent: TcpStream {
+                packets: BTreeMap::new(),
+                last_ack: SystemTime::UNIX_EPOCH,
+                last_sent: None,
+                cur_burst: Burst::default(),
+                min_rtt: Duration::from_secs(10),
             },
-            None => None,
-        };
-        self.set_last_sent(direction, new);
-        gap
+            received: TcpStream {
+                packets: BTreeMap::new(),
+                last_ack: SystemTime::UNIX_EPOCH,
+                last_sent: None,
+                cur_burst: Burst::default(),
+                min_rtt: Duration::from_secs(10),
+            },
+        }
     }
 
-    /// Register a packet from the stream.
-    /// Outgoing non-pure-ACK packets are tracked in local_sent_packets.
-    /// Incoming non-pure-ACK packets are tracked in remote_sent_packets.
-    /// Pure ACKs will update the opposing map and return acknowledged packets.
     pub fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<PacketType> {
-        let mut acked_packets = Vec::new();
-
-        if let TransportPacket::TCP {
-            sequence,
-            acknowledgment,
-            payload_len,
-            flags,
-            ..
-        } = &packet.transport
-        {
-            let mut pkt = PacketType::from_packet(packet);
-            pkt.gap_last_sent = self.get_gap_last_sent(packet.direction, packet.timestamp);
-
-            match packet.direction {
-                Direction::Outgoing => {
-                    if flags.is_ack() && *payload_len == 0 {
-                        // Pure ACK from outgoing side acknowledges remote packets.
-                        acked_packets = Self::update_acked_packets(
-                            &mut self.remote_sent_packets,
-                            *acknowledgment,
-                            packet.timestamp,
-                        );
-                        if let Some(last_ack) = self.last_ack_remote {
-                            let gap = match packet.timestamp.duration_since(last_ack) {
-                                Ok(d) => d,
-                                Err(_) => packet.timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap(),
-                            };
-                            acked_packets.iter_mut().for_each(|p| {
-                                p.gap_last_ack = Some(gap);
-                            });
-                        }
-                        self.last_ack_remote = Some(packet.timestamp);
-
-                    } else {
-                        if self.initial_sequence_local.is_none() {
-                            self.initial_sequence_local = Some(*sequence);
-                        }
-                        Self::track_packet(
-                            &mut self.local_sent_packets,
-                            *sequence,
-                            pkt,
-                            flags,
-                        );
-                    }
-                }
-                Direction::Incoming => {
-                    if flags.is_ack() && *payload_len == 0 {
-                        // Pure ACK from incoming side acknowledges local packets.
-                        acked_packets = Self::update_acked_packets(
-                            &mut self.local_sent_packets,
-                            *acknowledgment,
-                            packet.timestamp,
-                        );
-                        if let Some(last_ack) = self.last_ack_local {
-                            let gap = match packet.timestamp.duration_since(last_ack) {
-                                Ok(d) => d,
-                                Err(_) => packet.timestamp.duration_since(SystemTime::UNIX_EPOCH).unwrap(),
-                            };
-                            acked_packets.iter_mut().for_each(|p| {
-                                p.gap_last_ack = Some(gap);
-                            });
-                        }
-                        self.last_ack_local = Some(packet.timestamp);
-                    } else {
-                        if self.initial_sequence_remote.is_none() {
-                            self.initial_sequence_remote = Some(*sequence);
-                        }
-                        Self::track_packet(
-                            &mut self.remote_sent_packets,
-                            *sequence,
-                            pkt,
-                            flags,
-                        );
-                    }
+        let burst = match packet.direction {
+            Direction::Incoming => {
+                if packet.is_pure_ack() {
+                    self.sent.register_packet(packet)
+                } else {
+                    self.received.register_packet(packet)
                 }
             }
+            Direction::Outgoing => {
+                if packet.is_pure_ack() {
+                    self.received.register_packet(packet)
+                } else {
+                    self.sent.register_packet(packet)
+                }
+            }
+        };
+        if let Some(burst) = burst {
+            burst.flatten()
+        } else {
+            Vec::new()
         }
-        acked_packets
     }
 }
 
@@ -240,5 +239,46 @@ impl DefaultState for TcpTracker {
     }
     fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<PacketType> {
         self.register_packet(packet)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn test_mem_swap() {
+        let mut b = vec![1, 2, 3];
+        let a = std::mem::take(&mut b);
+
+        assert_eq!(a, vec![1, 2, 3]);
+        assert_eq!(b, Vec::<i32>::new());
+    }
+
+    #[test]
+    fn test_sort_by_time() {
+        use std::time::{Duration, SystemTime};
+
+        #[derive(Debug, PartialEq)]
+        struct Packet {
+            sent_time: SystemTime,
+        }
+
+        let p1 = Packet {
+            sent_time: SystemTime::UNIX_EPOCH + Duration::from_secs(1),
+        };
+        let p2 = Packet {
+            sent_time: SystemTime::UNIX_EPOCH + Duration::from_secs(2),
+        };
+        let p3 = Packet {
+            sent_time: SystemTime::UNIX_EPOCH + Duration::from_secs(3),
+        };
+
+        let mut packets = vec![p3, p1, p2];
+
+        packets.sort_by(|a, b| a.sent_time.cmp(&b.sent_time));
+
+        assert!(packets[0].sent_time < packets[1].sent_time);
+
+        println!("{:?}", packets);
     }
 }

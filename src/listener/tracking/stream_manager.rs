@@ -21,7 +21,7 @@ impl StreamManager {
         StreamManager {
             streams: HashMap::new(),
             sent: PacketRegistry::new(5000),
-            received: PacketRegistry::new(5000),
+            received: PacketRegistry::new(50),
             tcp_thput: 0.0,
             last_iperf: None,
         }

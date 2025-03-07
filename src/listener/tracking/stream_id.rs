@@ -177,6 +177,7 @@ mod tests {
         let pair1 = Pair::new(1, 2);
         let pair2 = Pair::new(2, 1);
         assert_eq!(pair1, pair2);
+        assert_eq!(pair1, pair1);
     }
 
     #[test]
