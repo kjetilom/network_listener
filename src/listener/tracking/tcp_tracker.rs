@@ -64,7 +64,7 @@ impl Acked {
 #[derive(Debug)]
 struct TcpStream {
     packets: BTreeMap<u32, PacketType>,
-    last_ack: SystemTime,
+    last_ack: Option<SystemTime>,
     last_sent: Option<SystemTime>,
     cur_burst: Burst,
     min_rtt: Duration,
@@ -84,11 +84,14 @@ impl TcpStream {
     }
 
     fn get_gap_last_ack(&mut self, new: SystemTime) -> Option<Duration> {
-        let gap: Option<Duration> = match self.last_ack.duration_since(new) {
-            Ok(d) => Some(d),
-            Err(_) => None,
+        let gap: Option<Duration> = match self.last_ack {
+            Some(last_ack) => match new.duration_since(last_ack) {
+                Ok(d) => Some(d),
+                Err(_) => None,
+            },
+            None => None,
         };
-        self.last_ack = new;
+        self.last_ack = Some(new);
         gap
     }
 
@@ -107,7 +110,7 @@ impl TcpStream {
             let mut pkt = PacketType::from_packet(packet);
             if let Some(last_sent) = self.last_sent {
                 if let Ok(d) = packet.timestamp.duration_since(last_sent) {
-                    if d > self.min_rtt * 4 {
+                    if d > self.min_rtt * 4 || self.cur_burst.packets.len() > 100 {
                         // Indiana Jones moment (Replace self.cur_burst with default)
                         ret = Some(std::mem::take(&mut self.cur_burst));
                     }
@@ -116,11 +119,11 @@ impl TcpStream {
 
             if flags.is_ack() && *payload_len == 0 {
                 // Pure ACK acknowledges local packets.
-                pkt.gap_last_ack = self.get_gap_last_ack(packet.timestamp);
+                pkt.gap_last_ack = self.get_gap_last_ack(pkt.sent_time);
                 acked_packets = self.update_acked_packets(*acknowledgment, pkt);
             } else {
                 // Set new last sent time and calculate gap
-                pkt.gap_last_sent = self.get_gap_last_sent(packet.timestamp);
+                pkt.gap_last_sent = self.get_gap_last_sent(pkt.sent_time);
                 self.track_packet(*sequence, pkt);
             }
         }
@@ -193,14 +196,14 @@ impl TcpTracker {
         TcpTracker {
             sent: TcpStream {
                 packets: BTreeMap::new(),
-                last_ack: SystemTime::UNIX_EPOCH,
+                last_ack: None,
                 last_sent: None,
                 cur_burst: Burst::default(),
                 min_rtt: Duration::from_secs(10),
             },
             received: TcpStream {
                 packets: BTreeMap::new(),
-                last_ack: SystemTime::UNIX_EPOCH,
+                last_ack: None,
                 last_sent: None,
                 cur_burst: Burst::default(),
                 min_rtt: Duration::from_secs(10),
