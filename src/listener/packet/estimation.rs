@@ -139,17 +139,22 @@ impl PABWESender {
     fn filter_gin_gacks(&mut self) -> Vec<GinGout> {
         // Get the average of the 10% smallest gin values.
         // Calculate the average gack and gin for these values:
-        self.dps.sort_by(
+
+        let mut filtered: Vec<GinGout> = self.dps.iter().filter(|dp| {
+            dp.gin > 0.0 && dp.len > 1000.0 && dp.len / dp.gin < crate::Settings::NEAREST_LINK_PHY_CAP/8.0 && dp.len / dp.gout < crate::Settings::NEAREST_LINK_PHY_CAP/8.0
+        }).cloned().collect();
+
+        filtered.sort_by(
             |gin1, gin2| gin1.gin.partial_cmp(&gin2.gin).unwrap()
         );
 
-        let n = (self.dps.len() as f64 * 0.1).ceil() as usize;
-        let _gmin_in = self.dps.iter().take(n).map(|dp| dp.gin).sum::<f64>() / n as f64;
-        let gmin_out = self.dps.iter().take(n).map(|dp| dp.gout).sum::<f64>() / n as f64;
+        let n = (filtered.len() as f64 * 0.1).ceil() as usize;
+        let _gmin_in = filtered.iter().take(n).map(|dp| dp.gin).sum::<f64>() / n as f64;
+        let gmin_out = filtered.iter().take(n).map(|dp| dp.gout).sum::<f64>() / n as f64;
 
         let g_max_in = gmin_out;
 
-        let filtered = self.dps.iter().filter(|dp| {
+        let filtered = filtered.iter().filter(|dp| {
             dp.gin < g_max_in
         }).cloned().collect();
         filtered
@@ -179,19 +184,7 @@ impl PABWESender {
         // Process each data point, skipping any with a zero gin (to avoid division by zero).
         let mut count = 0;
         for dp in &dps {
-            if dp.gin == 0.0 {
-                continue;
-            }
-            if dp.len < 1000.0 {
-                continue;
-            }
             let x = dp.len / dp.gin;
-
-            let phy_cap = crate::Settings::NEAREST_LINK_PHY_CAP/8.0;
-
-            if x > phy_cap || dp.len / dp.gout > phy_cap {
-                continue;
-            }
             let y = dp.gout / dp.gin;
             sum_x += x;
             sum_y += y;

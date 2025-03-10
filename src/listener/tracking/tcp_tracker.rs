@@ -159,7 +159,7 @@ impl TcpStream {
             let mut pkt = PacketType::from_packet(packet);
             if let Some(last_sent) = self.last_sent {
                 if let Ok(d) = packet.timestamp.duration_since(last_sent) {
-                    if d > self.min_rtt * 4 || self.cur_burst.packets.len() > 100 {
+                    if d > self.min_rtt * 10 || self.cur_burst.packets.len() > 100 {
                         // Indiana Jones moment (Replace self.cur_burst with default)
                         ret = Some(std::mem::take(&mut self.cur_burst));
                     }

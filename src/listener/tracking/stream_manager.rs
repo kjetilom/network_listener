@@ -22,8 +22,8 @@ impl StreamManager {
     pub fn default() -> Self {
         StreamManager {
             streams: HashMap::new(),
-            sent: PacketRegistry::new(5000),
-            received: PacketRegistry::new(5000),
+            sent: PacketRegistry::new(5),
+            received: PacketRegistry::new(5),
             tcp_thput: 0.0,
             last_iperf: None,
         }
@@ -67,7 +67,7 @@ impl StreamManager {
 
         match direction {
             crate::Direction::Incoming => {
-                self.received.extend(burst);
+                //self.received.extend(burst);
             }
             crate::Direction::Outgoing => {
                 self.sent.extend(burst);

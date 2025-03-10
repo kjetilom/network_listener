@@ -133,13 +133,14 @@ impl PacketRegistry {
                         };
                         self.pgm_estimator.dps.push(GinGout {
                             gin: gin / ack.len() as f64,
-                            gout,
+                            gout: gout / ack.len() as f64,
                             len: total_length as f64 / ack.len() as f64,
                             timestamp: ack.ack_time,
                         });
                     }
                     last_ack = Some(ack.ack_time);
                 }
+                println!("Bw estimate: {:?}", self.pgm_estimator.passive_pgm_abw());
             }
             Burst::Udp(burst) => {
                 println!("UDP burst {}", burst.len());
