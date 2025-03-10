@@ -85,8 +85,15 @@ impl<'a> ParsedPacket {
     pub fn is_pure_ack(&self) -> bool {
         match &self.transport {
             TransportPacket::TCP { flags, payload_len, .. } => {
-                flags.is_ack() && *payload_len == 0
+                flags.is_ack() && *payload_len == 0 || flags.is_syn() && flags.is_ack()
             }
+            _ => false,
+        }
+    }
+
+    pub fn ignore(&self) -> bool {
+        match &self.transport {
+            TransportPacket::TCP { flags, .. } => flags.is_rst() || flags.is_fin() || flags.is_syn(),
             _ => false,
         }
     }

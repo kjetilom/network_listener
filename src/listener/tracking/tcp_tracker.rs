@@ -2,11 +2,8 @@ use std::collections::BTreeMap;
 use std::time::SystemTime;
 
 use tokio::time::Duration;
-use pnet::packet::ip::IpNextHeaderProtocol;
 
-use crate::{
-    tracker::DefaultState, Direction, PacketType, ParsedPacket, TransportPacket
-};
+use crate::{Direction, PacketType, ParsedPacket, TransportPacket};
 
 /// Wrap-around aware sequence comparison.
 fn seq_cmp(a: u32, b: u32) -> i32 {
@@ -37,6 +34,24 @@ impl Default for TcpBurst {
     }
 }
 
+impl Burst {
+    pub fn flatten(self) -> Vec<PacketType> {
+        match self {
+            Burst::Tcp(burst) => burst.flatten(),
+            Burst::Udp(packets) => packets,
+            Burst::Other(packets) => packets,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Burst::Tcp(burst) => burst.packets.is_empty(),
+            Burst::Udp(packets) => packets.is_empty(),
+            Burst::Other(packets) => packets.is_empty(),
+        }
+    }
+}
+
 impl TcpBurst {
     pub fn flatten(self) -> Vec<PacketType> {
         self.packets
@@ -55,7 +70,7 @@ impl From<TcpBurst> for Burst {
 #[derive(Debug)]
 pub struct Acked {
     acked_packets: Vec<PacketType>,
-    ack_time: SystemTime,
+    pub ack_time: SystemTime,
     first_sent_time: SystemTime,
     last_sent_time: SystemTime,
 }
@@ -70,6 +85,28 @@ impl Acked {
             first_sent_time,
             last_sent_time,
         }
+    }
+
+    pub fn get_gin_gout_len(&self, last_ack: SystemTime) -> Option<(f64, f64, u32)> {
+        let gin = self
+            .last_sent_time
+            .duration_since(self.first_sent_time)
+            .ok()?;
+        let gout = self.ack_time.duration_since(last_ack).ok()?;
+        let total_length = self
+            .acked_packets
+            .iter()
+            .map(|p| p.total_length as u32)
+            .sum::<u32>();
+        Some((
+            gin.as_secs_f64(),
+            gout.as_secs_f64(),
+            total_length,
+        ))
+    }
+
+    pub fn len(&self) -> usize {
+        self.acked_packets.len()
     }
 }
 
@@ -140,7 +177,9 @@ impl TcpStream {
             }
         }
         if acked_packets.len() > 0 {
-            self.cur_burst.packets.push(Acked::from_acked(acked_packets, packet.timestamp));
+            self.cur_burst
+                .packets
+                .push(Acked::from_acked(acked_packets, packet.timestamp));
         }
         ret
     }
@@ -164,8 +203,14 @@ impl TcpStream {
     fn update_acked_packets(&mut self, ack: u32, pkt: PacketType) -> Vec<PacketType> {
         let mut acked = Vec::new();
         let mut keys_to_remove = Vec::new();
+        let mut bytes_acked = None;
         for (&seq, sent_packet) in self.packets.iter_mut() {
             if seq_less_equal(seq.wrapping_add(sent_packet.payload_len as u32), ack) {
+                // Set bytes acked to the first packet that is acked (this works due to the map being sorted)
+                if bytes_acked.is_none() {
+                    bytes_acked = Some(seq.wrapping_sub(ack));
+                }
+
                 if let Ok(rtt_duration) = pkt.sent_time.duration_since(sent_packet.sent_time) {
                     self.min_rtt = std::cmp::min(self.min_rtt, rtt_duration);
                     sent_packet.rtt = Some(rtt_duration);
@@ -224,7 +269,7 @@ impl TcpTracker {
         }
     }
 
-    pub fn register_packet(&mut self, packet: &ParsedPacket) -> (Burst, Direction) {
+    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Option<(Burst, Direction)> {
         let (burst, direction) = match packet.direction {
             Direction::Incoming => {
                 if packet.is_pure_ack() {
@@ -242,21 +287,12 @@ impl TcpTracker {
             }
         };
         if let Some(burst) = burst {
-            (burst.into(), direction)
+            Some((burst.into(), direction))
         } else {
-            (TcpBurst::default().into(), direction)
+            None
         }
     }
 }
-
-// impl DefaultState for TcpTracker {
-//     fn default(_protocol: IpNextHeaderProtocol) -> Self {
-//         Self::new()
-//     }
-//     fn register_packet(&mut self, packet: &ParsedPacket) -> Burst {
-//         self.register_packet(packet).into()
-//     }
-// }
 
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,6 @@
 use crate::tcp_tracker::Burst;
 
-use super::estimation::PABWESender;
+use super::estimation::{GinGout, PABWESender};
 use super::DataPacket;
 use std::{
     collections::VecDeque,
@@ -84,11 +84,9 @@ impl PacketRegistry {
     }
 
     pub fn passive_pgm_abw(&mut self) -> Option<f64> {
-        if let Some(res) = self.pgm_estimator.passive_pgm_abw() {
-            self.pgm_estimator.dps.clear();
-            return Some(res)
-        }
-        None
+        let res = self.pgm_estimator.passive_pgm_abw();
+        self.pgm_estimator.dps.clear();
+        res
     }
 
     pub fn get_rtts(&mut self) -> Vec<DataPacket> {
@@ -126,19 +124,28 @@ impl PacketRegistry {
         // This is a vector of packets acked by one ack
         match values {
             Burst::Tcp(burst) => {
-                for packet in burst.flatten() {
-                    self.push(*packet);
+                let mut last_ack = None;
+                for ack in burst.packets {
+                    if last_ack.is_some() {
+                        let (gin, gout, total_length) = match ack.get_gin_gout_len(last_ack.unwrap()) {
+                            Some((gin, gout, total_length)) => (gin, gout, total_length),
+                            None => continue,
+                        };
+                        self.pgm_estimator.dps.push(GinGout {
+                            gin: gin / ack.len() as f64,
+                            gout,
+                            len: total_length as f64 / ack.len() as f64,
+                            timestamp: ack.ack_time,
+                        });
+                    }
+                    last_ack = Some(ack.ack_time);
                 }
             }
             Burst::Udp(burst) => {
-                for packet in burst {
-                    self.push(*packet);
-                }
+                println!("UDP burst {}", burst.len());
             }
             Burst::Other(burst) => {
-                for packet in burst {
-                    self.push(*packet);
-                }
+                println!("UDP burst {}", burst.len());
             }
         }
     }

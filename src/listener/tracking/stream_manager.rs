@@ -1,5 +1,7 @@
 use crate::{
-    stream_id::StreamKey, tracker::{Tracker, TrackerState}, DataPacket, PacketRegistry, ParsedPacket
+    stream_id::StreamKey,
+    tracker::{Tracker, TrackerState},
+    DataPacket, PacketRegistry, ParsedPacket,
 };
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
@@ -21,7 +23,7 @@ impl StreamManager {
         StreamManager {
             streams: HashMap::new(),
             sent: PacketRegistry::new(5000),
-            received: PacketRegistry::new(50),
+            received: PacketRegistry::new(5000),
             tcp_thput: 0.0,
             last_iperf: None,
         }
@@ -51,14 +53,17 @@ impl StreamManager {
 
     pub fn record_packet(&mut self, packet: &ParsedPacket) {
         let stream_id = StreamKey::from_packet(packet);
-        let (burst, direction) = self
+        let (burst, direction) = match self
             .streams
             .entry(stream_id)
             .or_insert_with(|| {
                 Tracker::<TrackerState>::new(packet.timestamp, packet.transport.get_ip_proto())
             })
-            .register_packet(packet);
-
+            .register_packet(packet)
+        {
+            Some((burst, direction)) => (burst, direction),
+            None => return,
+        };
 
         match direction {
             crate::Direction::Incoming => {

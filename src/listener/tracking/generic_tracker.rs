@@ -27,7 +27,7 @@ impl GenericTracker {
         }
     }
 
-    pub fn register_packet(&mut self, packet: &ParsedPacket) -> (Burst, Direction) {
+    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Option<(Burst, Direction)> {
         let mut ret = Vec::new();
 
         let (mut burst, last) = match packet.direction {
@@ -48,6 +48,10 @@ impl GenericTracker {
         burst.push(PacketType::from_packet(packet));
         *last = packet.timestamp;
 
-        (Burst::Other(ret), packet.direction)
+        if ret.is_empty() {
+            None
+        } else {
+            Some((Burst::Udp(ret), packet.direction))
+        }
     }
 }

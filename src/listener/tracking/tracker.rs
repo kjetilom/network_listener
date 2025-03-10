@@ -2,13 +2,13 @@ use std::time::SystemTime;
 
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 
-use crate::{tcp_tracker::TcpTracker, udp_tracker::UdpTracker, Direction, GenericTracker, PacketType, ParsedPacket};
+use crate::{tcp_tracker::TcpTracker, udp_tracker::UdpTracker, Direction, GenericTracker, ParsedPacket};
 
 use super::tcp_tracker::Burst;
 
 pub trait DefaultState {
     fn default(protocol: IpNextHeaderProtocol) -> Self;
-    fn register_packet(&mut self, packet: &ParsedPacket) -> (Burst, Direction);
+    fn register_packet(&mut self, packet: &ParsedPacket) -> Option<(Burst, Direction)>;
 }
 
 #[derive(Debug)]
@@ -19,7 +19,7 @@ pub enum TrackerState {
 }
 
 impl DefaultState for TrackerState {
-    fn register_packet(&mut self, packet: &ParsedPacket) -> (Burst, Direction) {
+    fn register_packet(&mut self, packet: &ParsedPacket) -> Option<(Burst, Direction)> {
         match self {
             TrackerState::Tcp(tracker) => tracker.register_packet(packet),
             TrackerState::Udp(tracker) => tracker.register_packet(packet),
@@ -52,7 +52,7 @@ impl<TState: DefaultState> Tracker<TState> {
         }
     }
 
-    pub fn register_packet(&mut self, packet: &ParsedPacket) -> (Burst, Direction) {
+    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Option<(Burst, Direction)> {
         self.last_registered = packet.timestamp;
         self.state.register_packet(packet)
     }
