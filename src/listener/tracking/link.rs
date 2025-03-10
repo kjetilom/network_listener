@@ -103,10 +103,12 @@ impl LinkManager {
         let rtt_message = self.get_rtt_message();
         let bw_message = self.get_bw_message();
 
-        self.client_sender
+        match self.client_sender
             .send(ClientHandlerEvent::SendBandwidth(bw_message))
-            .await
-            .unwrap_or(warn!("Failed to send bandwidth message"));
+            .await {
+                Ok(_) => (),
+                Err(e) => warn!("Failed to send bandwidth message: {}", e),
+            }
 
         match self.client_sender
             .send(ClientHandlerEvent::SendBandwidth(rtt_message))

@@ -1,3 +1,4 @@
+use anyhow::Error as AnyError;
 use listener::capture::{OwnedPacket, PCAPMeta, PacketCapturer};
 use probe::iperf_json::IperfResponse;
 use prost_net::bandwidth_server::PbfMsg;
@@ -49,6 +50,7 @@ impl Settings {
     pub const SCHEDULER_DEST: &str = "172.16.0.254:50041";
     pub const BW_SERVER_PORT: u16 = 40042;
     pub const NEAREST_LINK_PHY_CAP: f64 = 5000000.0; // 1250000.0 bytes/sec
+    pub const BURST_SIZE: usize = 100; // Limit buffered packets to 100 in individual trackers
     pub const TCPHDR: i32 = 60;
     pub const IPHDR: i32 = 60;
     pub const IPV6HDR: i32 = 40;
@@ -69,4 +71,5 @@ pub enum CapEvent {
     Protobuf(PbfMsg),
     PathloadResponse(String),
     PingResponse(Result<Duration, SurgeError>),
+    Error(AnyError),
 }

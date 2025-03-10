@@ -19,24 +19,36 @@ fn seq_less_equal(a: u32, b: u32) -> bool {
 /// A burst of packets.
 /// Is stored before being returned to the packet_registry for processing
 #[derive(Debug)]
-pub struct Burst {
-    packets: Vec<Acked>,
+pub struct TcpBurst {
+    pub packets: Vec<Acked>,
 }
 
-impl Default for Burst {
+pub enum Burst {
+    Tcp(TcpBurst),
+    Udp(Vec<PacketType>),
+    Other(Vec<PacketType>),
+}
+
+impl Default for TcpBurst {
     fn default() -> Self {
-        Burst {
+        TcpBurst {
             packets: Vec::new(),
         }
     }
 }
 
-impl Burst {
-    fn flatten(self) -> Vec<PacketType> {
+impl TcpBurst {
+    pub fn flatten(self) -> Vec<PacketType> {
         self.packets
             .into_iter()
             .flat_map(|acked| acked.acked_packets)
             .collect()
+    }
+}
+
+impl From<TcpBurst> for Burst {
+    fn from(burst: TcpBurst) -> Self {
+        Burst::Tcp(burst)
     }
 }
 
@@ -66,7 +78,7 @@ struct TcpStream {
     packets: BTreeMap<u32, PacketType>,
     last_ack: Option<SystemTime>,
     last_sent: Option<SystemTime>,
-    cur_burst: Burst,
+    cur_burst: TcpBurst,
     min_rtt: Duration,
 }
 
@@ -95,7 +107,7 @@ impl TcpStream {
         gap
     }
 
-    fn register_packet(&mut self, packet: &ParsedPacket) -> Option<Burst> {
+    fn register_packet(&mut self, packet: &ParsedPacket) -> Option<TcpBurst> {
         let mut acked_packets = Vec::new();
         let mut ret = None;
 
@@ -139,6 +151,7 @@ impl TcpStream {
                 existing.retransmissions += 1;
                 // If we don't do this we will calculate a way too high RTT
                 existing.sent_time = packet.sent_time;
+                existing.gap_last_sent = packet.gap_last_sent;
             }
             None => {
                 self.packets.insert(sequence, packet);
@@ -198,52 +211,52 @@ impl TcpTracker {
                 packets: BTreeMap::new(),
                 last_ack: None,
                 last_sent: None,
-                cur_burst: Burst::default(),
+                cur_burst: TcpBurst::default(),
                 min_rtt: Duration::from_secs(10),
             },
             received: TcpStream {
                 packets: BTreeMap::new(),
                 last_ack: None,
                 last_sent: None,
-                cur_burst: Burst::default(),
+                cur_burst: TcpBurst::default(),
                 min_rtt: Duration::from_secs(10),
             },
         }
     }
 
-    pub fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<PacketType> {
-        let burst = match packet.direction {
+    pub fn register_packet(&mut self, packet: &ParsedPacket) -> (Burst, Direction) {
+        let (burst, direction) = match packet.direction {
             Direction::Incoming => {
                 if packet.is_pure_ack() {
-                    self.sent.register_packet(packet)
+                    (self.sent.register_packet(packet), Direction::Outgoing)
                 } else {
-                    self.received.register_packet(packet)
+                    (self.received.register_packet(packet), Direction::Incoming)
                 }
             }
             Direction::Outgoing => {
                 if packet.is_pure_ack() {
-                    self.received.register_packet(packet)
+                    (self.received.register_packet(packet), Direction::Incoming)
                 } else {
-                    self.sent.register_packet(packet)
+                    (self.sent.register_packet(packet), Direction::Outgoing)
                 }
             }
         };
         if let Some(burst) = burst {
-            burst.flatten()
+            (burst.into(), direction)
         } else {
-            Vec::new()
+            (TcpBurst::default().into(), direction)
         }
     }
 }
 
-impl DefaultState for TcpTracker {
-    fn default(_protocol: IpNextHeaderProtocol) -> Self {
-        Self::new()
-    }
-    fn register_packet(&mut self, packet: &ParsedPacket) -> Vec<PacketType> {
-        self.register_packet(packet)
-    }
-}
+// impl DefaultState for TcpTracker {
+//     fn default(_protocol: IpNextHeaderProtocol) -> Self {
+//         Self::new()
+//     }
+//     fn register_packet(&mut self, packet: &ParsedPacket) -> Burst {
+//         self.register_packet(packet).into()
+//     }
+// }
 
 #[cfg(test)]
 mod tests {

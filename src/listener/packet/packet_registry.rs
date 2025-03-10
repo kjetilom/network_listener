@@ -1,3 +1,5 @@
+use crate::tcp_tracker::Burst;
+
 use super::estimation::PABWESender;
 use super::DataPacket;
 use std::{
@@ -120,10 +122,24 @@ impl PacketRegistry {
         self.insert(insert_idx, value);
     }
 
-    pub fn extend(&mut self, values: Vec<DataPacket>) {
+    pub fn extend(&mut self, values: Burst) {
         // This is a vector of packets acked by one ack
-        for value in values {
-            self.push(value);
+        match values {
+            Burst::Tcp(burst) => {
+                for packet in burst.flatten() {
+                    self.push(*packet);
+                }
+            }
+            Burst::Udp(burst) => {
+                for packet in burst {
+                    self.push(*packet);
+                }
+            }
+            Burst::Other(burst) => {
+                for packet in burst {
+                    self.push(*packet);
+                }
+            }
         }
     }
 

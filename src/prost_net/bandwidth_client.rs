@@ -1,7 +1,7 @@
 use crate::probe::iperf::dispatch_iperf_client;
 use crate::probe::pathload::dispatch_pathload_client;
 use crate::proto_bw::DataMsg;
-use crate::{proto_bw, CapEventSender};
+use crate::{proto_bw, CapEvent, CapEventSender};
 use anyhow::{Error, Result};
 use futures::future::join_all;
 use log::info;
@@ -141,8 +141,9 @@ impl ClientHandler {
                     dispatch_pathload_client(self.cap_ev_tx.clone(), ip);
                 }
                 ClientHandlerEvent::SendBandwidth(bw) => {
+                    let cap_ev_tx = self.cap_ev_tx.clone();
                     tokio::spawn(async move {
-                        send_message(crate::Settings::SCHEDULER_DEST, bw).await.unwrap_or(());
+                        send_message(crate::Settings::SCHEDULER_DEST, bw, cap_ev_tx).await;
                     });
                 }
             }
@@ -297,20 +298,32 @@ impl BwClient {
     }
 }
 
-
 /// Sends a HelloMessage to the given peer address.
-pub async fn send_message(peer_addr: &str, message: DataMsg) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let stream = TcpStream::connect(peer_addr).await?;
-    println!("Connected to {}", peer_addr);
+pub async fn send_message(peer_addr: &str, message: DataMsg, cap_ev_tx: CapEventSender) {
+    let res = async move {
+        let stream = match timeout(Duration::from_secs(4), TcpStream::connect(peer_addr)).await {
+            Ok(Ok(stream)) => stream,
+            Ok(Err(e)) => {
+                return Err(e.into());
+            }
+            Err(_) => {
+                return Err(anyhow::anyhow!("Connection timed out"));
+            }
+        };
+        let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
 
-    let mut framed = Framed::new(stream, LengthDelimitedCodec::new());
+        // Create and encode a HelloMessage.
+        let mut buf = BytesMut::with_capacity(message.encoded_len());
+        message.encode(&mut buf)?;
 
-    // Create and encode a HelloMessage.
-    let mut buf = BytesMut::with_capacity(message.encoded_len());
-    message.encode(&mut buf)?;
+        // Send the length-delimited message.
+        framed.send(buf.freeze()).await?;
+        Ok(())
+    }
+    .await;
 
-    // Send the length-delimited message.
-    framed.send(buf.freeze()).await?;
-    println!("Message sent");
-    Ok(())
+    if let Err(e) = res {
+        // Ignore send errors, as the receiver may have disconnected.
+        cap_ev_tx.send(CapEvent::Error(e.into())).unwrap_or(());
+    }
 }

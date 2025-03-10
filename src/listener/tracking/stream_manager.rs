@@ -1,7 +1,7 @@
 use crate::{
-    stream_id::StreamKey, tracker::{Tracker, TrackerState}, DataPacket, PacketRegistry, PacketType, ParsedPacket
+    stream_id::StreamKey, tracker::{Tracker, TrackerState}, DataPacket, PacketRegistry, ParsedPacket
 };
-use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
+use pnet::packet::ip::IpNextHeaderProtocol;
 use std::collections::HashMap;
 use tokio::time::Instant;
 
@@ -51,7 +51,7 @@ impl StreamManager {
 
     pub fn record_packet(&mut self, packet: &ParsedPacket) {
         let stream_id = StreamKey::from_packet(packet);
-        let result = self
+        let (burst, direction) = self
             .streams
             .entry(stream_id)
             .or_insert_with(|| {
@@ -59,21 +59,15 @@ impl StreamManager {
             })
             .register_packet(packet);
 
-        let mut sent = Vec::new();
-        let mut received = Vec::new();
-        for p in result {
-            match p {
-                PacketType::Sent(p) => {
-                    sent.push(p);
-                }
-                PacketType::Received(p) => {
-                    received.push(p);
-                }
+
+        match direction {
+            crate::Direction::Incoming => {
+                self.received.extend(burst);
+            }
+            crate::Direction::Outgoing => {
+                self.sent.extend(burst);
             }
         }
-
-        self.sent.extend(sent);
-        self.received.extend(received);
     }
 
     pub fn get_latency_avg(&self) -> Option<f64> {
@@ -95,10 +89,6 @@ impl StreamManager {
             }
         }
         taken
-    }
-
-    pub fn get_tcp_streams(&self) -> Vec<&Tracker<TrackerState>> {
-        self.get_streams(IpNextHeaderProtocols::Tcp)
     }
 
     pub fn get_streams(&self, protocol: IpNextHeaderProtocol) -> Vec<&Tracker<TrackerState>> {

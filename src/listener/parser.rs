@@ -116,6 +116,9 @@ impl Parser {
                         CapEvent::PingResponse(res) => {
                             info!("Received ping response: {:?}", res);
                         }
+                        CapEvent::Error(e) => {
+                            error!("Error received: {:?}", e);
+                        }
                     }
                 },
                 Some(periodic_data) = prx.recv() => {
