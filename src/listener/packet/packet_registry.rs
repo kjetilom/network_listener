@@ -11,8 +11,8 @@ use std::{
 #[derive(Debug)]
 pub struct PacketRegistry {
     packets: VecDeque<DataPacket>,
-    rtts: Vec<u32>, // in microseconds
-    sent_data: Vec<u16>,
+    rtts: Vec<(u32, SystemTime)>, // in microseconds
+    burst_thput: Vec<f64>, // in bytes
     pgm_estimator: PABWESender,
     min_rtt: (f64, SystemTime),
     sum_data: u32,
@@ -24,8 +24,8 @@ impl PacketRegistry {
         PacketRegistry {
             packets: VecDeque::with_capacity(size),
             rtts: Vec::new(),
-            sent_data: Vec::new(),
-            pgm_estimator: PABWESender::new(Some(Duration::from_secs(60))),
+            burst_thput: Vec::new(),
+            pgm_estimator: PABWESender::new(),
             min_rtt: (f64::MAX, SystemTime::now()),
             sum_data: 0,
             retransmissions: 0,
@@ -96,15 +96,8 @@ impl PacketRegistry {
         res
     }
 
-    pub fn get_rtts(&mut self) -> Vec<DataPacket> {
-        //let rtts = self.iter_packets_rtt().cloned().collect();
-        let rtts: Vec<DataPacket> = self
-            .packets
-            .drain(..)
-            .filter(|p| p.gap_last_ack.is_some() && p.gap_last_sent.is_some())
-            .collect();
-        self.pgm_estimator.iter_packets(&rtts);
-        rtts
+    pub fn take_rtts(&mut self) -> Vec<(u32, SystemTime)> {
+        return std::mem::take(&mut self.rtts);
     }
 
     pub fn push(&mut self, value: DataPacket) {
@@ -129,6 +122,7 @@ impl PacketRegistry {
 
     pub fn extend(&mut self, values: Burst) {
         // This is a vector of packets acked by one ack
+        self.burst_thput.push(values.throughput());
         match values {
             Burst::Tcp(burst) => {
                 let mut last_ack = None;
@@ -148,16 +142,15 @@ impl PacketRegistry {
                     }
                     last_ack = Some(ack.ack_time);
                 }
+                self.rtts.extend(burst.iter().map(|p| (p.rtt.unwrap().as_micros() as u32, p.sent_time)));
+
             }
             _ => {}
         }
     }
 
     pub fn avg_rtt(&self) -> Option<f64> {
-        let rtts: Vec<f64> = self
-            .iter_packets_rtt()
-            .map(|p| p.rtt.unwrap().as_secs_f64())
-            .collect();
+        let rtts: Vec<f64> = self.rtts.iter().map(|rtt| rtt.0 as f64).collect();
         if rtts.is_empty() {
             None
         } else {
@@ -170,14 +163,10 @@ impl PacketRegistry {
     }
 
     pub fn avg_burst_thp(&self) -> Option<f64> {
-        let thpts = PABWESender::get_burst_thp(
-            self.iter_packets_rtt().cloned().collect(),
-            Duration::from_secs_f64(self.min_rtt.0),
-        );
-        if thpts.is_empty() {
+        if self.burst_thput.is_empty() {
             None
         } else {
-            Some(thpts.iter().sum::<f64>() / thpts.len() as f64)
+            Some(self.burst_thput.iter().sum::<f64>() / self.burst_thput.len() as f64)
         }
     }
 

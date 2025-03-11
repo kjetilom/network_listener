@@ -32,14 +32,12 @@ impl GinGout {
 #[derive(Debug)]
 pub struct PABWESender {
     pub dps: Vec<GinGout>,
-    pub window: Option<Duration>,
 }
 
 impl PABWESender {
-    pub fn new(window: Option<Duration>) -> Self {
+    pub fn new() -> Self {
         PABWESender {
             dps: Vec::new(),
-            window: window,
         }
     }
 
@@ -223,13 +221,13 @@ mod tests {
 
     #[test]
     fn test_empty_sender() {
-        let mut sender = PABWESender::new(None);
+        let mut sender = PABWESender::new();
         assert!(sender.passive_pgm_abw().is_none(), "Empty sender should return None");
     }
 
     #[test]
     fn test_zero_gin_ignored() {
-        let mut sender = PABWESender::new(None);
+        let mut sender = PABWESender::new();
         // This point has gin == 0, so it should be ignored in the regression.
         sender.push(GinGout { gin: 0.0, gout: 1.0, len: 1400.0, timestamp: std::time::SystemTime::now() });
         assert!(sender.passive_pgm_abw().is_none(), "Only zero gin data should yield None");
@@ -237,7 +235,7 @@ mod tests {
 
     #[test]
     fn test_simple_regression() {
-        let mut sender = PABWESender::new(None);
+        let mut sender = PABWESender::new();
         // We'll create data points that ideally lie on a line defined by:
         // y = a * x + b, with a = 0.01 and b = 0.5.
         // According to our estimation, available bandwidth (abw) is:
@@ -271,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_clear_function() {
-        let mut sender = PABWESender::new(None);
+        let mut sender = PABWESender::new();
         sender.push(GinGout { gin: 0.1, gout: 1.0, len: 1400.0, timestamp: std::time::SystemTime::now() });
         assert!(!sender.dps.is_empty(), "Sender should have data points after push");
     }

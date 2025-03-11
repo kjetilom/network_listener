@@ -4,7 +4,7 @@ use crate::{
     DataPacket, PacketRegistry, ParsedPacket,
 };
 use pnet::packet::ip::IpNextHeaderProtocol;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::SystemTime};
 use tokio::time::Instant;
 
 /// StreamManager is a struct that keeps track of all streams and their states.
@@ -35,8 +35,8 @@ impl StreamManager {
         self.tcp_thput = bps;
     }
 
-    pub fn drain_rtts(&mut self) -> Vec<DataPacket> {
-        self.sent.get_rtts()
+    pub fn drain_rtts(&mut self) -> Vec<(u32, SystemTime)> {
+        self.sent.take_rtts()
     }
 
     pub fn tcp_thput(&self) -> f64 {

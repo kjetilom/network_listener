@@ -3,10 +3,11 @@ use std::{
     fmt::Display,
     net::{AddrParseError, IpAddr},
     sync::Arc,
+    time::UNIX_EPOCH,
 };
 
 use crate::proto_bw::{
-    data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto, RttMessage, Rtts,
+    data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto, Rtt, RttMessage, Rtts,
 };
 
 use log::{info, warn};
@@ -60,7 +61,9 @@ impl LinkManager {
         }
 
         if let Some((src_port, dst_port)) = packet.get_src_dst_port() {
-            if dst_port == crate::Settings::BW_SERVER_PORT || src_port == crate::Settings::BW_SERVER_PORT {
+            if dst_port == crate::Settings::BW_SERVER_PORT
+                || src_port == crate::Settings::BW_SERVER_PORT
+            {
                 return;
             }
         }
@@ -103,20 +106,23 @@ impl LinkManager {
         let rtt_message = self.get_rtt_message();
         let bw_message = self.get_bw_message();
 
-        match self.client_sender
+        match self
+            .client_sender
             .send(ClientHandlerEvent::SendBandwidth(bw_message))
-            .await {
-                Ok(_) => (),
-                Err(e) => warn!("Failed to send bandwidth message: {}", e),
-            }
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => warn!("Failed to send bandwidth message: {}", e),
+        }
 
-        match self.client_sender
+        match self
+            .client_sender
             .send(ClientHandlerEvent::SendBandwidth(rtt_message))
-            .await {
-                Ok(_) => (),
-                Err(e) => warn!("Failed to send rtt message: {}", e),
-            }
-
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => warn!("Failed to send rtt message: {}", e),
+        }
     }
 
     pub fn collect_external_ips(&self) -> Vec<IpAddr> {
@@ -142,18 +148,22 @@ impl LinkManager {
     }
 
     pub fn get_rtt_message(&mut self) -> DataMsg {
-        let messages: Vec<RttMessage> = self.links.iter_mut()
-            .map(|(ip_pair, stream_manager)| {
-                RttMessage {
-                    sender_ip: ip_pair.local().to_string(),
-                    receiver_ip: ip_pair.remote().to_string(),
-                    rtt: stream_manager
+        let messages: Vec<RttMessage> = self
+            .links
+            .iter_mut()
+            .map(|(ip_pair, stream_manager)| RttMessage {
+                sender_ip: ip_pair.local().to_string(),
+                receiver_ip: ip_pair.remote().to_string(),
+                rtt: stream_manager
                     .drain_rtts()
                     .into_iter()
-                    .map(|rtt| rtt.to_proto_rtt())
+                    .map(|(rtt, timestamp)| Rtt {
+                        rtt: rtt as f64,
+                        timestamp: timestamp.duration_since(UNIX_EPOCH).unwrap().as_millis() as i64,
+                    })
                     .collect(),
-                }
-            }).collect();
+            })
+            .collect();
         DataMsg {
             data: Some(data_msg::Data::Rtts(Rtts { rtts: messages })),
         }
