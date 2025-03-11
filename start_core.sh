@@ -73,7 +73,12 @@ do
     PIDS+=($!)
     echo "Started network_listener on $dev [$!]"
     sleep 0.5
+done
 
+for i in ${!NLST_DEVS[@]}
+do
+    dev=${NLST_DEVS[i]}
+    out=$COREDIR/$dev.conf
     script="$MGEN_SCRIPTS/${MGEN_IPS[i]}.mgn"
 
     if ! test -f $script; then
@@ -86,6 +91,7 @@ do
     echo "Started traffic generator on $dev [$!]"
     sleep 0.5
 done
+
 
 # # Start the scheduler server
 # vcmd -c $COREDIR/mdr4 -- $SCHEDULER "0.0.0.0:50041" >> $COREDIR/mdr4.conf/$NLST_OUTPUT &
