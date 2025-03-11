@@ -11,6 +11,8 @@ use std::{
 #[derive(Debug)]
 pub struct PacketRegistry {
     packets: VecDeque<DataPacket>,
+    rtts: Vec<u32>, // in microseconds
+    sent_data: Vec<u16>,
     pgm_estimator: PABWESender,
     min_rtt: (f64, SystemTime),
     sum_data: u32,
@@ -21,6 +23,8 @@ impl PacketRegistry {
     pub fn new(size: usize) -> Self {
         PacketRegistry {
             packets: VecDeque::with_capacity(size),
+            rtts: Vec::new(),
+            sent_data: Vec::new(),
             pgm_estimator: PABWESender::new(Some(Duration::from_secs(60))),
             min_rtt: (f64::MAX, SystemTime::now()),
             sum_data: 0,
@@ -44,7 +48,10 @@ impl PacketRegistry {
             .min_by(|a, b| a.rtt.unwrap().cmp(&b.rtt.unwrap()));
 
         if let Some(min_rtt) = min_rtt {
-            self.min_rtt = (min_rtt.rtt.unwrap().as_secs_f64(), min_rtt.ack_time.unwrap());
+            self.min_rtt = (
+                min_rtt.rtt.unwrap().as_secs_f64(),
+                min_rtt.ack_time.unwrap(),
+            );
         } else {
             self.min_rtt = (f64::MAX, SystemTime::now());
         }
@@ -122,32 +129,28 @@ impl PacketRegistry {
 
     pub fn extend(&mut self, values: Burst) {
         // This is a vector of packets acked by one ack
+        println!("Thpt: {:?}", values.throughput());
         match values {
             Burst::Tcp(burst) => {
                 let mut last_ack = None;
-                for ack in burst.packets {
+                for ack in &burst.packets {
                     if last_ack.is_some() {
-                        let (gin, gout, total_length) = match ack.get_gin_gout_len(last_ack.unwrap()) {
-                            Some((gin, gout, total_length)) => (gin, gout, total_length),
-                            None => continue,
-                        };
-                        self.pgm_estimator.dps.push(GinGout {
-                            gin: gin / ack.len() as f64,
-                            gout: gout / ack.len() as f64,
-                            len: total_length as f64 / ack.len() as f64,
+                        let (gin, gout, total_length) =
+                            match ack.get_gin_gout_len(last_ack.unwrap()) {
+                                Some((gin, gout, total_length)) => (gin, gout, total_length),
+                                None => continue,
+                            };
+                        self.pgm_estimator.push(GinGout {
+                            gin,
+                            gout,
+                            len: total_length as f64,
                             timestamp: ack.ack_time,
                         });
                     }
                     last_ack = Some(ack.ack_time);
                 }
-                println!("Bw estimate: {:?}", self.pgm_estimator.passive_pgm_abw());
             }
-            Burst::Udp(burst) => {
-                println!("UDP burst {}", burst.len());
-            }
-            Burst::Other(burst) => {
-                println!("UDP burst {}", burst.len());
-            }
+            _ => {}
         }
     }
 

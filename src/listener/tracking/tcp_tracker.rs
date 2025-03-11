@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use tokio::time::Duration;
 
-use crate::{Direction, PacketType, ParsedPacket, TransportPacket};
+use crate::{listener::packet, Direction, PacketType, ParsedPacket, TransportPacket};
 
 /// Wrap-around aware sequence comparison.
 fn seq_cmp(a: u32, b: u32) -> i32 {
@@ -50,6 +50,58 @@ impl Burst {
             Burst::Other(packets) => packets.is_empty(),
         }
     }
+
+    fn time_duration(&self) -> Option<Duration> {
+        match self {
+            Burst::Tcp(burst) => burst.time_duration(),
+            Burst::Udp(packets) => Self::get_time_duration(packets),
+            Burst::Other(packets) => Self::get_time_duration(packets),
+        }
+    }
+
+    fn get_time_duration(packets: &Vec<PacketType>) -> Option<Duration> {
+        if packets.len() > 1 {
+            let mut first = SystemTime::UNIX_EPOCH;
+            let mut last = SystemTime::UNIX_EPOCH;
+            for packet in packets {
+                if packet.sent_time < first {
+                    first = packet.sent_time;
+                }
+                if packet.sent_time > last {
+                    last = packet.sent_time;
+                }
+            }
+            match last.duration_since(first) {
+                Ok(d) => return Some(d),
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+
+    fn get_throughput(packets: &Vec<PacketType>) -> f64 {
+        if let Some(d) = Self::get_time_duration(packets) {
+            packets.iter().map(|p| p.total_length as f64).sum::<f64>() / d.as_secs_f64()
+        } else {
+            0.0
+        }
+    }
+
+    pub fn burst_size_bytes(&self) -> u64 {
+        match self {
+            Burst::Tcp(burst) => burst.total_length() as u64,
+            Burst::Udp(packets) => packets.iter().map(|p| p.total_length as u64).sum(),
+            Burst::Other(packets) => packets.iter().map(|p| p.total_length as u64).sum(),
+        }
+    }
+
+    pub fn throughput(&self) -> f64 {
+        match self {
+            Burst::Tcp(burst) => burst.throughput().unwrap_or(0.0),
+            Burst::Udp(packets) => Self::get_throughput(packets),
+            Burst::Other(packets) => Self::get_throughput(packets),
+        }
+    }
 }
 
 impl TcpBurst {
@@ -58,6 +110,35 @@ impl TcpBurst {
             .into_iter()
             .flat_map(|acked| acked.acked_packets)
             .collect()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &PacketType> {
+        self.packets.iter().flat_map(|acked| acked.iter())
+    }
+
+    pub fn total_length(&self) -> u32 {
+        self.packets.iter().map(|acked| acked.total_length).sum()
+    }
+
+    pub fn time_duration(&self) -> Option<Duration> {
+        if let Some(first) = self.packets.first() {
+            let first = first.acked_packets.first().unwrap().sent_time;
+            let last = self.packets.last().unwrap().ack_time;
+            match last.duration_since(first) {
+                Ok(d) => Some(d),
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn throughput(&self) -> Option<f64> {
+        if let Some(d) = self.time_duration() {
+            Some(self.total_length() as f64 / d.as_secs_f64())
+        } else {
+            None
+        }
     }
 }
 
@@ -71,38 +152,48 @@ impl From<TcpBurst> for Burst {
 pub struct Acked {
     acked_packets: Vec<PacketType>,
     pub ack_time: SystemTime,
-    first_sent_time: SystemTime,
+    first_sent_time: Option<SystemTime>,
     last_sent_time: SystemTime,
+    pub total_length: u32,
 }
 
 impl Acked {
-    fn from_acked(acked_packets: Vec<PacketType>, ack_time: SystemTime) -> Self {
-        let first_sent_time = acked_packets.first().unwrap().sent_time;
+    fn from_acked(acked_packets: Vec<PacketType>, ack_time: SystemTime, first_sent_time: Option<SystemTime>) -> Self {
         let last_sent_time = acked_packets.last().unwrap().sent_time;
+        let total_length = acked_packets.iter().map(|p| p.total_length as u32).sum();
         Acked {
             acked_packets,
             ack_time,
             first_sent_time,
             last_sent_time,
+            total_length,
         }
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = &PacketType> {
+        self.acked_packets.iter()
+    }
+
     pub fn get_gin_gout_len(&self, last_ack: SystemTime) -> Option<(f64, f64, u32)> {
-        let gin = self
-            .last_sent_time
-            .duration_since(self.first_sent_time)
-            .ok()?;
-        let gout = self.ack_time.duration_since(last_ack).ok()?;
-        let total_length = self
-            .acked_packets
-            .iter()
-            .map(|p| p.total_length as u32)
-            .sum::<u32>();
-        Some((
-            gin.as_secs_f64(),
-            gout.as_secs_f64(),
-            total_length,
-        ))
+        if let Some(first_sent_time) = self.first_sent_time {
+            let gin = self
+                .last_sent_time
+                .duration_since(first_sent_time)
+                .ok()?;
+            let gout = self.ack_time.duration_since(last_ack).ok()?;
+            let total_length = self
+                .acked_packets
+                .iter()
+                .map(|p| p.total_length as u32)
+                .sum::<u32>();
+            Some((
+                gin.as_secs_f64(),
+                gout.as_secs_f64(),
+                total_length,
+            ))
+        } else {
+            None
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -115,6 +206,7 @@ struct TcpStream {
     packets: BTreeMap<u32, PacketType>,
     last_ack: Option<SystemTime>,
     last_sent: Option<SystemTime>,
+    last_registered: Option<SystemTime>,
     cur_burst: TcpBurst,
     min_rtt: Duration,
 }
@@ -157,11 +249,14 @@ impl TcpStream {
         } = &packet.transport
         {
             let mut pkt = PacketType::from_packet(packet);
-            if let Some(last_sent) = self.last_sent {
-                if let Ok(d) = packet.timestamp.duration_since(last_sent) {
-                    if d > self.min_rtt * 10 || self.cur_burst.packets.len() > 100 {
-                        // Indiana Jones moment (Replace self.cur_burst with default)
-                        ret = Some(std::mem::take(&mut self.cur_burst));
+            if self.cur_burst.packets.len() > 1 {
+                if let Some(last_registered) = self.last_registered {
+                    if let Ok(d) = packet.timestamp.duration_since(last_registered) {
+                        if d > self.min_rtt * 5 || self.cur_burst.packets.len() > 100 {
+                            // Indiana Jones moment (Replace self.cur_burst with default)
+                            ret = Some(std::mem::take(&mut self.cur_burst));
+                            self.last_registered = None;
+                        }
                     }
                 }
             }
@@ -177,10 +272,16 @@ impl TcpStream {
             }
         }
         if acked_packets.len() > 0 {
+            let last_sent: Option<SystemTime> = if let Some(prev_ack) = self.cur_burst.packets.last() {
+                Some(prev_ack.last_sent_time)
+            } else {
+                None
+            };
             self.cur_burst
                 .packets
-                .push(Acked::from_acked(acked_packets, packet.timestamp));
+                .push(Acked::from_acked(acked_packets, packet.timestamp, last_sent));
         }
+        self.last_registered = Some(packet.timestamp);
         ret
     }
 
@@ -256,6 +357,7 @@ impl TcpTracker {
                 packets: BTreeMap::new(),
                 last_ack: None,
                 last_sent: None,
+                last_registered: None,
                 cur_burst: TcpBurst::default(),
                 min_rtt: Duration::from_secs(10),
             },
@@ -263,6 +365,7 @@ impl TcpTracker {
                 packets: BTreeMap::new(),
                 last_ack: None,
                 last_sent: None,
+                last_registered: None,
                 cur_burst: TcpBurst::default(),
                 min_rtt: Duration::from_secs(10),
             },

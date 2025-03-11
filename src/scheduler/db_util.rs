@@ -79,6 +79,10 @@ pub async fn insert_into(
     }
 }
 
+pub async fn upload_probe_gap_measurements(msg: BandwidthMessage, client: &Client) {
+
+}
+
 /// Uploads bandwidth data (for each LinkState) into the database.
 pub async fn upload_bandwidth(msg: BandwidthMessage, client: &Client) {
     let cols = [

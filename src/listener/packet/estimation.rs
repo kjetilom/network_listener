@@ -43,7 +43,8 @@ impl PABWESender {
         }
     }
 
-    fn push(&mut self, dp: GinGout) {
+    pub fn push(&mut self, dp: GinGout) {
+        println!("{:?}", dp);
         self.dps.push(dp);
     }
 
