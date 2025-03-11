@@ -129,7 +129,6 @@ impl PacketRegistry {
 
     pub fn extend(&mut self, values: Burst) {
         // This is a vector of packets acked by one ack
-        println!("Thpt: {:?}", values.throughput());
         match values {
             Burst::Tcp(burst) => {
                 let mut last_ack = None;
@@ -141,9 +140,9 @@ impl PacketRegistry {
                                 None => continue,
                             };
                         self.pgm_estimator.push(GinGout {
-                            gin,
-                            gout,
-                            len: total_length as f64,
+                            gin: gin / ack.len() as f64,
+                            gout: gout / ack.len() as f64,
+                            len: total_length as f64 / ack.len() as f64,
                             timestamp: ack.ack_time,
                         });
                     }

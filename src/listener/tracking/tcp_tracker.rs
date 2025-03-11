@@ -249,7 +249,7 @@ impl TcpStream {
         } = &packet.transport
         {
             let mut pkt = PacketType::from_packet(packet);
-            if self.cur_burst.packets.len() > 1 {
+            if self.cur_burst.packets.len() > 0 {
                 if let Some(last_registered) = self.last_registered {
                     if let Ok(d) = packet.timestamp.duration_since(last_registered) {
                         if d > self.min_rtt * 5 || self.cur_burst.packets.len() > 100 {

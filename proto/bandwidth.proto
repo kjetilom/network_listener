@@ -14,6 +14,7 @@ message DataMsg {
         BandwidthMessage bandwidth = 1;
         HelloMessage hello = 2;
         Rtts rtts = 3;
+        Pgm pgm = 4;
     }
 }
 
@@ -22,13 +23,13 @@ message LinkState {
     string sender_ip = 1;
     // Ip addr of the receiver (destination)
     string receiver_ip = 2;
-
+    // Not used right now
     double thp_in = 3;
-
+    // Not used right now
     double thp_out = 4;
-
+    // As of now, what is reported by iperf3
     double bw = 5;
-
+    // Passive pgm
     double abw = 6;
 
     double latency = 7;
@@ -40,6 +41,18 @@ message LinkState {
     double loss = 10;
 
     int64 timestamp = 11;
+}
+
+message PgmDp {
+    double len_div_gin = 1;
+    double gout_div_gin = 2;
+}
+
+message Pgm {
+    string sender_ip = 1;
+    string receiver_ip = 2;
+    int64 timestamp = 3;
+    repeated PgmDp pgm_dp = 4;
 }
 
 message Rtt {

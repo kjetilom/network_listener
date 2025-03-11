@@ -44,7 +44,6 @@ impl PABWESender {
     }
 
     pub fn push(&mut self, dp: GinGout) {
-        println!("{:?}", dp);
         self.dps.push(dp);
     }
 
