@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use crate::probe::iperf_json::IperfResponse;
 use crate::prost_net::bandwidth_client::{ClientEventResult, ClientHandlerEvent};
+use crate::CONFIG;
 
 use super::procfs_reader::{self, get_interface, get_interface_info, NetStat};
 use super::tracking::link::LinkManager;
@@ -94,7 +95,7 @@ impl Parser {
             Parser::periodic(ptx, idx).await;
         });
 
-        let mut longer_interval = time::interval(Settings::LONGER_INTERVAL);
+        let mut longer_interval = time::interval(CONFIG.client.measurement_window);
 
         let mut interval = time::interval(Settings::CLEANUP_INTERVAL);
         loop {

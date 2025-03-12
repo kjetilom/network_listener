@@ -1,6 +1,4 @@
-use super::DataPacket;
-use std::time::SystemTime;
-use tokio::time::Duration;
+use std::{time::SystemTime, u32::MAX};
 /// A structure holding a pair of gap measurements and the associated packet length.
 #[derive(Debug, Clone)]
 pub struct GinGout {
@@ -43,6 +41,7 @@ impl PABWESender {
     fn filter_gin_gacks(&mut self) -> Vec<GinGout> {
         // Get the average of the 10% smallest gin values.
         // Calculate the average gack and gin for these values:
+        let phy_cap = crate::CONFIG.client.link_phy_cap as f64 / 8.0;
 
         let mut filtered: Vec<GinGout> = self
             .dps
@@ -50,8 +49,8 @@ impl PABWESender {
             .filter(|dp| {
                 dp.gin > 0.0
                     && dp.len > 1000.0
-                    && dp.len / dp.gin < crate::Settings::NEAREST_LINK_PHY_CAP / 8.0
-                    && dp.len / dp.gout < crate::Settings::NEAREST_LINK_PHY_CAP / 8.0
+                    && dp.len / dp.gin < phy_cap
+                    && dp.len / dp.gout < phy_cap
             })
             .cloned()
             .collect();
@@ -122,7 +121,7 @@ impl PABWESender {
 
         if a.abs() > f64::EPSILON {
             let res = (1.0 - b) / a;
-            if res > 0.0 && res < crate::Settings::NEAREST_LINK_PHY_CAP / 8.0 {
+            if res > 0.0 && res < crate::CONFIG.client.link_phy_cap as f64 / 8.0 {
                 return Some(res);
             }
         }

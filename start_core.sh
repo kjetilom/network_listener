@@ -10,6 +10,7 @@ COREDIR=/tmp/pycore.1
 # Get the full path to the executables for the network listener and mgen
 # This is needed as vcmd will run the script in the directory of the device
 NETLISTENER=$(realpath $BASE_DIR/target/release/network_listener)
+CONFIG=$(realpath $BASE_DIR/mgensh/config/nlst.toml)
 SCHEDULER=$(realpath $BASE_DIR/target/release/scheduler)
 MGEN_SCRIPTS=$(realpath $BASE_DIR/mgensh/mgen_scripts)
 
@@ -69,7 +70,7 @@ for i in ${!NLST_DEVS[@]}
 do
     dev=${NLST_DEVS[i]}
     out=$COREDIR/$dev.conf
-    vcmd -c $COREDIR/$dev -- $NETLISTENER >> $out/$NLST_OUTPUT &
+    vcmd -c $COREDIR/$dev -- $NETLISTENER -c $CONFIG >> $out/$NLST_OUTPUT &
     PIDS+=($!)
     echo "Started network_listener on $dev [$!]"
     sleep 0.5

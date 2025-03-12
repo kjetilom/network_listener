@@ -61,8 +61,8 @@ impl LinkManager {
         }
 
         if let Some((src_port, dst_port)) = packet.get_src_dst_port() {
-            if dst_port == crate::Settings::BW_SERVER_PORT
-                || src_port == crate::Settings::BW_SERVER_PORT
+            if dst_port == crate::CONFIG.server.port
+                || src_port == crate::CONFIG.server.port
             {
                 return;
             }
@@ -181,7 +181,7 @@ impl LinkManager {
                     latency: stream_manager.get_latency_avg(),
                     delay: None,
                     jitter: None,
-                    loss: Some(stream_manager.get_loss()),
+                    loss: None,
                 };
                 Link {
                     ip_pair: *ip_pair, // Copy IpPair

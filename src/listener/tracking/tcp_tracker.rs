@@ -3,7 +3,7 @@ use std::time::SystemTime;
 
 use tokio::time::Duration;
 
-use crate::{listener::packet, Direction, PacketType, ParsedPacket, TransportPacket};
+use crate::{Direction, PacketType, ParsedPacket, TransportPacket};
 
 /// Wrap-around aware sequence comparison.
 fn seq_cmp(a: u32, b: u32) -> i32 {
@@ -48,14 +48,6 @@ impl Burst {
             Burst::Tcp(burst) => burst.packets.is_empty(),
             Burst::Udp(packets) => packets.is_empty(),
             Burst::Other(packets) => packets.is_empty(),
-        }
-    }
-
-    fn time_duration(&self) -> Option<Duration> {
-        match self {
-            Burst::Tcp(burst) => burst.time_duration(),
-            Burst::Udp(packets) => Self::get_time_duration(packets),
-            Burst::Other(packets) => Self::get_time_duration(packets),
         }
     }
 
@@ -208,7 +200,7 @@ struct TcpStream {
     last_sent: Option<SystemTime>,
     last_registered: Option<SystemTime>,
     cur_burst: TcpBurst,
-    min_rtt: Duration,
+    max_rtt: Duration,
 }
 
 impl TcpStream {
@@ -252,10 +244,11 @@ impl TcpStream {
             if self.cur_burst.packets.len() > 0 {
                 if let Some(last_registered) = self.last_registered {
                     if let Ok(d) = packet.timestamp.duration_since(last_registered) {
-                        if d > self.min_rtt * 5 || self.cur_burst.packets.len() > 100 {
+                        if d > self.max_rtt || self.cur_burst.packets.len() > 100 {
                             // Indiana Jones moment (Replace self.cur_burst with default)
                             ret = Some(std::mem::take(&mut self.cur_burst));
                             self.last_registered = None;
+                            self.max_rtt = self.max_rtt / 2;
                         }
                     }
                 }
@@ -313,7 +306,7 @@ impl TcpStream {
                 }
 
                 if let Ok(rtt_duration) = pkt.sent_time.duration_since(sent_packet.sent_time) {
-                    self.min_rtt = std::cmp::min(self.min_rtt, rtt_duration);
+                    self.max_rtt = std::cmp::max(self.max_rtt, rtt_duration);
                     sent_packet.rtt = Some(rtt_duration);
                     sent_packet.ack_time = Some(pkt.sent_time);
                     sent_packet.gap_last_ack = pkt.gap_last_ack;
@@ -359,7 +352,7 @@ impl TcpTracker {
                 last_sent: None,
                 last_registered: None,
                 cur_burst: TcpBurst::default(),
-                min_rtt: Duration::from_secs(10),
+                max_rtt: Duration::from_secs(10),
             },
             received: TcpStream {
                 packets: BTreeMap::new(),
@@ -367,9 +360,15 @@ impl TcpTracker {
                 last_sent: None,
                 last_registered: None,
                 cur_burst: TcpBurst::default(),
-                min_rtt: Duration::from_secs(10),
+                max_rtt: Duration::from_secs(10),
             },
         }
+    }
+
+    pub fn take_bursts(&mut self) -> (Burst, Burst) {
+        let sent = std::mem::take(&mut self.sent.cur_burst);
+        let received = std::mem::take(&mut self.received.cur_burst);
+        (sent.into(), received.into())
     }
 
     pub fn register_packet(&mut self, packet: &ParsedPacket) -> Option<(Burst, Direction)> {

@@ -101,9 +101,9 @@ impl PacketCapturer {
         }
     }
 
-    pub fn new(sender: CapEventSender, name: Option<&str>) -> CaptureResult {
+    pub fn new(sender: CapEventSender, name: Option<String>) -> CaptureResult {
         let device = match name {
-            Some(name) => Self::device_by_name(name)?,
+            Some(name) => Self::device_by_name(&name)?,
             None => Device::lookup()?.ok_or("No device available for capture")?,
         };
 
@@ -113,7 +113,7 @@ impl PacketCapturer {
             .promisc(Settings::PROMISC)
             .immediate_mode(Settings::IMMEDIATE_MODE)
             .timeout(Settings::TIMEOUT) // Timeout in milliseconds
-            .tstamp_type(Settings::TSTAMP_TYPE)
+            .tstamp_type(CONFIG.client.tstamp_type)
             .precision(Settings::PRECISION)
             .snaplen(Settings::SNAPLEN);
 
@@ -133,8 +133,6 @@ impl PacketCapturer {
     /// The idea: Don't block the main thread with packet capture
     /// This way the reciever can be temporarily overloaded without
     /// affecting the packet capture
-    ///
-    /// Issue: Might cause high Memory and CPU usage
     pub fn start_capture_loop(self) -> task::JoinHandle<Result<()>> {
         // Clone the sender to move into the thread
         let sender = self.sender.clone();

@@ -143,7 +143,16 @@ impl ClientHandler {
                 ClientHandlerEvent::SendBandwidth(bw) => {
                     let cap_ev_tx = self.cap_ev_tx.clone();
                     tokio::spawn(async move {
-                        send_message(crate::Settings::SCHEDULER_DEST, bw, cap_ev_tx).await;
+                        send_message(
+                            &format!(
+                                "{}:{}",
+                                &crate::CONFIG.server.ip,
+                                &crate::CONFIG.server.port
+                            ),
+                            bw,
+                            cap_ev_tx,
+                        )
+                        .await;
                     });
                 }
             }
@@ -266,7 +275,7 @@ impl BwClient {
         reply_tx: Sender<ClientEventResult>,
     ) -> Result<(tokio::task::JoinHandle<()>, Sender<ClientEvent>)> {
         let (tx, rx) = channel::<ClientEvent>(10);
-        let addr = format!("http://{}:{}", ip, crate::Settings::BW_SERVER_PORT);
+        let addr = format!("http://{}:{}", ip, crate::CONFIG.client.listen_port);
         let connect_timeout = Duration::from_secs(3);
         let connection = match timeout(connect_timeout, BandwidthServiceClient::connect(addr)).await
         {

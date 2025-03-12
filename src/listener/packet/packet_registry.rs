@@ -1,15 +1,10 @@
 use crate::tcp_tracker::Burst;
 
 use super::estimation::{GinGout, PABWESender};
-use super::DataPacket;
-use std::{
-    collections::VecDeque,
-    time::SystemTime,
-};
+use std::time::SystemTime;
 
 #[derive(Debug)]
 pub struct PacketRegistry {
-    packets: VecDeque<DataPacket>,
     rtts: Vec<(u32, SystemTime)>, // in microseconds
     burst_thput: Vec<f64>, // in bytes
     pgm_estimator: PABWESender,
@@ -18,9 +13,8 @@ pub struct PacketRegistry {
 }
 
 impl PacketRegistry {
-    pub fn new(size: usize) -> Self {
+    pub fn new() -> Self {
         PacketRegistry {
-            packets: VecDeque::with_capacity(size),
             rtts: Vec::new(),
             burst_thput: Vec::new(),
             pgm_estimator: PABWESender::new(),
@@ -94,14 +88,6 @@ impl PacketRegistry {
             None
         } else {
             Some(self.burst_thput.iter().sum::<f64>() / self.burst_thput.len() as f64)
-        }
-    }
-
-    pub fn loss(&self) -> f64 {
-        if self.retransmissions == 0 {
-            0.0
-        } else {
-            self.retransmissions as f64 / self.packets.len() as f64
         }
     }
 }

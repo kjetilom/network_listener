@@ -1,49 +1,44 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 use serde::Deserialize;
 use std::fs;
 use clap::Parser;
 
 pub const DEFAULT_CONFIG_PATH: &str = "../mgensh/config/config.toml";
 
-
-/*
-[client]
-iface = "eth0"
-listen_port = 40042
-link_phy_cap = 5000000
-measurement_window = 15
-tstamp_type = "adapter"
-
-
-[server]
-ip = "172.16.0.254"
-port = 50041
-send_rtts = true
-send_link_states = true
-probe_technique = "iperf3" # "iperf3" or "pathload"
-*/
-
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct AppConfig {
     pub client: Client,
     pub server: Server,
 }
 
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Client {
     pub ip: Option<String>,
     pub iface: Option<String>,
-    pub listen_port: Option<u16>,
+    #[serde(default = "default_listen_port")]
+    pub listen_port: u16,
+    #[serde(default = "default_link_phy_cap")]
+    pub link_phy_cap: u32,
+    #[serde(default= "default_measurement_window", deserialize_with = "duration_deserialize")]
+    pub measurement_window: Duration,
+    #[serde(default = "default_tstamp_type", deserialize_with = "tstamp_type_deserialize")]
+    pub tstamp_type: pcap::TimestampType,
 }
 
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Server {
     #[serde(default = "default_server")]
     pub ip: String,
     #[serde(default = "default_server_port")]
     pub port: u16,
+    #[serde(default = "default_send_rtts")]
+    pub send_rtts: bool,
+    #[serde(default = "default_send_link_states")]
+    pub send_link_states: bool,
+    #[serde(default = "default_probe_technique")]
+    pub probe_technique: String,
 }
 
 fn default_server() -> String {
@@ -51,7 +46,58 @@ fn default_server() -> String {
 }
 
 fn default_server_port() -> u16 {
+    50041
+}
+
+fn default_listen_port() -> u16 {
     40042
+}
+
+fn duration_deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = u32::deserialize(deserializer)?;
+    Ok(Duration::from_secs(s as u64))
+}
+
+fn default_measurement_window() -> Duration {
+    Duration::from_secs(20)
+}
+
+fn default_link_phy_cap() -> u32 {
+    u32::MAX
+}
+
+fn default_tstamp_type() -> pcap::TimestampType {
+    pcap::TimestampType::Adapter
+}
+
+fn tstamp_type_deserialize<'de, D>(deserializer: D) -> Result<pcap::TimestampType, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.as_str() {
+        "adapter" => Ok(pcap::TimestampType::Adapter),
+        "host" => Ok(pcap::TimestampType::Host),
+        "host_lowprec" => Ok(pcap::TimestampType::HostLowPrec),
+        "adapter_unsynced" => Ok(pcap::TimestampType::AdapterUnsynced),
+        "host_highprec" => Ok(pcap::TimestampType::HostHighPrec),
+        _ => Err(serde::de::Error::custom("Invalid timestamp type")),
+    }
+}
+
+fn default_send_rtts() -> bool {
+    false
+}
+
+fn default_send_link_states() -> bool {
+    true
+}
+
+fn default_probe_technique() -> String {
+    String::from("iperf3")
 }
 
 impl Default for AppConfig {
@@ -68,7 +114,10 @@ impl Default for Client {
         Client {
             ip: None,
             iface: None,
-            listen_port: None,
+            listen_port: default_listen_port(),
+            link_phy_cap: default_link_phy_cap(),
+            measurement_window: default_measurement_window(),
+            tstamp_type: default_tstamp_type(),
         }
     }
 }
@@ -78,6 +127,9 @@ impl Default for Server {
         Server {
             ip: default_server(),
             port: default_server_port(),
+            send_rtts: default_send_rtts(),
+            send_link_states: default_send_link_states(),
+            probe_technique: default_probe_technique(),
         }
     }
 }

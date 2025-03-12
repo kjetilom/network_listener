@@ -1,7 +1,7 @@
 use crate::{
     stream_id::StreamKey,
     tracker::{Tracker, TrackerState},
-    DataPacket, PacketRegistry, ParsedPacket,
+    PacketRegistry, ParsedPacket,
 };
 use pnet::packet::ip::IpNextHeaderProtocol;
 use std::{collections::HashMap, time::SystemTime};
@@ -22,8 +22,8 @@ impl StreamManager {
     pub fn default() -> Self {
         StreamManager {
             streams: HashMap::new(),
-            sent: PacketRegistry::new(5),
-            received: PacketRegistry::new(5),
+            sent: PacketRegistry::new(),
+            received: PacketRegistry::new(),
             tcp_thput: 0.0,
             last_iperf: None,
         }
@@ -41,10 +41,6 @@ impl StreamManager {
 
     pub fn tcp_thput(&self) -> f64 {
         self.tcp_thput
-    }
-
-    pub fn get_loss(&self) -> f64 {
-        self.sent.loss()
     }
 
     pub fn abw(&mut self) -> Option<f64> {
@@ -67,7 +63,7 @@ impl StreamManager {
 
         match direction {
             crate::Direction::Incoming => {
-                //self.received.extend(burst);
+                self.received.extend(burst);
             }
             crate::Direction::Outgoing => {
                 self.sent.extend(burst);
@@ -76,10 +72,25 @@ impl StreamManager {
     }
 
     pub fn get_latency_avg(&self) -> Option<f64> {
-        self.sent.min_rtt()
+        self.sent.avg_rtt()
     }
 
     pub fn periodic(&mut self) {
+        for stream in self.streams.values_mut() {
+            let (sent, received) = match stream.state {
+                TrackerState::Tcp(ref mut tracker) => {
+                    tracker.take_bursts()
+                }
+                TrackerState::Udp(ref mut tracker) => {
+                    tracker.take_bursts()
+                }
+                TrackerState::Other(ref mut tracker) => {
+                    tracker.take_bursts()
+                }
+            };
+            self.sent.extend(sent);
+            self.received.extend(received);
+        }
         self.streams.retain(|_, t| {
             t.last_registered.elapsed().unwrap() < crate::Settings::TCP_STREAM_TIMEOUT
         });

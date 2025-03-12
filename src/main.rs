@@ -43,7 +43,8 @@ impl NetworkListener {
         let (sender, receiver) = unbounded_channel();
         let (client_sender, client_receiver) = channel::<ClientHandlerEvent>(100);
 
-        let (pcap, pcap_meta) = PacketCapturer::new(sender.clone(), None)?; // ! FIXME
+        let (pcap, pcap_meta) =
+            PacketCapturer::new(sender.clone(), crate::CONFIG.client.iface.clone())?;
         let pcap_meta = Arc::new(pcap_meta);
         let (parser, ctx) = Parser::new(receiver, pcap_meta.clone(), client_sender)?;
         let client_handler = ClientHandler::new(ctx, client_receiver, sender.clone());
@@ -112,7 +113,7 @@ impl NetworkListener {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     logger::setup_logging()?;
-    println!("{:?}, {:?}, {}, {}", CONFIG.client.ip, CONFIG.client.iface, CONFIG.server.ip, CONFIG.server.port);
+    println!("{:?}", *CONFIG);
     // let _ = tokio::spawn(network_listener::grafana::client::start_client());
     let mut netlistener = NetworkListener::new()?;
     netlistener.start()?;

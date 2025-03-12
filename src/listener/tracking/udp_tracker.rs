@@ -58,4 +58,12 @@ impl UdpTracker {
             Some((Burst::Udp(ret), packet.direction))
         }
     }
+
+    pub fn take_bursts(&mut self) -> (Burst, Burst) {
+        let mut in_burst = Vec::new();
+        let mut out_burst = Vec::new();
+        std::mem::swap(&mut in_burst, &mut self.burst_in);
+        std::mem::swap(&mut out_burst, &mut self.burst_out);
+        (Burst::Udp(in_burst), Burst::Udp(out_burst))
+    }
 }
