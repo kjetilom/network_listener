@@ -177,7 +177,7 @@ impl LinkManager {
                     thp_in: 0.0,
                     thp_out: 0.0,
                     bw: Some(stream_manager.tcp_thput()),
-                    abw: Some(stream_manager.abw()),
+                    abw: stream_manager.abw(),
                     latency: stream_manager.get_latency_avg(),
                     delay: None,
                     jitter: None,

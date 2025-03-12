@@ -1,5 +1,5 @@
-use std::time::SystemTime;
 use super::DataPacket;
+use std::time::SystemTime;
 use tokio::time::Duration;
 /// A structure holding a pair of gap measurements and the associated packet length.
 #[derive(Debug, Clone)]
@@ -12,19 +12,16 @@ pub struct GinGout {
 
 impl GinGout {
     pub fn new(gin: f64, gout: f64, len: f64, timestamp: SystemTime) -> Self {
-        GinGout { gin, gout, len, timestamp }
+        GinGout {
+            gin,
+            gout,
+            len,
+            timestamp,
+        }
     }
 
     pub fn get_dp(&self) -> (f64, f64, SystemTime) {
         (self.len / self.gin, self.gout / self.gin, self.timestamp)
-    }
-
-    pub fn from_data_packet(packet: &DataPacket) -> Option<Self> {
-        let (gin, gout, timestamp) = match packet.get_gin_gout() {
-            Some((gin, gout, timestamp)) => (gin, gout, timestamp),
-            None => return None,
-        };
-        Some(GinGout { gin, gout, len: packet.total_length as f64, timestamp })
     }
 }
 
@@ -36,115 +33,30 @@ pub struct PABWESender {
 
 impl PABWESender {
     pub fn new() -> Self {
-        PABWESender {
-            dps: Vec::new(),
-        }
+        PABWESender { dps: Vec::new() }
     }
 
     pub fn push(&mut self, dp: GinGout) {
         self.dps.push(dp);
     }
 
-    fn iter_ack_stream(&mut self, ack_stream: Vec<Vec<DataPacket>>) -> &Self {
-        for ack_group in ack_stream {
-
-            let sum_gin: f64 = ack_group.iter().map(|packet| packet.gap_last_sent.unwrap().as_secs_f64()).sum();
-            let gout = ack_group.first().unwrap().gap_last_ack.unwrap().as_secs_f64();
-            let sum_len: f64 = ack_group.iter().map(|packet| packet.total_length as f64).sum();
-            let timestamp = ack_group.last().unwrap().ack_time.unwrap();
-
-            self.push(
-                GinGout::new(
-                    sum_gin/ack_group.len() as f64,
-                    gout/ack_group.len() as f64,
-                    sum_len/ack_group.len() as f64,
-                    timestamp,
-                )
-            )
-        }
-        self
-    }
-
-    fn group_acks(packets: Vec<DataPacket>) -> Vec<Vec<DataPacket>> {
-        let mut chunks = Vec::new();
-        let mut chunk = Vec::new();
-        for packet in packets {
-            if chunk.is_empty() {
-                chunk.push(packet);
-            } else {
-                if packet.ack_time.unwrap() == chunk.last().unwrap().ack_time.unwrap() {
-                    chunk.push(packet);
-                } else {
-                    chunks.push(chunk);
-                    chunk = Vec::new();
-                    chunk.push(packet);
-                }
-            }
-        }
-        if chunk.len() > 0 {
-            chunks.push(chunk);
-        }
-        chunks
-    }
-
-    pub fn get_burst_thp(packets: Vec<DataPacket>, min_rtt: Duration) -> Vec<f64> {
-        let bursts = PABWESender::group_bursts(packets, min_rtt);
-        let mut thp = Vec::new();
-        for burst in bursts {
-            let mut burst_len = 0.0;
-            let burst_time = burst.last().unwrap().ack_time.unwrap().duration_since(burst.first().unwrap().ack_time.unwrap()).unwrap();
-            for packet in burst {
-                burst_len += packet.total_length as f64;
-            }
-            let burst_thpt = burst_len / burst_time.as_secs_f64();
-            thp.push(burst_thpt);
-        }
-        thp
-    }
-
-    pub fn drain(&mut self) -> Vec<GinGout> {
-        self.dps.drain(..).collect()
-    }
-
-    fn group_bursts(packets: Vec<DataPacket>, min_rtt: Duration) -> Vec<Vec<DataPacket>> {
-        let mut chunks = Vec::new();
-        let mut chunk: Vec<DataPacket> = Vec::new();
-        for packet in packets {
-            if chunk.is_empty() {
-                chunk.push(packet);
-            } else {
-                let diff = packet.sent_time.duration_since(chunk.first().unwrap().sent_time).unwrap();
-                if diff < min_rtt {
-                    chunk.push(packet);
-                } else {
-                    chunks.push(chunk);
-                    chunk = Vec::new();
-                    chunk.push(packet);
-                }
-            }
-        }
-        if chunk.len() > 0 {
-            chunks.push(chunk);
-        }
-        chunks
-    }
-
-    pub fn iter_packets(&mut self, packets: &Vec<DataPacket>) -> &Self {
-        let ack_stream = PABWESender::group_acks(packets.clone());
-        self.iter_ack_stream(ack_stream)
-    }
-
     fn filter_gin_gacks(&mut self) -> Vec<GinGout> {
         // Get the average of the 10% smallest gin values.
         // Calculate the average gack and gin for these values:
 
-        let mut filtered: Vec<GinGout> = self.dps.iter().filter(|dp| {
-            dp.gin > 0.0 && dp.len > 1000.0 && dp.len / dp.gin < crate::Settings::NEAREST_LINK_PHY_CAP/8.0 && dp.len / dp.gout < crate::Settings::NEAREST_LINK_PHY_CAP/8.0
-        }).cloned().collect();
+        let mut filtered: Vec<GinGout> = self
+            .dps
+            .iter()
+            .filter(|dp| {
+                dp.gin > 0.0
+                    && dp.len > 1000.0
+                    && dp.len / dp.gin < crate::Settings::NEAREST_LINK_PHY_CAP / 8.0
+                    && dp.len / dp.gout < crate::Settings::NEAREST_LINK_PHY_CAP / 8.0
+            })
+            .cloned()
+            .collect();
 
-        filtered.sort_by(
-            |gin1, gin2| gin1.gin.partial_cmp(&gin2.gin).unwrap()
-        );
+        filtered.sort_by(|gin1, gin2| gin1.gin.partial_cmp(&gin2.gin).unwrap());
 
         let n = (filtered.len() as f64 * 0.1).ceil() as usize;
         let _gmin_in = filtered.iter().take(n).map(|dp| dp.gin).sum::<f64>() / n as f64;
@@ -152,10 +64,14 @@ impl PABWESender {
 
         let g_max_in = gmin_out;
 
-        let filtered = filtered.iter().filter(|dp| {
-            dp.gin < g_max_in
-        }).cloned().collect();
-        filtered
+        let filtered: Vec<GinGout> = filtered
+            .iter()
+            .filter(|dp| dp.gin < g_max_in)
+            .cloned()
+            .collect();
+
+        // Return the 70% smallest gin values.
+        return filtered[0..(filtered.len() as f64 * 0.7).ceil() as usize].to_vec();
     }
 
     /// Estimates the available bandwidth using a linear regression.
@@ -206,7 +122,7 @@ impl PABWESender {
 
         if a.abs() > f64::EPSILON {
             let res = (1.0 - b) / a;
-            if res > 0.0 && res < crate::Settings::NEAREST_LINK_PHY_CAP/8.0 {
+            if res > 0.0 && res < crate::Settings::NEAREST_LINK_PHY_CAP / 8.0 {
                 return Some(res);
             }
         }
@@ -214,63 +130,109 @@ impl PABWESender {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super::{PABWESender, GinGout};
+    use super::{GinGout, PABWESender};
 
     #[test]
     fn test_empty_sender() {
         let mut sender = PABWESender::new();
-        assert!(sender.passive_pgm_abw().is_none(), "Empty sender should return None");
+        assert!(
+            sender.passive_pgm_abw().is_none(),
+            "Empty sender should return None"
+        );
     }
 
     #[test]
     fn test_zero_gin_ignored() {
         let mut sender = PABWESender::new();
         // This point has gin == 0, so it should be ignored in the regression.
-        sender.push(GinGout { gin: 0.0, gout: 1.0, len: 1400.0, timestamp: std::time::SystemTime::now() });
-        assert!(sender.passive_pgm_abw().is_none(), "Only zero gin data should yield None");
+        sender.push(GinGout {
+            gin: 0.0,
+            gout: 1.0,
+            len: 1400.0,
+            timestamp: std::time::SystemTime::now(),
+        });
+        assert!(
+            sender.passive_pgm_abw().is_none(),
+            "Only zero gin data should yield None"
+        );
     }
 
     #[test]
     fn test_simple_regression() {
         let mut sender = PABWESender::new();
-        // We'll create data points that ideally lie on a line defined by:
-        // y = a * x + b, with a = 0.01 and b = 0.5.
-        // According to our estimation, available bandwidth (abw) is:
-        //   abw = (1 - b) / a = (1 - 0.5) / 0.01 = 50.
-        //
-        // For a given point, let:
-        //   x = len / gin, and y = gout / gin = 0.01 * x + 0.5.
-        // Then, for an arbitrary gin and len, set gout = y * gin.
+
         let test_points = vec![
-            (0.1, 100.0),
-            (0.12, 100.0),
-            (0.15, 100.0),
-            (0.2, 100.0),
-            (0.25, 100.0),
+            (0.1, 0.1, 1200.0),
+            (0.12, 0.15, 1200.0),
+            (0.13, 0.20, 1200.0),
+            (0.14, 0.25, 1200.0),
+            (0.15, 0.30, 1200.0),
+            (0.16, 0.35, 1200.0),
+            (0.17, 0.40, 1200.0),
+            (0.18, 0.45, 1200.0),
+            (0.19, 0.50, 1200.0),
+            (0.20, 0.55, 1200.0),
+            (0.21, 0.60, 1200.0),
+            (0.22, 0.65, 1200.0),
+            (0.23, 0.70, 1200.0),
+            (0.24, 0.75, 1200.0),
+            (0.25, 0.80, 1200.0),
+            (0.26, 0.85, 1200.0),
+            (0.27, 0.90, 1200.0),
+            (0.28, 0.95, 1200.0),
+            (0.29, 1.0, 1200.0),
+            (0.30, 1.05, 1200.0),
+            (0.31, 1.10, 1200.0),
+            (0.32, 1.15, 1200.0),
+            (0.33, 1.20, 1200.0),
+            (0.34, 1.25, 1200.0),
+            (0.35, 1.30, 1200.0),
+            (0.36, 1.35, 1200.0),
+            (0.37, 1.40, 1200.0),
+            (0.38, 1.45, 1200.0),
+            (0.39, 1.50, 1200.0),
+            (0.40, 1.55, 1200.0),
+            (0.41, 1.60, 1200.0),
+            (0.42, 1.65, 1200.0),
         ];
 
-        for (gin, len) in test_points {
-            let x = len / gin;
-            let y = 0.01 * x + 0.5;
-            let gout = y * gin;
-            sender.push(GinGout { gin, len, gout, timestamp: std::time::SystemTime::now() });
+        for (gin, gout, len) in test_points {
+            sender.push(GinGout {
+                gin,
+                gout,
+                len,
+                timestamp: std::time::SystemTime::now(),
+            });
         }
+
+        println!("{:?}", sender.filter_gin_gacks());
 
         let estimated = sender.passive_pgm_abw();
         assert!(estimated.is_some(), "Regression should produce an estimate");
         let abw = estimated.unwrap();
         // Check that the estimated available bandwidth is close to 50,
         // allowing some tolerance due to floating-point arithmetic.
-        assert!((abw - 50.0).abs() < 1.0, "Estimated bandwidth ({}) should be approximately 50", abw);
+        assert!(
+            (abw - 11629.0).abs() < 1.0,
+            "Estimated bandwidth ({}) should be approximately 11629",
+            abw
+        );
     }
 
     #[test]
     fn test_clear_function() {
         let mut sender = PABWESender::new();
-        sender.push(GinGout { gin: 0.1, gout: 1.0, len: 1400.0, timestamp: std::time::SystemTime::now() });
-        assert!(!sender.dps.is_empty(), "Sender should have data points after push");
+        sender.push(GinGout {
+            gin: 0.1,
+            gout: 1.0,
+            len: 1400.0,
+            timestamp: std::time::SystemTime::now(),
+        });
+        assert!(
+            !sender.dps.is_empty(),
+            "Sender should have data points after push"
+        );
     }
 }

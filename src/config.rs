@@ -6,6 +6,23 @@ use clap::Parser;
 pub const DEFAULT_CONFIG_PATH: &str = "../mgensh/config/config.toml";
 
 
+/*
+[client]
+iface = "eth0"
+listen_port = 40042
+link_phy_cap = 5000000
+measurement_window = 15
+tstamp_type = "adapter"
+
+
+[server]
+ip = "172.16.0.254"
+port = 50041
+send_rtts = true
+send_link_states = true
+probe_technique = "iperf3" # "iperf3" or "pathload"
+*/
+
 #[derive(Deserialize)]
 pub struct AppConfig {
     pub client: Client,

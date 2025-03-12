@@ -149,8 +149,8 @@ pub async fn upload_rtt(msg: Rtts, client: &Client) {
             // Adjust these fields according to your actual Rtts message structure.
             insert_into(
                 client,
-                &rttmsg.sender_ip, // assuming field exists
-                &rttmsg.receiver_ip, // assuming field exists
+                &rttmsg.sender_ip,
+                &rttmsg.receiver_ip,
                 "rtt",
                 &cols,
                 &values,
