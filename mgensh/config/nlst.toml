@@ -1,7 +1,7 @@
 [client]
 iface = "eth0"
 listen_port = 40042
-link_phy_cap = 5000000
+link_phy_cap = 10000000
 measurement_window = 15
 tstamp_type = "adapter"
 

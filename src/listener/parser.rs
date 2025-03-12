@@ -95,7 +95,7 @@ impl Parser {
             Parser::periodic(ptx, idx).await;
         });
 
-        let mut longer_interval = time::interval(CONFIG.client.measurement_window);
+        let mut measurement_window = time::interval(CONFIG.client.measurement_window);
 
         let mut interval = time::interval(Settings::CLEANUP_INTERVAL);
         loop {
@@ -137,7 +137,7 @@ impl Parser {
                     self.link_manager.send_bandwidth().await;
                     self.link_manager.periodic().await;
                 },
-                _ = longer_interval.tick() => {
+                _ = measurement_window.tick() => {
                     self.link_manager.send_init_clients_msg().await;
                 },
                 else => {
