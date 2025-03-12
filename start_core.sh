@@ -90,6 +90,9 @@ do
     PIDS+=($!)
     echo "Started traffic generator on $dev [$!]"
     sleep 0.5
+
+    # Disable segment offloading
+    vcmd -c $COREDIR/$dev -- ethtool --offload  eth0  rx off  tx off
 done
 
 
