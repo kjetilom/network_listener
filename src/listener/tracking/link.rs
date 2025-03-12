@@ -16,6 +16,7 @@ use tokio::sync::mpsc::Sender;
 use crate::{
     listener::{packet::ParsedPacket, tracking::stream_manager::StreamManager},
     prost_net::bandwidth_client::ClientHandlerEvent,
+    CONFIG,
 };
 
 use super::stream_id::IpPair;
@@ -106,22 +107,26 @@ impl LinkManager {
         let rtt_message = self.get_rtt_message();
         let bw_message = self.get_bw_message();
 
-        match self
-            .client_sender
-            .send(ClientHandlerEvent::SendBandwidth(bw_message))
-            .await
-        {
-            Ok(_) => (),
-            Err(e) => warn!("Failed to send bandwidth message: {}", e),
+        if CONFIG.server.send_link_states {
+            match self
+                .client_sender
+                .send(ClientHandlerEvent::SendBandwidth(bw_message))
+                .await
+            {
+                Ok(_) => (),
+                Err(e) => warn!("Failed to send bandwidth message: {}", e),
+            }
         }
 
-        match self
-            .client_sender
-            .send(ClientHandlerEvent::SendBandwidth(rtt_message))
-            .await
-        {
-            Ok(_) => (),
-            Err(e) => warn!("Failed to send rtt message: {}", e),
+        if CONFIG.server.send_rtts {
+            match self
+                .client_sender
+                .send(ClientHandlerEvent::SendBandwidth(rtt_message))
+                .await
+            {
+                Ok(_) => (),
+                Err(e) => warn!("Failed to send rtt message: {}", e),
+            }
         }
     }
 
