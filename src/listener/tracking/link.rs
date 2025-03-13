@@ -104,8 +104,8 @@ impl LinkManager {
     }
 
     pub async fn send_bandwidth(&mut self) {
-        let rtt_message = self.get_rtt_message();
         let bw_message = self.get_bw_message();
+        let rtt_message = self.get_rtt_message();
 
         if CONFIG.server.send_link_states {
             match self
@@ -179,8 +179,8 @@ impl LinkManager {
             .iter_mut()
             .map(|(ip_pair, stream_manager)| {
                 let state = LinkState {
-                    thp_in: 0.0,
-                    thp_out: 0.0,
+                    thp_in: stream_manager.get_received() as f64 / crate::CONFIG.client.measurement_window.as_secs_f64(),
+                    thp_out: stream_manager.get_sent() as f64 / crate::CONFIG.client.measurement_window.as_secs_f64(),
                     bw: Some(stream_manager.tcp_thput()),
                     abw: stream_manager.abw(),
                     latency: stream_manager.get_latency_avg(),

@@ -16,6 +16,8 @@ pub struct StreamManager {
     received: PacketRegistry,
     tcp_thput: f64,
     pub last_iperf: Option<Instant>,
+    bytes_sent: u32,
+    bytes_received: u32,
 }
 
 impl StreamManager {
@@ -26,6 +28,8 @@ impl StreamManager {
             received: PacketRegistry::new(),
             tcp_thput: 0.0,
             last_iperf: None,
+            bytes_sent: 0,
+            bytes_received: 0,
         }
     }
 
@@ -40,14 +44,29 @@ impl StreamManager {
     }
 
     pub fn tcp_thput(&self) -> f64 {
-        self.tcp_thput
+        if let Some(last_iperf) = self.last_iperf {
+            if last_iperf.elapsed() > crate::CONFIG.client.measurement_window {
+                return self.tcp_thput
+            }
+        }
+        return 0.0
     }
 
     pub fn abw(&mut self) -> Option<f64> {
-        self.sent.passive_pgm_abw()
+        self.sent.passive_pgm_abw_rls()
     }
 
     pub fn record_packet(&mut self, packet: &ParsedPacket) {
+
+        match packet.direction {
+            crate::Direction::Incoming => {
+                self.bytes_received += packet.total_length as u32;
+            }
+            crate::Direction::Outgoing => {
+                self.bytes_sent += packet.total_length as u32;
+            }
+        }
+
         let stream_id = StreamKey::from_packet(packet);
         let (burst, direction) = match self
             .streams
@@ -73,6 +92,14 @@ impl StreamManager {
 
     pub fn get_latency_avg(&self) -> Option<f64> {
         self.sent.avg_rtt()
+    }
+
+    pub fn get_sent(&mut self) -> u32 {
+        std::mem::take(&mut self.bytes_sent)
+    }
+
+    pub fn get_received(&mut self) -> u32 {
+        std::mem::take(&mut self.bytes_received)
     }
 
     pub fn periodic(&mut self) {

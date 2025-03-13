@@ -2,7 +2,7 @@
 
 # Change these if running on a different host
 BASE_DIR=$(dirname $0)
-COREFILE=$BASE_DIR/coresesh1.xml
+COREFILE=$BASE_DIR/coresesh2.xml
 
 # Absolute path to the directory where the core-daemon will create the session
 COREDIR=/tmp/pycore.1

@@ -176,7 +176,7 @@ impl Acked {
             let total_length = self
                 .acked_packets
                 .iter()
-                .map(|p| p.total_length as u32)
+                .map(|p| p.payload_len as u32)
                 .sum::<u32>();
             Some((
                 gin.as_secs_f64(),
@@ -432,7 +432,5 @@ mod tests {
         packets.sort_by(|a, b| a.sent_time.cmp(&b.sent_time));
 
         assert!(packets[0].sent_time < packets[1].sent_time);
-
-        println!("{:?}", packets);
     }
 }

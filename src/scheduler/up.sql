@@ -113,65 +113,6 @@ GROUP BY
 ORDER BY
     time ASC;
 
-
-
--- Create a view to calculate the average latency for each link.
-CREATE VIEW
-    latency1 AS
-SELECT
-    time_bucket ('10 second', ls.time) AS time,
-    AVG(ls.latency) AS value,
-    CONCAT (l.sender_ip, ' -> ', l.receiver_ip) AS metric
-FROM
-    link_state ls
-    JOIN links l ON ls.link_id = l.id1
-GROUP BY
-    time,
-    metric
-ORDER BY
-    time ASC;
-
--- Create a view to calculate the average latency for each link.
-CREATE VIEW
-    latency2 AS
-SELECT
-    time_bucket ('10 second', ls.time) AS time,
-    AVG(ls.latency) AS value,
-    CONCAT (l.sender_ip, ' -> ', l.receiver_ip) AS metric
-FROM
-    link_state ls
-    JOIN links l ON ls.link_id = l.id2
-GROUP BY
-    time,
-    metric
-ORDER BY
-    time ASC;
-
-CREATE VIEW
-    latency AS
-SELECT
-    t1,
-    v1,
-    m1,
-    v2,
-    m2
-FROM
-    (
-        SELECT
-            l1.time as t1,
-            l2.time as t2,
-            l1.value as v1,
-            l2.value as v2,
-            l1.metric as m1,
-            l2.metric as m2
-        FROM
-            latency1 l1
-            JOIN latency2 l2 ON l1.time = l2.time
-            AND l1.metric = l2.metric
-        ORDER BY
-            l1.time ASC
-    ) l;
-
 CREATE VIEW
     abw AS
 SELECT

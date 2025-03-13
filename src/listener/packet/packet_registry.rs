@@ -37,6 +37,12 @@ impl PacketRegistry {
         res
     }
 
+    pub fn passive_pgm_abw_rls(&mut self) -> Option<f64> {
+        let res = self.pgm_estimator.passive_pgm_abw_rls();
+        self.pgm_estimator.dps.clear();
+        res
+    }
+
     pub fn take_rtts(&mut self) -> Vec<(u32, SystemTime)> {
         return std::mem::take(&mut self.rtts);
     }

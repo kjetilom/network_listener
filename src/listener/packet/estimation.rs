@@ -1,4 +1,5 @@
-use std::{time::SystemTime, u32::MAX};
+use std::time::SystemTime;
+
 /// A structure holding a pair of gap measurements and the associated packet length.
 #[derive(Debug, Clone)]
 pub struct GinGout {
@@ -38,7 +39,7 @@ impl PABWESender {
         self.dps.push(dp);
     }
 
-    fn filter_gin_gacks(&mut self) -> Vec<GinGout> {
+    pub fn filter_gin_gacks(&mut self) -> Vec<GinGout> {
         // Get the average of the 10% smallest gin values.
         // Calculate the average gack and gin for these values:
         let phy_cap = crate::CONFIG.client.link_phy_cap as f64 / 8.0;
@@ -48,7 +49,7 @@ impl PABWESender {
             .iter()
             .filter(|dp| {
                 dp.gin > 0.0
-                    && dp.len > 1000.0
+                    && dp.len > 1000.0 // ! Fix this, this should be set to mss in some way
                     && dp.len / dp.gin < phy_cap
                     && dp.len / dp.gout < phy_cap
             })
@@ -69,7 +70,7 @@ impl PABWESender {
             .cloned()
             .collect();
 
-        // Return the 70% smallest gin values.
+        // Return the 70% smallest gin values. (Aka the largest len/gin values.)
         return filtered[0..(filtered.len() as f64 * 0.7).ceil() as usize].to_vec();
     }
 
@@ -126,6 +127,118 @@ impl PABWESender {
             }
         }
         None
+    }
+
+    pub fn passive_pgm_abw_rls(&mut self) -> Option<f64> {
+        if self.dps.is_empty() {
+            return None;
+        }
+
+        let dps = self.filter_gin_gacks();
+        let mut xs: Vec<f64> = Vec::new();
+        let mut ys: Vec<f64> = Vec::new();
+
+        for dp in &dps {
+            if dp.gin.abs() < f64::EPSILON {
+                continue;
+            }
+            let x = dp.len / dp.gin;
+            let y = dp.gout / dp.gin;
+            xs.push(x);
+            ys.push(y);
+        }
+
+        if xs.is_empty() {
+            return None;
+        }
+
+        // Perform robust regression.
+        let (a, b) = Self::robust_least_squares(&xs, &ys)?;
+
+        if a.abs() < f64::EPSILON {
+            return None;
+        }
+
+        // Calculate the result as (1 - b) / a.
+        let res = (1.0 - b) / a;
+        if res > 0.0 && res < crate::CONFIG.client.link_phy_cap as f64 / 8.0 {
+            Some(res)
+        } else {
+            None
+        }
+    }
+
+    /// Performs robust linear regression using IRLS with Huber weighting.
+    /// Returns Some((slope, intercept)) on success.
+    fn robust_least_squares(x: &[f64], y: &[f64]) -> Option<(f64, f64)> {
+        let n = x.len();
+        if n == 0 {
+            return None;
+        }
+        let tol = 1e-6;
+        let max_iter = 100;
+        let mut weights = vec![1.0; n];
+        let mut a = 0.0;
+        let mut b = 0.0;
+
+        for _ in 0..max_iter {
+            // Weighted sums for the regression.
+            let (mut sum_w, mut sum_wx, mut sum_wy, mut sum_wxx, mut sum_wxy) =
+                (0.0, 0.0, 0.0, 0.0, 0.0);
+            for i in 0..n {
+                let w = weights[i];
+                let xi = x[i];
+                let yi = y[i];
+                sum_w += w;
+                sum_wx += w * xi;
+                sum_wy += w * yi;
+                sum_wxx += w * xi * xi;
+                sum_wxy += w * xi * yi;
+            }
+
+            let denominator = sum_w * sum_wxx - sum_wx * sum_wx;
+            if denominator.abs() < f64::EPSILON {
+                return None;
+            }
+            let new_a = (sum_w * sum_wxy - sum_wx * sum_wy) / denominator;
+            let new_b = (sum_wy - new_a * sum_wx) / sum_w;
+
+            // Check for convergence.
+            if (new_a - a).abs() < tol && (new_b - b).abs() < tol {
+                a = new_a;
+                b = new_b;
+                break;
+            }
+            a = new_a;
+            b = new_b;
+
+            // Compute absolute residuals.
+            let mut residuals: Vec<f64> = x
+                .iter()
+                .zip(y.iter())
+                .map(|(xi, yi)| (yi - (a * xi + b)).abs())
+                .collect();
+
+            // Compute the median of the residuals.
+            residuals.sort_by(|r1, r2| r1.partial_cmp(r2).unwrap());
+            let median = if n % 2 == 1 {
+                residuals[n / 2]
+            } else {
+                (residuals[n / 2 - 1] + residuals[n / 2]) / 2.0
+            };
+            // Set Huber threshold.
+            let mut delta = 1.345 * median;
+            if delta < tol {
+                delta = tol;
+            }
+
+            // Update weights: if the residual is small, weight remains 1; otherwise, weight = delta/residual.
+            for i in 0..n {
+                let res = (y[i] - (a * x[i] + b)).abs();
+                weights[i] = if res <= delta { 1.0 } else { delta / res };
+            }
+        }
+        Some((a, b))
     }
 }
 
@@ -205,8 +318,6 @@ mod tests {
                 timestamp: std::time::SystemTime::now(),
             });
         }
-
-        println!("{:?}", sender.filter_gin_gacks());
 
         let estimated = sender.passive_pgm_abw();
         assert!(estimated.is_some(), "Regression should produce an estimate");
