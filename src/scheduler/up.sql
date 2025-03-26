@@ -67,67 +67,6 @@ FROM
 WHERE
     link.id < l.id;
 
--- Create joined view for rtt and link.
-CREATE VIEW
-    rtts3 AS
-SELECT
-    rtt.rtt,
-    rtt.time,
-    CONCAT (l.sender_ip, ' -> ', l.receiver_ip) AS metric
-FROM
-    rtt
-    JOIN links l ON rtt.link_id = l.id1
-ORDER BY
-    time ASC;
-
-
--- Create a view to calculate the average rtt for each link.
-CREATE VIEW
-    rtts1 AS
-SELECT
-    time_bucket ('1 second', rtt.time) AS time,
-    AVG(rtt.rtt) AS value,
-    CONCAT (l.sender_ip, ' -> ', l.receiver_ip) AS metric
-FROM
-    rtt
-    JOIN links l ON rtt.link_id = l.id1
-GROUP BY
-    time,
-    metric
-ORDER BY
-    time ASC;
-
--- Create a view to calculate the average rtt for each link.
-CREATE VIEW
-    rtts2 AS
-SELECT
-    time_bucket ('10 second', rtt.time) AS time,
-    AVG(rtt.rtt) AS value,
-    CONCAT (l.sender_ip, ' -> ', l.receiver_ip) AS metric
-FROM
-    rtt
-    JOIN links l ON rtt.link_id = l.id2
-GROUP BY
-    time,
-    metric
-ORDER BY
-    time ASC;
-
-CREATE VIEW
-    abw AS
-SELECT
-    time_bucket ('10 second', ls.time) AS time,
-    AVG(ls.abw) AS value,
-    CONCAT (l.sender_ip, ' -> ', l.receiver_ip) AS metric
-FROM
-    link_state ls
-    JOIN link l ON ls.link_id = l.id
-GROUP BY
-    time,
-    metric
-ORDER BY
-    time ASC;
-
 CREATE INDEX ON link_state (link_id);
 
 CREATE INDEX ON rtt (link_id);
