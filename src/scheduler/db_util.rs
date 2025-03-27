@@ -1,4 +1,4 @@
-use crate::proto_bw::{BandwidthMessage, Rtts};
+use crate::proto_bw::{BandwidthMessage, Pgm, Rtts};
 use chrono::{TimeZone, Utc, DateTime};
 use log::error;
 use tokio_postgres::{types::Timestamp, Client};
@@ -79,8 +79,8 @@ pub async fn insert_into(
     }
 }
 
-pub async fn upload_probe_gap_measurements(_msg: BandwidthMessage, _client: &Client) {
-
+pub async fn upload_probe_gap_measurements(msg: Pgm, _client: &Client) {
+    println!("{:?}", msg);
 }
 
 /// Uploads bandwidth data (for each LinkState) into the database.

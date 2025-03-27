@@ -39,10 +39,6 @@ impl StreamManager {
         self.tcp_thput = bps;
     }
 
-    // pub fn drain_rtts(&mut self) -> Vec<(u32, SystemTime)> {
-    //     self.sent.take_rtts()
-    // }
-
     pub fn tcp_thput(&self) -> f64 {
         if let Some(last_iperf) = self.last_iperf {
             if last_iperf.elapsed() > crate::CONFIG.client.measurement_window {
@@ -51,11 +47,6 @@ impl StreamManager {
         }
         return 0.0;
     }
-
-    // pub fn abw(&mut self) -> Option<f64> {
-    //     let (abw, dps) = self.sent.passive_abw(true);
-    //     abw
-    // }
 
     pub fn record_packet(&mut self, packet: &ParsedPacket) {
         match packet.direction {
@@ -89,10 +80,6 @@ impl StreamManager {
             }
         }
     }
-
-    // pub fn get_latency_avg(&self) -> Option<f64> {
-    //     self.sent.avg_rtt()
-    // }
 
     pub fn take_sent(&mut self) -> u32 {
         std::mem::take(&mut self.bytes_sent)

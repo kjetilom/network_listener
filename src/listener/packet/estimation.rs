@@ -184,7 +184,7 @@ impl PABWESender {
         if n == 0 {
             return None;
         }
-        let tol = 1e-6;
+        let tol = 1e-4;
         let max_iter = 100;
         let mut weights = vec![1.0; n];
         let mut a = 0.0;

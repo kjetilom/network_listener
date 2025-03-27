@@ -10,7 +10,7 @@ use tokio_util::codec::{Framed, LengthDelimitedCodec};
 // Adjust the module path to match your generated protobuf code.
 use network_listener::proto_bw::DataMsg;
 
-use network_listener::scheduler::db_util::{upload_bandwidth, upload_rtt};
+use network_listener::scheduler::db_util::{upload_bandwidth, upload_probe_gap_measurements, upload_rtt};
 
 async fn handle_connection(socket: TcpStream) -> Result<DataMsg, Box<dyn Error + Send + Sync>> {
     // Wrap the socket with a length-delimited codec for framing.
@@ -41,6 +41,7 @@ async fn run_server(listen_addr: &str, client: Client) -> Result<(), Box<dyn Err
     println!("Server listening on {}", listen_addr);
 
     loop {
+        // Unefficient, but simple: Connections are not maintained
         let (socket, addr) = listener.accept().await?;
         println!("Accepted connection from {}", addr);
         let bwm = tokio::spawn(async move {
@@ -59,7 +60,7 @@ async fn run_server(listen_addr: &str, client: Client) -> Result<(), Box<dyn Err
                     upload_rtt(rtts, &client).await;
                 }
                 data_msg::Data::Pgm(pgm) => {
-                    println!("Received PGM message: {:?}, {:?}", pgm.receiver_ip, pgm.sender_ip);
+                    upload_probe_gap_measurements(pgm, &client).await;
                 }
             }
         }
@@ -82,7 +83,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     println!("Connecting to database");
     let (client, connection) = tokio_postgres::connect(
-        "host=localhost user=user password=password dbname=metricsdb",
+        "host=localhost user=user password=password dbname=metricsdb", // Very secure
         tokio_postgres::NoTls,
     ).await?;
 
@@ -91,8 +92,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             eprintln!("connection error: {}", e);
         }
     });
-
-    println!("{:?}", args);
 
     let listen_addr = args[1].clone();
     run_server(&listen_addr, client).await?;

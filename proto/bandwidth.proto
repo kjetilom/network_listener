@@ -5,8 +5,6 @@ service BandwidthService {
     rpc SayHello (HelloRequest) returns (HelloReply);
     rpc GetBandwidth (BandwidthRequest) returns (BandwidthMessage);
     rpc SubscribeBandwidth (BandwidthRequest) returns (stream BandwidthMessage);
-    // rpc ShareBandwidth (BandwidthMessage) returns (BandwidthMessage);
-    // SendBandwidth
 }
 
 message DataMsg {
@@ -19,45 +17,36 @@ message DataMsg {
 }
 
 message LinkState {
-    // Ip addr of the sender (source)
-    string sender_ip = 1;
-    // Ip addr of the receiver (destination)
-    string receiver_ip = 2;
-    // Not used right now
-    double thp_in = 3;
-    // Not used right now
-    double thp_out = 4;
-    // As of now, what is reported by iperf3
-    double bw = 5;
-    // Passive pgm
-    double abw = 6;
-
-    double latency = 7;
-
-    double delay = 8;
-
-    double jitter = 9;
-
-    double loss = 10;
-
-    int64 timestamp = 11;
+    string sender_ip = 1; // Ip addr of the sender
+    string receiver_ip = 2; // Ip addr of the receiver
+    double thp_in = 3; // Bytes in per second since last report
+    double thp_out = 4; // Bytes out per second since last report
+    double bw = 5; // Iperf3 bandwidth estimate
+    double abw = 6; // Available Bandwidth estimate
+    double latency = 7; // Latency in seconds
+    double delay = 8; // Unused
+    double jitter = 9; // Unused
+    double loss = 10; // Unused
+    int64 timestamp = 11; // Timestamp defined by the sender in milliseconds since epoch
 }
 
 message PgmDp {
-    double len_div_gin = 1;
-    double gout_div_gin = 2;
+    double gin = 1; // Gap in (seconds)
+    double gout = 2; // Gap out (seconds)
+    int32 len = 3; // Avg packet size in cumulative ack (bytes)
+    int32 num_acked = 4; // Number of packets acked
 }
 
 message Pgm {
-    string sender_ip = 1;
-    string receiver_ip = 2;
-    int64 timestamp = 3;
+    string sender_ip = 1; // Ip addr of the sender (source)
+    string receiver_ip = 2;  // Ip addr of the receiver (source)
+    int64 timestamp = 3; // Timestamp defined by the sender in milliseconds since epoch
     repeated PgmDp pgm_dp = 4;
 }
 
 message Rtt {
-    double rtt = 1;
-    int64 timestamp = 2;
+    double rtt = 1; // seconds
+    int64 timestamp = 2; // Timestamp defined by the sender in milliseconds since epoch
 }
 
 message RttMessage {

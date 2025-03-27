@@ -5,7 +5,8 @@ use std::time::SystemTime;
 
 #[derive(Debug)]
 pub struct PacketRegistry {
-    pub rtts: Vec<(u32, SystemTime)>, // in microseconds
+    pub rtts: Vec<(u32, SystemTime)>,
+    pub sum_rtt: (f64, u32),
     pub burst_thput: Vec<f64>,        // in bytes
     pub pgm_estimator: PABWESender,
     min_rtt: (f64, SystemTime),
@@ -22,6 +23,7 @@ impl PacketRegistry {
     pub fn new() -> Self {
         PacketRegistry {
             rtts: Vec::new(),
+            sum_rtt: (0.0, 0),
             burst_thput: Vec::new(),
             pgm_estimator: PABWESender::new(),
             min_rtt: (f64::MAX, SystemTime::now()),
@@ -70,22 +72,28 @@ impl PacketRegistry {
                     }
                     last_ack = Some(ack.ack_time);
                 }
-                self.rtts.extend(
-                    burst
-                        .iter()
-                        .map(|p| (p.rtt.unwrap().as_micros() as u32, p.sent_time)),
-                );
+                burst.iter().for_each(|p| {
+                    if p.rtt.is_some() {
+                        self.min_rtt = (
+                            self.min_rtt.0.min(p.rtt.unwrap().as_micros() as f64),
+                            p.sent_time,
+                        );
+                        self.sum_rtt.0 += p.rtt.unwrap().as_micros() as f64;
+                        self.sum_rtt.1 += 1;
+                        self.retransmissions += p.retransmissions as u16;
+                        self.rtts.push((p.rtt.unwrap().as_micros() as u32, p.sent_time));
+                    }
+                });
             }
             _ => {}
         }
     }
 
     pub fn avg_rtt(&self) -> Option<f64> {
-        let rtts: Vec<f64> = self.rtts.iter().map(|rtt| rtt.0 as f64).collect();
-        if rtts.is_empty() {
+        if self.sum_rtt.1 == 0 {
             None
         } else {
-            Some(rtts.iter().sum::<f64>() / rtts.len() as f64)
+            Some(self.sum_rtt.0 / self.sum_rtt.1 as f64)
         }
     }
 

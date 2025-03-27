@@ -297,13 +297,8 @@ impl TcpStream {
     fn update_acked_packets(&mut self, ack: u32, pkt: PacketType) -> Vec<PacketType> {
         let mut acked = Vec::new();
         let mut keys_to_remove = Vec::new();
-        let mut bytes_acked = None;
         for (&seq, sent_packet) in self.packets.iter_mut() {
             if seq_less_equal(seq.wrapping_add(sent_packet.payload_len as u32), ack) {
-                // Set bytes acked to the first packet that is acked (this works due to the map being sorted)
-                if bytes_acked.is_none() {
-                    bytes_acked = Some(seq.wrapping_sub(ack));
-                }
 
                 if let Ok(rtt_duration) = pkt.sent_time.duration_since(sent_packet.sent_time) {
                     self.max_rtt = std::cmp::max(self.max_rtt, rtt_duration);
