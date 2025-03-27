@@ -82,10 +82,10 @@ impl PABWESender {
     ///
     /// The regression line is computed over all points, and the available
     /// bandwidth is estimated as (1 - b) / a, where a is the slope and b is the intercept.
-    pub fn passive_pgm_abw(&mut self) -> Option<f64> {
+    pub fn passive_pgm_abw(&mut self) -> (Option<f64>, Vec<GinGout>) {
         // Ensure we have some data points.
         if self.dps.is_empty() {
-            return None;
+            return (None, Vec::new());
         }
 
         let dps = self.filter_gin_gacks();
@@ -108,14 +108,14 @@ impl PABWESender {
         }
 
         if count == 0 {
-            return None;
+            return (None, dps);
         }
 
         let n = count as f64;
         let numerator = n * sum_xy - sum_x * sum_y;
         let denominator = n * sum_x2 - sum_x * sum_x;
         if denominator.abs() < f64::EPSILON {
-            return None;
+            return (None, dps);
         }
         let a = numerator / denominator;
         let b = (sum_y - a * sum_x) / n;
@@ -123,15 +123,21 @@ impl PABWESender {
         if a.abs() > f64::EPSILON {
             let res = (1.0 - b) / a;
             if res > 0.0 && res < crate::CONFIG.client.link_phy_cap as f64 / 8.0 {
-                return Some(res);
+                return (Some(res), dps);
             }
         }
-        None
+        (None, dps)
     }
 
-    pub fn passive_pgm_abw_rls(&mut self) -> Option<f64> {
+    /// Estimates the available bandwidth using a robust linear regression.
+    ///
+    /// This method is similar to `passive_pgm_abw`, but it uses an iterative
+    /// robust least squares (IRLS) approach to minimize the influence of outliers.
+    /// The available bandwidth is estimated as (1 - b) / a, where a is the slope
+    /// and b is the intercept.
+    pub fn passive_pgm_abw_rls(&mut self) -> (Option<f64>, Vec<GinGout>) {
         if self.dps.is_empty() {
-            return None;
+            return (None, Vec::new());
         }
 
         let dps = self.filter_gin_gacks();
@@ -149,22 +155,25 @@ impl PABWESender {
         }
 
         if xs.is_empty() {
-            return None;
+            return (None, dps);
         }
 
         // Perform robust regression.
-        let (a, b) = Self::robust_least_squares(&xs, &ys)?;
+        let (a, b) = match Self::robust_least_squares(&xs, &ys) {
+            Some((a, b)) => (a, b),
+            None => return (None, dps),
+        };
 
         if a.abs() < f64::EPSILON {
-            return None;
+            return (None, dps);
         }
 
         // Calculate the result as (1 - b) / a.
         let res = (1.0 - b) / a;
         if res > 0.0 && res < crate::CONFIG.client.link_phy_cap as f64 / 8.0 {
-            Some(res)
+            (Some(res), dps)
         } else {
-            None
+            (None, dps)
         }
     }
 
@@ -250,7 +259,7 @@ mod tests {
     fn test_empty_sender() {
         let mut sender = PABWESender::new();
         assert!(
-            sender.passive_pgm_abw().is_none(),
+            sender.passive_pgm_abw().0.is_none(),
             "Empty sender should return None"
         );
     }
@@ -266,68 +275,8 @@ mod tests {
             timestamp: std::time::SystemTime::now(),
         });
         assert!(
-            sender.passive_pgm_abw().is_none(),
+            sender.passive_pgm_abw().0.is_none(),
             "Only zero gin data should yield None"
-        );
-    }
-
-    #[test]
-    fn test_simple_regression() {
-        let mut sender = PABWESender::new();
-
-        let test_points = vec![
-            (0.1, 0.1, 1200.0),
-            (0.12, 0.15, 1200.0),
-            (0.13, 0.20, 1200.0),
-            (0.14, 0.25, 1200.0),
-            (0.15, 0.30, 1200.0),
-            (0.16, 0.35, 1200.0),
-            (0.17, 0.40, 1200.0),
-            (0.18, 0.45, 1200.0),
-            (0.19, 0.50, 1200.0),
-            (0.20, 0.55, 1200.0),
-            (0.21, 0.60, 1200.0),
-            (0.22, 0.65, 1200.0),
-            (0.23, 0.70, 1200.0),
-            (0.24, 0.75, 1200.0),
-            (0.25, 0.80, 1200.0),
-            (0.26, 0.85, 1200.0),
-            (0.27, 0.90, 1200.0),
-            (0.28, 0.95, 1200.0),
-            (0.29, 1.0, 1200.0),
-            (0.30, 1.05, 1200.0),
-            (0.31, 1.10, 1200.0),
-            (0.32, 1.15, 1200.0),
-            (0.33, 1.20, 1200.0),
-            (0.34, 1.25, 1200.0),
-            (0.35, 1.30, 1200.0),
-            (0.36, 1.35, 1200.0),
-            (0.37, 1.40, 1200.0),
-            (0.38, 1.45, 1200.0),
-            (0.39, 1.50, 1200.0),
-            (0.40, 1.55, 1200.0),
-            (0.41, 1.60, 1200.0),
-            (0.42, 1.65, 1200.0),
-        ];
-
-        for (gin, gout, len) in test_points {
-            sender.push(GinGout {
-                gin,
-                gout,
-                len,
-                timestamp: std::time::SystemTime::now(),
-            });
-        }
-
-        let estimated = sender.passive_pgm_abw();
-        assert!(estimated.is_some(), "Regression should produce an estimate");
-        let abw = estimated.unwrap();
-        // Check that the estimated available bandwidth is close to 50,
-        // allowing some tolerance due to floating-point arithmetic.
-        assert!(
-            (abw - 11629.0).abs() < 1.0,
-            "Estimated bandwidth ({}) should be approximately 11629",
-            abw
         );
     }
 

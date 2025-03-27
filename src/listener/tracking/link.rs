@@ -3,11 +3,14 @@ use std::{
     fmt::Display,
     net::{AddrParseError, IpAddr},
     sync::Arc,
-    time::UNIX_EPOCH,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::proto_bw::{
-    data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto, Rtt, RttMessage, Rtts,
+use crate::{
+    proto_bw::{
+        data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto, Rtt, RttMessage, Rtts,
+    },
+    PacketRegistry,
 };
 
 use log::{info, warn};
@@ -62,9 +65,7 @@ impl LinkManager {
         }
 
         if let Some((src_port, dst_port)) = packet.get_src_dst_port() {
-            if dst_port == crate::CONFIG.server.port
-                || src_port == crate::CONFIG.server.port
-            {
+            if dst_port == crate::CONFIG.server.port || src_port == crate::CONFIG.server.port {
                 return;
             }
         }
@@ -104,13 +105,20 @@ impl LinkManager {
     }
 
     pub async fn send_bandwidth(&mut self) {
-        let bw_message = self.get_bw_message();
-        let rtt_message = self.get_rtt_message();
+        let (bw_message, rtt_message) = self.build_messages();
+
+        let bw_message = DataMsg {
+            data: Some(data_msg::Data::Bandwidth(bw_message)),
+        };
+
+        let rtt_message = DataMsg {
+            data: Some(data_msg::Data::Rtts(rtt_message)),
+        };
 
         if CONFIG.server.send_link_states {
             match self
                 .client_sender
-                .send(ClientHandlerEvent::SendBandwidth(bw_message))
+                .send(ClientHandlerEvent::SendDataMsg(bw_message))
                 .await
             {
                 Ok(_) => (),
@@ -121,7 +129,7 @@ impl LinkManager {
         if CONFIG.server.send_rtts {
             match self
                 .client_sender
-                .send(ClientHandlerEvent::SendBandwidth(rtt_message))
+                .send(ClientHandlerEvent::SendDataMsg(rtt_message))
                 .await
             {
                 Ok(_) => (),
@@ -143,57 +151,57 @@ impl LinkManager {
             .unwrap();
     }
 
-    pub fn get_bw_message(&mut self) -> DataMsg {
-        let links = self.get_link_states();
-        DataMsg {
-            data: Some(data_msg::Data::Bandwidth(BandwidthMessage {
-                link_state: links.into_iter().map(|link| link.to_proto()).collect(),
-            })),
-        }
-    }
-
-    pub fn get_rtt_message(&mut self) -> DataMsg {
-        let messages: Vec<RttMessage> = self
-            .links
-            .iter_mut()
-            .map(|(ip_pair, stream_manager)| RttMessage {
-                sender_ip: ip_pair.local().to_string(),
-                receiver_ip: ip_pair.remote().to_string(),
-                rtt: stream_manager
-                    .drain_rtts()
-                    .into_iter()
-                    .map(|(rtt, timestamp)| Rtt {
-                        rtt: rtt as f64,
-                        timestamp: timestamp.duration_since(UNIX_EPOCH).unwrap().as_millis() as i64,
-                    })
-                    .collect(),
+    pub fn get_rtt_message(rtts: Vec<(u32, SystemTime)>, ip_pair: IpPair) -> RttMessage {
+        let messages: Vec<Rtt> = rtts
+            .into_iter()
+            .map(|(rtt, timestamp)| Rtt {
+                rtt: rtt as f64,
+                timestamp: timestamp.duration_since(UNIX_EPOCH).unwrap().as_millis() as i64,
             })
             .collect();
-        DataMsg {
-            data: Some(data_msg::Data::Rtts(Rtts { rtts: messages })),
+
+        RttMessage {
+            sender_ip: ip_pair.local().to_string(),
+            receiver_ip: ip_pair.remote().to_string(),
+            rtt: messages,
         }
     }
 
-    pub fn get_link_states(&mut self) -> Vec<Link> {
-        self.links
-            .iter_mut()
-            .map(|(ip_pair, stream_manager)| {
-                let state = LinkState {
-                    thp_in: stream_manager.get_received() as f64 / crate::CONFIG.client.measurement_window.as_secs_f64(),
-                    thp_out: stream_manager.get_sent() as f64 / crate::CONFIG.client.measurement_window.as_secs_f64(),
-                    bw: Some(stream_manager.tcp_thput()),
-                    abw: stream_manager.abw(),
-                    latency: stream_manager.get_latency_avg(),
-                    delay: None,
-                    jitter: None,
-                    loss: None,
-                };
-                Link {
-                    ip_pair: *ip_pair, // Copy IpPair
-                    state,
-                }
-            })
-            .collect()
+    fn get_link_state(
+        stream_manager: &mut StreamManager,
+        pkt_reg: &mut PacketRegistry,
+        ip_pair: IpPair,
+    ) -> Link {
+        let state = LinkState {
+            thp_in: stream_manager.take_received() as f64
+                / crate::CONFIG.client.measurement_window.as_secs_f64(),
+            thp_out: stream_manager.take_sent() as f64
+                / crate::CONFIG.client.measurement_window.as_secs_f64(),
+            bw: Some(stream_manager.tcp_thput()),
+            abw: pkt_reg.passive_abw(true).0,
+            latency: pkt_reg.avg_rtt(),
+            delay: None,
+            jitter: None,
+            loss: None,
+        };
+        Link { ip_pair, state }
+    }
+
+    pub fn build_messages(&mut self) -> (BandwidthMessage, Rtts) {
+        let mut links = Vec::new();
+        let mut rtts = Vec::new();
+        for (ip_pair, stream_manager) in self.links.iter_mut() {
+            let mut sent_registry = stream_manager.sent.take();
+            let _ = stream_manager.received.take();
+
+            let link =
+                Self::get_link_state(stream_manager, &mut sent_registry, *ip_pair).to_proto();
+            let rtt_msg = Self::get_rtt_message(sent_registry.rtts, *ip_pair);
+            links.push(link);
+            rtts.push(rtt_msg);
+        }
+
+        (BandwidthMessage { link_state: links }, Rtts { rtts })
     }
 }
 

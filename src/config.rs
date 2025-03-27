@@ -3,8 +3,6 @@ use serde::Deserialize;
 use std::fs;
 use clap::Parser;
 
-pub const DEFAULT_CONFIG_PATH: &str = "../mgensh/config/config.toml";
-
 #[derive(Deserialize, Debug)]
 pub struct AppConfig {
     pub client: Client,

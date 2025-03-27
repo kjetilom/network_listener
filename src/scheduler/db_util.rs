@@ -79,7 +79,7 @@ pub async fn insert_into(
     }
 }
 
-pub async fn upload_probe_gap_measurements(msg: BandwidthMessage, client: &Client) {
+pub async fn upload_probe_gap_measurements(_msg: BandwidthMessage, _client: &Client) {
 
 }
 

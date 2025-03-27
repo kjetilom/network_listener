@@ -5,11 +5,17 @@ use std::time::SystemTime;
 
 #[derive(Debug)]
 pub struct PacketRegistry {
-    rtts: Vec<(u32, SystemTime)>, // in microseconds
-    burst_thput: Vec<f64>, // in bytes
-    pgm_estimator: PABWESender,
+    pub rtts: Vec<(u32, SystemTime)>, // in microseconds
+    pub burst_thput: Vec<f64>,        // in bytes
+    pub pgm_estimator: PABWESender,
     min_rtt: (f64, SystemTime),
     retransmissions: u16,
+}
+
+impl Default for PacketRegistry {
+    fn default() -> Self {
+        PacketRegistry::new()
+    }
 }
 
 impl PacketRegistry {
@@ -31,20 +37,15 @@ impl PacketRegistry {
         }
     }
 
-    pub fn passive_pgm_abw(&mut self) -> Option<f64> {
-        let res = self.pgm_estimator.passive_pgm_abw();
-        self.pgm_estimator.dps.clear();
-        res
+    pub fn passive_abw(&mut self, robust: bool) -> (Option<f64>, Vec<GinGout>) {
+        match robust {
+            true => self.pgm_estimator.passive_pgm_abw_rls(),
+            false => self.pgm_estimator.passive_pgm_abw(),
+        }
     }
 
-    pub fn passive_pgm_abw_rls(&mut self) -> Option<f64> {
-        let res = self.pgm_estimator.passive_pgm_abw_rls();
-        self.pgm_estimator.dps.clear();
-        res
-    }
-
-    pub fn take_rtts(&mut self) -> Vec<(u32, SystemTime)> {
-        return std::mem::take(&mut self.rtts);
+    pub fn take(&mut self) -> Self {
+        std::mem::take(self) // Reset the registry
     }
 
     pub fn extend(&mut self, values: Burst) {
@@ -69,8 +70,11 @@ impl PacketRegistry {
                     }
                     last_ack = Some(ack.ack_time);
                 }
-                self.rtts.extend(burst.iter().map(|p| (p.rtt.unwrap().as_micros() as u32, p.sent_time)));
-
+                self.rtts.extend(
+                    burst
+                        .iter()
+                        .map(|p| (p.rtt.unwrap().as_micros() as u32, p.sent_time)),
+                );
             }
             _ => {}
         }
@@ -98,3 +102,18 @@ impl PacketRegistry {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use crate::tcp_tracker::TcpBurst;
+
+    #[test]
+    fn test_extend_empty() {
+        let mut registry = super::PacketRegistry::new();
+        let burst = super::Burst::Tcp(TcpBurst {
+            packets: Vec::new(),
+        });
+        registry.extend(burst);
+        assert_eq!(registry.burst_thput.len(), 1);
+    }
+}

@@ -4,7 +4,7 @@ use crate::{
     PacketRegistry, ParsedPacket,
 };
 use pnet::packet::ip::IpNextHeaderProtocol;
-use std::{collections::HashMap, time::SystemTime};
+use std::collections::HashMap;
 use tokio::time::Instant;
 
 /// StreamManager is a struct that keeps track of all streams and their states.
@@ -12,8 +12,8 @@ use tokio::time::Instant;
 pub struct StreamManager {
     // HashMap for all streams
     streams: HashMap<StreamKey, Tracker<TrackerState>>,
-    sent: PacketRegistry,
-    received: PacketRegistry,
+    pub sent: PacketRegistry,
+    pub received: PacketRegistry,
     tcp_thput: f64,
     pub last_iperf: Option<Instant>,
     bytes_sent: u32,
@@ -39,25 +39,25 @@ impl StreamManager {
         self.tcp_thput = bps;
     }
 
-    pub fn drain_rtts(&mut self) -> Vec<(u32, SystemTime)> {
-        self.sent.take_rtts()
-    }
+    // pub fn drain_rtts(&mut self) -> Vec<(u32, SystemTime)> {
+    //     self.sent.take_rtts()
+    // }
 
     pub fn tcp_thput(&self) -> f64 {
         if let Some(last_iperf) = self.last_iperf {
             if last_iperf.elapsed() > crate::CONFIG.client.measurement_window {
-                return self.tcp_thput
+                return self.tcp_thput;
             }
         }
-        return 0.0
+        return 0.0;
     }
 
-    pub fn abw(&mut self) -> Option<f64> {
-        self.sent.passive_pgm_abw_rls()
-    }
+    // pub fn abw(&mut self) -> Option<f64> {
+    //     let (abw, dps) = self.sent.passive_abw(true);
+    //     abw
+    // }
 
     pub fn record_packet(&mut self, packet: &ParsedPacket) {
-
         match packet.direction {
             crate::Direction::Incoming => {
                 self.bytes_received += packet.total_length as u32;
@@ -90,30 +90,25 @@ impl StreamManager {
         }
     }
 
-    pub fn get_latency_avg(&self) -> Option<f64> {
-        self.sent.avg_rtt()
-    }
+    // pub fn get_latency_avg(&self) -> Option<f64> {
+    //     self.sent.avg_rtt()
+    // }
 
-    pub fn get_sent(&mut self) -> u32 {
+    pub fn take_sent(&mut self) -> u32 {
         std::mem::take(&mut self.bytes_sent)
     }
 
-    pub fn get_received(&mut self) -> u32 {
+    pub fn take_received(&mut self) -> u32 {
         std::mem::take(&mut self.bytes_received)
     }
 
     pub fn periodic(&mut self) {
         for stream in self.streams.values_mut() {
+            // Take residual bursts.
             let (sent, received) = match stream.state {
-                TrackerState::Tcp(ref mut tracker) => {
-                    tracker.take_bursts()
-                }
-                TrackerState::Udp(ref mut tracker) => {
-                    tracker.take_bursts()
-                }
-                TrackerState::Other(ref mut tracker) => {
-                    tracker.take_bursts()
-                }
+                TrackerState::Tcp(ref mut tracker) => tracker.take_bursts(),
+                TrackerState::Udp(ref mut tracker) => tracker.take_bursts(),
+                TrackerState::Other(ref mut tracker) => tracker.take_bursts(),
             };
             self.sent.extend(sent);
             self.received.extend(received);

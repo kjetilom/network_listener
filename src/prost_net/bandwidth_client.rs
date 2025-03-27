@@ -36,7 +36,7 @@ pub enum ClientHandlerEvent {
     Stop,
     DoIperf3(String, u16, u16),
     DoPathloadTest(String),
-    SendBandwidth(DataMsg),
+    SendDataMsg(DataMsg),
 }
 
 pub enum ClientStatus {
@@ -140,7 +140,7 @@ impl ClientHandler {
                 ClientHandlerEvent::DoPathloadTest(ip) => {
                     dispatch_pathload_client(self.cap_ev_tx.clone(), ip);
                 }
-                ClientHandlerEvent::SendBandwidth(bw) => {
+                ClientHandlerEvent::SendDataMsg(bw) => {
                     let cap_ev_tx = self.cap_ev_tx.clone();
                     tokio::spawn(async move {
                         send_message(
