@@ -1,6 +1,13 @@
 #! /bin/bash
 BASE_DIR=$(dirname $0)
 
+# Check if file is passed as an argument
+CORESESSION_FILE=$1
+if [ -z "$CORESESSION_FILE" ]; then
+    echo "Usage: $0 <core_session_file>"
+    exit 1
+fi
+
 # Create a new tmux session
 tmux new-session -d -s core -c $BASE_DIR
 # Create a new window for the daemon
@@ -14,7 +21,7 @@ tmux send-keys -t "=core:=daemon" "sudo core-daemon" Enter
 sleep 3
 
 # Start the start_core.sh script in the start_core window
-tmux send-keys -t "=core:=start_core" "./start_core.sh" Enter
+tmux send-keys -t "=core:=start_core" "./start_core.sh $CORESESSION_FILE" Enter
 sleep 5
 
 tmux new-window -d -t "=core" -n nodes -c $BASE_DIR

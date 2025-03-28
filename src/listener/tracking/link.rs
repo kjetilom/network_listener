@@ -194,7 +194,7 @@ impl LinkManager {
                     gin: dp.gin,
                     gout: dp.gout,
                     len: dp.len as i32,
-                    num_acked: 0,
+                    num_acked: dp.num_acked as i32,
                 })
                 .collect(),
             timestamp:

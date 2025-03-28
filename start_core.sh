@@ -2,7 +2,11 @@
 
 # Change these if running on a different host
 BASE_DIR=$(dirname $0)
-COREFILE=$BASE_DIR/coresesh.xml
+COREFILE=$1
+if [ -z "$COREFILE" ]; then
+    echo "Usage: $0 <core_session_file>"
+    exit 1
+fi
 
 # Absolute path to the directory where the core-daemon will create the session
 COREDIR=/tmp/pycore.1
