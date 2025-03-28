@@ -6,19 +6,11 @@ pub struct GinGout {
     pub gout: f64,
     pub gin: f64,
     pub len: f64,
+    pub num_acked: u8,
     pub timestamp: SystemTime,
 }
 
 impl GinGout {
-    pub fn new(gin: f64, gout: f64, len: f64, timestamp: SystemTime) -> Self {
-        GinGout {
-            gin,
-            gout,
-            len,
-            timestamp,
-        }
-    }
-
     pub fn get_dp(&self) -> (f64, f64, SystemTime) {
         (self.len / self.gin, self.gout / self.gin, self.timestamp)
     }
@@ -272,6 +264,7 @@ mod tests {
             gin: 0.0,
             gout: 1.0,
             len: 1400.0,
+            num_acked: 1,
             timestamp: std::time::SystemTime::now(),
         });
         assert!(
@@ -287,6 +280,7 @@ mod tests {
             gin: 0.1,
             gout: 1.0,
             len: 1400.0,
+            num_acked: 1,
             timestamp: std::time::SystemTime::now(),
         });
         assert!(

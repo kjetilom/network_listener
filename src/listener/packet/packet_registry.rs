@@ -50,8 +50,17 @@ impl PacketRegistry {
         std::mem::take(self) // Reset the registry
     }
 
+
+    /// Extend the packet registry with a new burst of packets grouped by ack.
+    ///
+    /// Burst: Vec<AckedPackets>
+    /// AckedPackets: Vec<DataPacket>
+    ///
+    /// Stores information about the packets in the burst, such as:
+    /// - RTT
+    /// - Gin/Gout
+    /// - Retransmissions
     pub fn extend(&mut self, values: Burst) {
-        // This is a vector of packets acked by one ack
         self.burst_thput.push(values.throughput());
         match values {
             Burst::Tcp(burst) => {
@@ -67,6 +76,7 @@ impl PacketRegistry {
                             gin: gin / ack.len() as f64,
                             gout: gout / ack.len() as f64,
                             len: total_length as f64 / ack.len() as f64,
+                            num_acked: ack.len() as u8,
                             timestamp: ack.ack_time,
                         });
                     }

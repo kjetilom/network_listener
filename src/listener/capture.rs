@@ -114,7 +114,7 @@ impl PacketCapturer {
             .immediate_mode(Settings::IMMEDIATE_MODE)
             .timeout(Settings::TIMEOUT) // Timeout in milliseconds
             .tstamp_type(CONFIG.client.tstamp_type)
-            .precision(Settings::PRECISION)
+            .precision(CONFIG.client.timestamp_precision)
             .snaplen(Settings::SNAPLEN);
 
         let mac_addr = match get_mac_address() {

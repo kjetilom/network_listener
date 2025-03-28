@@ -42,14 +42,9 @@ impl Settings {
     pub const PROMISC: bool = true;
     pub const IMMEDIATE_MODE: bool = true;
     pub const TIMEOUT: i32 = 0;
-    // pub const TSTAMP_TYPE: pcap::TimestampType = pcap::TimestampType::Adapter;
     pub const PRECISION: pcap::Precision = pcap::Precision::Micro;
     pub const TCP_STREAM_TIMEOUT: Duration = Duration::from_secs(20); //from_secs(900);
     pub const CLEANUP_INTERVAL: Duration = Duration::from_secs(10);
-    // pub const LONGER_INTERVAL: Duration = Duration::from_secs(20);
-    // pub const SCHEDULER_DEST: &str = "172.16.0.254:50041";
-    // pub const BW_SERVER_PORT: u16 = 40042;
-    // pub const NEAREST_LINK_PHY_CAP: f64 = 5000000.0; // 1250000.0 bytes/sec
     pub const BURST_SIZE: usize = 100; // Limit buffered packets to 100 in individual trackers
     pub const SNAPLEN: i32 = 60 + 14 + 60; // Max header size=134 bytes.
     const IPV6HDR: i32 = 40;

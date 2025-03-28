@@ -12,7 +12,7 @@ message DataMsg {
         BandwidthMessage bandwidth = 1;
         HelloMessage hello = 2;
         Rtts rtts = 3;
-        Pgm pgm = 4;
+        PgmMessage pgmmsg = 4;
     }
 }
 
@@ -37,11 +37,15 @@ message PgmDp {
     int32 num_acked = 4; // Number of packets acked
 }
 
-message Pgm {
+message PgmDps {
     string sender_ip = 1; // Ip addr of the sender (source)
     string receiver_ip = 2;  // Ip addr of the receiver (source)
     int64 timestamp = 3; // Timestamp defined by the sender in milliseconds since epoch
     repeated PgmDp pgm_dp = 4;
+}
+
+message PgmMessage {
+    repeated PgmDps pgm_dps = 1; // Nested array of PgmDps
 }
 
 message Rtt {

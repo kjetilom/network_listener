@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     proto_bw::{
-        data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto, Rtt, RttMessage, Rtts,
+        data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto, PgmDps, PgmDp, PgmMessage, Rtt, RttMessage, Rtts
     },
     PacketRegistry,
 };
@@ -105,7 +105,7 @@ impl LinkManager {
     }
 
     pub async fn send_bandwidth(&mut self) {
-        let (bw_message, rtt_message) = self.build_messages();
+        let (bw_message, rtt_message, pgm_dps) = self.build_messages();
 
         let bw_message = DataMsg {
             data: Some(data_msg::Data::Bandwidth(bw_message)),
@@ -134,6 +134,19 @@ impl LinkManager {
             {
                 Ok(_) => (),
                 Err(e) => warn!("Failed to send rtt message: {}", e),
+            }
+        }
+
+        if CONFIG.server.send_pgm_dps {
+            match self
+                .client_sender
+                .send(ClientHandlerEvent::SendDataMsg(DataMsg {
+                    data: Some(data_msg::Data::Pgmmsg(pgm_dps)),
+                }))
+                .await
+            {
+                Ok(_) => (),
+                Err(e) => warn!("Failed to send pgm message: {}", e),
             }
         }
     }
@@ -171,37 +184,58 @@ impl LinkManager {
         stream_manager: &mut StreamManager,
         pkt_reg: &mut PacketRegistry,
         ip_pair: IpPair,
-    ) -> Link {
+    ) -> (Link, PgmDps) {
+        let (abw, dps) = pkt_reg.passive_abw(true);
+        let pgm = PgmDps {
+            pgm_dp: dps
+                .into_iter()
+                .map(|dp| PgmDp {
+                    gin: dp.gin,
+                    gout: dp.gout,
+                    len: dp.len as i32,
+                    num_acked: 0,
+                })
+                .collect(),
+            timestamp:
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64,
+            sender_ip: ip_pair.local().to_string(),
+            receiver_ip: ip_pair.remote().to_string(),
+        };
         let state = LinkState {
             thp_in: stream_manager.take_received() as f64
                 / crate::CONFIG.client.measurement_window.as_secs_f64(),
             thp_out: stream_manager.take_sent() as f64
                 / crate::CONFIG.client.measurement_window.as_secs_f64(),
             bw: Some(stream_manager.tcp_thput()),
-            abw: pkt_reg.passive_abw(true).0,
+            abw,
             latency: pkt_reg.avg_rtt(),
             delay: None,
             jitter: None,
             loss: None,
         };
-        Link { ip_pair, state }
+        (Link { ip_pair, state }, pgm)
     }
 
-    pub fn build_messages(&mut self) -> (BandwidthMessage, Rtts) {
+    pub fn build_messages(&mut self) -> (BandwidthMessage, Rtts, PgmMessage) {
         let mut links = Vec::new();
         let mut rtts = Vec::new();
+        let mut pgm_dps = Vec::new();
         for (ip_pair, stream_manager) in self.links.iter_mut() {
             let mut sent_registry = stream_manager.sent.take();
             let _ = stream_manager.received.take();
 
-            let link =
-                Self::get_link_state(stream_manager, &mut sent_registry, *ip_pair).to_proto();
+            let (link, pgm) =
+                Self::get_link_state(stream_manager, &mut sent_registry, *ip_pair);
             let rtt_msg = Self::get_rtt_message(sent_registry.rtts, *ip_pair);
-            links.push(link);
+            links.push(link.to_proto());
             rtts.push(rtt_msg);
+            pgm_dps.push(pgm);
         }
 
-        (BandwidthMessage { link_state: links }, Rtts { rtts })
+        (BandwidthMessage { link_state: links }, Rtts { rtts }, PgmMessage{ pgm_dps })
     }
 }
 

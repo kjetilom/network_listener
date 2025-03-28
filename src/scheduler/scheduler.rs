@@ -59,7 +59,7 @@ async fn run_server(listen_addr: &str, client: Client) -> Result<(), Box<dyn Err
                 data_msg::Data::Rtts(rtts) => {
                     upload_rtt(rtts, &client).await;
                 }
-                data_msg::Data::Pgm(pgm) => {
+                data_msg::Data::Pgmmsg(pgm) => {
                     upload_probe_gap_measurements(pgm, &client).await;
                 }
             }
