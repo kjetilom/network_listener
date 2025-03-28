@@ -27,6 +27,18 @@ CREATE TABLE
     );
 
 CREATE TABLE
+    IF NOT EXISTS pgm (
+        time TIMESTAMPTZ NOT NULL,
+        id SERIAL,
+        link_id INTEGER NOT NULL REFERENCES link (id) ON DELETE CASCADE,
+        gin DOUBLE PRECISION,
+        gout DOUBLE PRECISION,
+        len DOUBLE PRECISION,
+        num_acked INTEGER,
+        PRIMARY KEY (id, link_id)
+    );
+
+CREATE TABLE
     IF NOT EXISTS rtt (
         time TIMESTAMPTZ NOT NULL,
         id SERIAL,

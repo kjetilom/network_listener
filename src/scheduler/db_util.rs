@@ -65,7 +65,7 @@ pub async fn insert_into(
         table, columns_str, timeseries_placeholders_str
     );
 
-    // Build parameter list: first two parameters are sender_ip and receiver_ip,
+    // Builds parameter list: first two parameters are sender_ip and receiver_ip,
     // then the values for the timeseries columns.
     let mut params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = Vec::new();
     params.push(&sender_ip);
@@ -79,8 +79,39 @@ pub async fn insert_into(
     }
 }
 
-pub async fn upload_probe_gap_measurements(msg: PgmMessage, _client: &Client) {
-    println!("{:?}", msg);
+pub async fn upload_probe_gap_measurements(msg: PgmMessage, client: &Client) {
+    // For RTT data, our table (named "rtt") has columns: rtt and ts.
+    let cols = ["time", "gin", "gout", "len", "num_acked"];
+
+    for pgmmsg in &msg.pgm_dps {
+        // Convert timestamp to a DateTime<Utc>
+        let ts = match timestamp_to_datetime(pgmmsg.timestamp) {
+            Some(ts) => ts,
+            None => {
+                eprintln!("Error converting timestamp to DateTime<Utc> for PGM");
+                continue;
+            }
+        };
+
+        for pgm_dp in pgmmsg.pgm_dp.iter() {
+            let values: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![
+                &ts,
+                &pgm_dp.gin,
+                &pgm_dp.gout,
+                &pgm_dp.len,
+                &pgm_dp.num_acked,
+            ];
+            insert_into(
+                client,
+                &pgmmsg.sender_ip,
+                &pgmmsg.receiver_ip,
+                "pgm",
+                &cols,
+                &values,
+            )
+            .await;
+        }
+    }
 }
 
 /// Uploads bandwidth data (for each LinkState) into the database.
@@ -90,7 +121,7 @@ pub async fn upload_bandwidth(msg: BandwidthMessage, client: &Client) {
     ];
 
     for ls in &msg.link_state {
-        // Convert timestamp (assuming milliseconds) to a DateTime<Utc>
+        // Convert timestamp (milliseconds) to a DateTime<Utc>
         let ts = match timestamp_to_datetime(ls.timestamp) {
             Some(ts) => ts,
             None => {
@@ -123,17 +154,12 @@ pub async fn upload_bandwidth(msg: BandwidthMessage, client: &Client) {
     }
 }
 
-/// Uploads RTT data into the database.
-///
-/// This assumes that each Rtts message contains a sender and receiver IP as well.
-/// (Adjust the structure if needed.)
+/// Uploads RTT data (for each Rtt) into the database.
 pub async fn upload_rtt(msg: Rtts, client: &Client) {
     // For RTT data, our table (named "rtt") has columns: rtt and ts.
     let cols = ["rtt", "time"];
 
     for rttmsg in &msg.rtts {
-        // Assuming rttmsg has sender_ip and receiver_ip fields.
-        // If not, adjust accordingly.
         for rtt in &rttmsg.rtt {
             let ts = match timestamp_to_datetime(rtt.timestamp) {
                 Some(ts) => ts,
@@ -146,7 +172,6 @@ pub async fn upload_rtt(msg: Rtts, client: &Client) {
             let values: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
                 vec![&rtt.rtt, &ts];
 
-            // Adjust these fields according to your actual Rtts message structure.
             insert_into(
                 client,
                 &rttmsg.sender_ip,
