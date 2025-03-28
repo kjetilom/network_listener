@@ -185,9 +185,10 @@ impl LinkManager {
         pkt_reg: &mut PacketRegistry,
         ip_pair: IpPair,
     ) -> (Link, PgmDps) {
-        let (abw, dps) = pkt_reg.passive_abw(true);
+        let (abw, _dps) = pkt_reg.passive_abw(true);
+
         let pgm = PgmDps {
-            pgm_dp: dps
+            pgm_dp: std::mem::take(&mut pkt_reg.pgm_estimator.dps)
                 .into_iter()
                 .map(|dp| PgmDp {
                     gin: dp.gin,

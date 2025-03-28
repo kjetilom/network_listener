@@ -33,7 +33,7 @@ CREATE TABLE
         link_id INTEGER NOT NULL REFERENCES link (id) ON DELETE CASCADE,
         gin DOUBLE PRECISION,
         gout DOUBLE PRECISION,
-        len DOUBLE PRECISION,
+        len INTEGER,
         num_acked INTEGER,
         PRIMARY KEY (id, link_id)
     );
