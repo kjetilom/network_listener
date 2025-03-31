@@ -198,10 +198,19 @@ mod tests {
         };
 
         assert!(meta.matches(MacAddr::new(0, 0, 0, 0, 0, 0), None));
-        assert!(meta.matches(MacAddr::new(0, 0, 0, 0, 0, 0), Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))));
+        assert!(meta.matches(
+            MacAddr::new(0, 0, 0, 0, 0, 0),
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)))
+        ));
         assert!(!meta.matches(MacAddr::new(0, 0, 0, 0, 0, 1), None));
-        assert!(!meta.matches(MacAddr::new(0, 0, 0, 0, 0, 0), Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))));
-        assert!(!meta.matches(MacAddr::new(0, 0, 0, 0, 0, 0), Some(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)))));
+        assert!(!meta.matches(
+            MacAddr::new(0, 0, 0, 0, 0, 0),
+            Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)))
+        ));
+        assert!(!meta.matches(
+            MacAddr::new(0, 0, 0, 0, 0, 0),
+            Some(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)))
+        ));
     }
 
     #[test]

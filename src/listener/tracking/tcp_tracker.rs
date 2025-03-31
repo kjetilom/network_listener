@@ -150,7 +150,11 @@ pub struct Acked {
 }
 
 impl Acked {
-    fn from_acked(acked_packets: Vec<PacketType>, ack_time: SystemTime, first_sent_time: Option<SystemTime>) -> Self {
+    fn from_acked(
+        acked_packets: Vec<PacketType>,
+        ack_time: SystemTime,
+        first_sent_time: Option<SystemTime>,
+    ) -> Self {
         let last_sent_time = acked_packets.last().unwrap().sent_time;
         let total_length = acked_packets.iter().map(|p| p.total_length as u32).sum();
         Acked {
@@ -168,21 +172,14 @@ impl Acked {
 
     pub fn get_gin_gout_len(&self, last_ack: SystemTime) -> Option<(f64, f64, u32)> {
         if let Some(first_sent_time) = self.first_sent_time {
-            let gin = self
-                .last_sent_time
-                .duration_since(first_sent_time)
-                .ok()?;
+            let gin = self.last_sent_time.duration_since(first_sent_time).ok()?;
             let gout = self.ack_time.duration_since(last_ack).ok()?;
             let total_length = self
                 .acked_packets
                 .iter()
                 .map(|p| p.payload_len as u32)
                 .sum::<u32>();
-            Some((
-                gin.as_secs_f64(),
-                gout.as_secs_f64(),
-                total_length,
-            ))
+            Some((gin.as_secs_f64(), gout.as_secs_f64(), total_length))
         } else {
             None
         }
@@ -265,14 +262,17 @@ impl TcpStream {
             }
         }
         if acked_packets.len() > 0 {
-            let last_sent: Option<SystemTime> = if let Some(prev_ack) = self.cur_burst.packets.last() {
-                Some(prev_ack.last_sent_time)
-            } else {
-                None
-            };
-            self.cur_burst
-                .packets
-                .push(Acked::from_acked(acked_packets, packet.timestamp, last_sent));
+            let last_sent: Option<SystemTime> =
+                if let Some(prev_ack) = self.cur_burst.packets.last() {
+                    Some(prev_ack.last_sent_time)
+                } else {
+                    None
+                };
+            self.cur_burst.packets.push(Acked::from_acked(
+                acked_packets,
+                packet.timestamp,
+                last_sent,
+            ));
         }
         self.last_registered = Some(packet.timestamp);
         ret
@@ -299,7 +299,6 @@ impl TcpStream {
         let mut keys_to_remove = Vec::new();
         for (&seq, sent_packet) in self.packets.iter_mut() {
             if seq_less_equal(seq.wrapping_add(sent_packet.payload_len as u32), ack) {
-
                 if let Ok(rtt_duration) = pkt.sent_time.duration_since(sent_packet.sent_time) {
                     self.max_rtt = std::cmp::max(self.max_rtt, rtt_duration);
                     sent_packet.rtt = Some(rtt_duration);

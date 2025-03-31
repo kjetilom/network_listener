@@ -13,10 +13,7 @@ pub struct GenericTracker {
     last_out: std::time::SystemTime,
 }
 
-
-
 impl GenericTracker {
-
     pub fn new(protocol: IpNextHeaderProtocol) -> Self {
         GenericTracker {
             protocol,
@@ -31,12 +28,8 @@ impl GenericTracker {
         let mut ret = Vec::new();
 
         let (mut burst, last) = match packet.direction {
-            Direction::Incoming => {
-                (&mut self.burst_in, &mut self.last_in)
-            }
-            Direction::Outgoing => {
-                (&mut self.burst_out, &mut self.last_out)
-            }
+            Direction::Incoming => (&mut self.burst_in, &mut self.last_in),
+            Direction::Outgoing => (&mut self.burst_out, &mut self.last_out),
         };
 
         if let Ok(dur) = packet.timestamp.duration_since(*last) {

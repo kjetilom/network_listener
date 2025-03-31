@@ -15,18 +15,14 @@ impl<T: PartialEq + Eq + Hash + Clone + Copy> Pairable for T {}
 impl<T: Pairable> Eq for Pair<T> {}
 
 #[derive(Debug, Hash, Clone, Copy)]
-pub struct Pair<T: Pairable>{
+pub struct Pair<T: Pairable> {
     local: T,
     remote: T,
 }
 
 impl<T: Pairable> Pair<T> {
     pub fn new(local: T, remote: T) -> Self {
-
-        Pair {
-            local,
-            remote
-        }
+        Pair { local, remote }
     }
 
     pub fn from_direction(t_src: T, t_dst: T, direction: Direction) -> Self {
@@ -45,10 +41,10 @@ impl<T: Pairable> Pair<T> {
     }
 }
 
-impl <T: Pairable> PartialEq<Pair<T>> for Pair<T> {
+impl<T: Pairable> PartialEq<Pair<T>> for Pair<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.local == other.local && self.remote == other.remote ||
-            self.local == other.remote && self.remote == other.local
+        self.local == other.local && self.remote == other.remote
+            || self.local == other.remote && self.remote == other.local
     }
 }
 
@@ -78,12 +74,14 @@ impl StreamKey {
         }
     }
 
-    pub fn from_direction(protocol: IpNextHeaderProtocol, src: Option<u16>, dst: Option<u16>, direction: Direction) -> Self {
+    pub fn from_direction(
+        protocol: IpNextHeaderProtocol,
+        src: Option<u16>,
+        dst: Option<u16>,
+        direction: Direction,
+    ) -> Self {
         let ports = Pair::from_direction(src, dst, direction);
-        StreamKey {
-            ports,
-            protocol,
-        }
+        StreamKey { ports, protocol }
     }
 
     pub fn from_packet(packet: &ParsedPacket) -> Self {
@@ -190,7 +188,12 @@ mod tests {
 
     #[test]
     fn test_stream_key_from_direction() {
-        let key = StreamKey::from_direction(IpNextHeaderProtocols::Tcp, Some(1), Some(2), Direction::Incoming);
+        let key = StreamKey::from_direction(
+            IpNextHeaderProtocols::Tcp,
+            Some(1),
+            Some(2),
+            Direction::Incoming,
+        );
         assert_eq!(key.ports.local(), Some(2));
         assert_eq!(key.ports.remote(), Some(1));
         assert_eq!(key.protocol, IpNextHeaderProtocols::Tcp);
@@ -198,15 +201,24 @@ mod tests {
 
     #[test]
     fn test_ip_pair() {
-        let pair = Pair::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8)));
+        let pair = Pair::new(
+            IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+            IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8)),
+        );
         assert_eq!(pair.local(), IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)));
         assert_eq!(pair.remote(), IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8)));
     }
 
     #[test]
     fn test_asymmetric_ip_pair_eq() {
-        let pair1 = Pair::new(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)), IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8)));
-        let pair2 = Pair::new(IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8)), IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)));
+        let pair1 = Pair::new(
+            IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+            IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8)),
+        );
+        let pair2 = Pair::new(
+            IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8)),
+            IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+        );
         assert_eq!(pair1, pair2);
     }
 

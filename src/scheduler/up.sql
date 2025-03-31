@@ -47,6 +47,39 @@ CREATE TABLE
         PRIMARY KEY (time, id)
     );
 
+CREATE VIEW
+    pgm_dps AS
+SELECT
+    l.sender_ip as sender_ip,
+    l.receiver_ip as receiver_ip,
+    pgm.gin as gin,
+    pgm.gout as gout,
+    pgm.len as len,
+    pgm.num_acked as num_acked,
+    pgm.time as time
+FROM
+    pgm pgm
+    JOIN link l ON pgm.link_id = l.id;
+
+CREATE VIEW
+    link_states AS
+SELECT
+    l.sender_ip as sender_ip,
+    l.receiver_ip as receiver_ip,
+    ls.thp_in as thp_in,
+    ls.thp_out as thp_out,
+    ls.bw as bw,
+    ls.abw as abw,
+    ls.latency as latency,
+    ls.delay as delay,
+    ls.jitter as jitter,
+    ls.loss as loss,
+    ls.time as time
+FROM
+    link_state ls
+    JOIN link l ON ls.link_id = l.id;
+
+
 -- Create a view to calculate the average latency for each link.
 CREATE VIEW
     latency AS
@@ -82,6 +115,8 @@ WHERE
 CREATE INDEX ON link_state (link_id);
 
 CREATE INDEX ON rtt (link_id);
+
+CREATE INDEX ON pgm (link_id);
 
 -- Convert the tables into hypertables using "time" as the time column.
 SELECT

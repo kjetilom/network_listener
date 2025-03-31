@@ -8,7 +8,8 @@ use std::{
 
 use crate::{
     proto_bw::{
-        data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto, PgmDps, PgmDp, PgmMessage, Rtt, RttMessage, Rtts
+        data_msg, BandwidthMessage, DataMsg, LinkState as LinkStateProto, PgmDp, PgmDps,
+        PgmMessage, Rtt, RttMessage, Rtts,
     },
     PacketRegistry,
 };
@@ -186,6 +187,7 @@ impl LinkManager {
         ip_pair: IpPair,
     ) -> (Link, PgmDps) {
         let (abw, _dps) = pkt_reg.passive_abw(true);
+        let tstamp = chrono::Utc::now().timestamp_millis();
 
         let pgm = PgmDps {
             pgm_dp: std::mem::take(&mut pkt_reg.pgm_estimator.dps)
@@ -197,11 +199,7 @@ impl LinkManager {
                     num_acked: dp.num_acked as i32,
                 })
                 .collect(),
-            timestamp:
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as i64,
+            timestamp: tstamp,
             sender_ip: ip_pair.local().to_string(),
             receiver_ip: ip_pair.remote().to_string(),
         };
@@ -216,6 +214,7 @@ impl LinkManager {
             delay: None,
             jitter: None,
             loss: None,
+            timestamp: tstamp,
         };
         (Link { ip_pair, state }, pgm)
     }
@@ -227,16 +226,18 @@ impl LinkManager {
         for (ip_pair, stream_manager) in self.links.iter_mut() {
             let mut sent_registry = stream_manager.sent.take();
             let _ = stream_manager.received.take();
-
-            let (link, pgm) =
-                Self::get_link_state(stream_manager, &mut sent_registry, *ip_pair);
+            let (link, pgm) = Self::get_link_state(stream_manager, &mut sent_registry, *ip_pair);
             let rtt_msg = Self::get_rtt_message(sent_registry.rtts, *ip_pair);
             links.push(link.to_proto());
             rtts.push(rtt_msg);
             pgm_dps.push(pgm);
         }
 
-        (BandwidthMessage { link_state: links }, Rtts { rtts }, PgmMessage{ pgm_dps })
+        (
+            BandwidthMessage { link_state: links },
+            Rtts { rtts },
+            PgmMessage { pgm_dps },
+        )
     }
 }
 
@@ -250,6 +251,7 @@ pub struct LinkState {
     delay: Option<f64>,   // ms, None if not available (Estimated)
     jitter: Option<f64>,  // ms, None if not available (Measured)
     loss: Option<f64>,    // %, None if not available (Measured)
+    timestamp: i64,      // Timestamp of the measurement
 }
 
 impl LinkState {
@@ -265,7 +267,7 @@ impl LinkState {
             delay: self.delay.unwrap_or(0.0),
             jitter: self.jitter.unwrap_or(0.0),
             loss: self.loss.unwrap_or(0.0),
-            timestamp: chrono::Utc::now().timestamp_millis(),
+            timestamp: self.timestamp,
         }
     }
 }

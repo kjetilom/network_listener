@@ -30,17 +30,12 @@ impl Default for UdpTracker {
 }
 
 impl UdpTracker {
-
     pub fn register_packet(&mut self, packet: &ParsedPacket) -> Option<(Burst, Direction)> {
         let mut ret = Vec::new();
 
         let (burst, last) = match packet.direction {
-            Direction::Incoming => {
-                (&mut self.burst_in, &mut self.last_in)
-            }
-            Direction::Outgoing => {
-                (&mut self.burst_out, &mut self.last_out)
-            }
+            Direction::Incoming => (&mut self.burst_in, &mut self.last_in),
+            Direction::Outgoing => (&mut self.burst_out, &mut self.last_out),
         };
 
         if let Ok(dur) = packet.timestamp.duration_since(*last) {
