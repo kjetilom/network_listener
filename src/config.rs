@@ -2,6 +2,7 @@ use clap::Parser;
 use serde::Deserialize;
 use std::fs;
 use std::{path::Path, time::Duration, u32};
+use crate::RegressionType;
 
 #[derive(Deserialize, Debug)]
 pub struct AppConfig {
@@ -32,6 +33,11 @@ pub struct Client {
         deserialize_with = "precision_deserialize"
     )]
     pub timestamp_precision: pcap::Precision,
+    #[serde(
+        default = "default_regression_type",
+        deserialize_with = "regression_type_deserialize"
+    )]
+    pub regression_type: RegressionType,
 }
 
 #[derive(Deserialize, Debug)]
@@ -48,6 +54,10 @@ pub struct Server {
     pub send_pgm_dps: bool,
     #[serde(default = "default_probe_technique")]
     pub probe_technique: String,
+}
+
+fn default_regression_type() -> RegressionType {
+    RegressionType::Simple
 }
 
 fn default_server() -> String {
@@ -119,6 +129,18 @@ where
     }
 }
 
+fn regression_type_deserialize<'de, D>(deserializer: D) -> Result<RegressionType, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    match s.to_lowercase().as_str() {
+        "rls" => Ok(RegressionType::RLS),
+        "simple" => Ok(RegressionType::Simple),
+        _ => Err(serde::de::Error::custom("Invalid regression type"))
+    }
+}
+
 
 
 impl Default for AppConfig {
@@ -140,6 +162,7 @@ impl Default for Client {
             measurement_window: default_measurement_window(),
             tstamp_type: default_tstamp_type(),
             timestamp_precision: default_timestamp_precision(),
+            regression_type: default_regression_type(),
         }
     }
 }

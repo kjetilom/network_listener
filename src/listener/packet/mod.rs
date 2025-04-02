@@ -15,3 +15,4 @@ pub use transport_packet::TransportPacket;
 pub use data_packet::DataPacket;
 pub use packet_registry::PacketRegistry;
 pub use data_packet::PacketType;
+pub use packet_registry::RegressionType;

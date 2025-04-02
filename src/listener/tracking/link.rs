@@ -186,7 +186,7 @@ impl LinkManager {
         pkt_reg: &mut PacketRegistry,
         ip_pair: IpPair,
     ) -> (Link, PgmDps) {
-        let (abw, _dps) = pkt_reg.passive_abw(true);
+        let (abw, _dps) = pkt_reg.passive_abw(crate::CONFIG.client.regression_type);
         let tstamp = chrono::Utc::now().timestamp_millis();
 
         let pgm = PgmDps {

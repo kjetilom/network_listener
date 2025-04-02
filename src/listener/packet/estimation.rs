@@ -62,8 +62,7 @@ impl PABWESender {
             .cloned()
             .collect();
 
-        // Return the 70% smallest gin values. (Aka the largest len/gin values.)
-        return filtered[0..(filtered.len() as f64 * 0.7).ceil() as usize].to_vec();
+        return filtered
     }
 
     /// Estimates the available bandwidth using a linear regression.

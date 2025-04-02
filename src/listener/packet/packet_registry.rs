@@ -3,6 +3,12 @@ use crate::tcp_tracker::Burst;
 use super::estimation::{GinGout, PABWESender};
 use std::time::SystemTime;
 
+#[derive(Debug, Clone, Copy)]
+pub enum RegressionType {
+    RLS, // Robust Least Squares
+    Simple, // Simple linear regression
+}
+
 #[derive(Debug)]
 pub struct PacketRegistry {
     pub rtts: Vec<(u32, SystemTime)>,
@@ -39,10 +45,10 @@ impl PacketRegistry {
         }
     }
 
-    pub fn passive_abw(&mut self, robust: bool) -> (Option<f64>, Vec<GinGout>) {
-        match robust {
-            true => self.pgm_estimator.passive_pgm_abw_rls(),
-            false => self.pgm_estimator.passive_pgm_abw(),
+    pub fn passive_abw(&mut self, regression_type: RegressionType) -> (Option<f64>, Vec<GinGout>) {
+        match regression_type {
+            RegressionType::RLS => self.pgm_estimator.passive_pgm_abw_rls(),
+            RegressionType::Simple => self.pgm_estimator.passive_pgm_abw(),
         }
     }
 
