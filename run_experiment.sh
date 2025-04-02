@@ -191,5 +191,5 @@ tmux kill-session -t core
 
 echo "Killed processes and deleted session"
 exit 0
-# End of script
 
+### End of script
