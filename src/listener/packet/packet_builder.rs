@@ -214,7 +214,7 @@ mod tests {
                 caplen: (14 + total_len) as u32,
                 len: (14 + total_len) as u32,
             },
-            data: packet_data.clone(),
+            data: packet_data.clone().into(),
         };
 
         // Parse once with payload
@@ -237,7 +237,7 @@ mod tests {
                 caplen: (14 + 20) as u32,
                 len: (14 + 20 + 1000) as u32,
             },
-            data: packet_data[..14 + 20].to_vec(),
+            data: packet_data[..14 + 20].to_vec().into(),
         };
 
         // Parse again without payload
@@ -257,7 +257,7 @@ mod tests {
                 caplen: packet_data.len() as u32,
                 len: packet_data.len() as u32 + 1000, // pretend there's more data
             },
-            data: packet_data,
+            data: packet_data.into(),
         };
 
         let pcap_meta = crate::listener::capture::PCAPMeta {

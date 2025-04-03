@@ -113,8 +113,6 @@ impl NetworkListener {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     logger::setup_logging()?;
-    println!("{:?}", *CONFIG);
-    // let _ = tokio::spawn(network_listener::grafana::client::start_client());
     let mut netlistener = NetworkListener::new()?;
     netlistener.start()?;
     netlistener.blocking_event_loop().await.stop().await;

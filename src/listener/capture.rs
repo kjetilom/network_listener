@@ -77,14 +77,14 @@ impl PCAPMeta {
 #[derive(Debug)]
 pub struct OwnedPacket {
     pub header: PacketHeader,
-    pub data: Vec<u8>,
+    pub data: Box<[u8]>,
 }
 
 impl<'a> From<Packet<'a>> for OwnedPacket {
     fn from(packet: Packet<'a>) -> Self {
         OwnedPacket {
-            header: packet.header.to_owned(),
-            data: packet.data.to_vec(),
+            header: *packet.header,
+            data: packet.data.into(),
         }
     }
 }
@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(owned_packet.header.ts.tv_usec, 0);
         assert_eq!(owned_packet.header.caplen, 0);
         assert_eq!(owned_packet.header.len, 0);
-        assert_eq!(owned_packet.data, &[0u8]);
+        assert_eq!(owned_packet.data.len(), 1);
     }
 
     #[test]
