@@ -26,13 +26,8 @@ else
     source "$EXPERIMENT/setenv.sh"
 fi
 
-echo $CORESESSION
-echo $NETWORK_LISTENER_CONFIG
-echo $MGEN_SCRIPTS
-
 COREDIR=/tmp/pycore.1
 NETLISTENER=$(realpath $(dirname $0)/target/release/network_listener)
-echo $NETLISTENER
 
 # Output files (relative to the device directory)
 NLST_OUTPUT=nlst.log
