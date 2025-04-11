@@ -21,7 +21,7 @@ log = "0.4.27"
 env_logger = "0.11.8"
 clap = { version = "4.5.35", features = ["derive"] }
 fern = "0.7.1"
-tokio = { version = "1.44.1", features = ["full"] }
+tokio = { version = "1.44.2", features = ["full"] }
 pcap-async = "0.4.1"
 libc = "0.2.171"
 procfs = "0.17.0"
@@ -32,12 +32,10 @@ itertools = "0.14.0"
 toml = "0.8.20"
 lazy_static = "1.5.0"
 
-# Wifi stuff
-rtnetlink = "0.16.0"
+# Wifi
 neli-wifi = { version = "0.6.0", features = ["async"] }
 
 mac_address = "1.1.8"
-# neli = { version = "0.6.4", features = ["async"] }
 prost = "0.13"
 prost-types = "0.13"
 anyhow = "1.0.97"
@@ -47,7 +45,8 @@ tonic = "0.13.0"
 futures = "0.3.17"
 tokio-util = "0.7"
 bytes = "1.10.1"
-# Postgres stuff
+
+# Postgres
 tokio-postgres = { version="0.7", features=["with-chrono-0_4"] }
 
 [build-dependencies]
