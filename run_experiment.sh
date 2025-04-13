@@ -28,6 +28,7 @@ fi
 
 COREDIR=/tmp/pycore.1
 NETLISTENER=$(realpath $(dirname $0)/target/release/network_listener)
+SCHEDULER=$(realpath $(dirname $0)/target/release/scheduler)
 
 # Output files (relative to the device directory)
 NLST_OUTPUT=nlst.log
@@ -60,14 +61,16 @@ fi
 ### Set up TMUX session and start core-daemon
 ###----------------------------------------------------
 
-BASE_DIR=$(dirname $0)
+BASE_DIR=$(realpath $(dirname $0))
 
 # Create a new tmux session
 tmux new-session -d -s core -c $BASE_DIR
 # Create a new window for the daemon
 tmux new-window -d -t "=core" -n daemon -c $BASE_DIR
-# Create a new window for start_core.sh
-tmux new-window -d -t "=core" -n start_core -c $BASE_DIR
+# Create a new window for the listener which updates the database
+tmux new-window -d -t "=core" -n database -c $BASE_DIR
+# Create a new window for the core grpc client (retreives throughput information)
+tmux new-window -d -t "=core" -n coregrpc -c $BASE_DIR
 
 # Start the core-daemon in the daemon window
 tmux send-keys -t "=core:=daemon" "sudo core-daemon" Enter
@@ -144,7 +147,9 @@ tmux send-keys -t "=core:=nodes.2" "vcmd -c /tmp/pycore.1/pc320" Enter
 tmux send-keys -t "=core:=nodes.3" "vcmd -c /tmp/pycore.1/pc221" Enter
 sleep 3
 
+DATABASE_CONFIG="$BASE_DIR/experiments/database_cfg.toml"
 
+tmux send-keys -t "=core:database" "$SCHEDULER -l 172.16.0.254:50041 -s $DATABASE_CONFIG" Enter
 
 ###----------------------------------------------------
 ### Wait for user input to kill processes and delete session

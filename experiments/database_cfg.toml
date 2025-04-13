@@ -1,0 +1,5 @@
+# Example secrets.toml file for the experiments
+host = "localhost"
+user = "user"
+password = "password"
+dbname = "metricsdb"

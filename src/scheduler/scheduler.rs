@@ -2,15 +2,36 @@ use futures::StreamExt;
 use network_listener::proto_bw::data_msg;
 use prost::Message;
 use tokio_postgres::Client;
-use std::env;
 use std::error::Error;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use clap::Parser;
+use serde::Deserialize;
 
 // Adjust the module path to match your generated protobuf code.
 use network_listener::proto_bw::DataMsg;
 
 use network_listener::scheduler::db_util::{upload_bandwidth, upload_probe_gap_measurements, upload_rtt};
+
+#[derive(Parser, Debug)]
+#[command(name = "scheduler")]
+struct Config {
+    /// IP address and port to listen on, e.g. 127.0.0.1:8080
+    #[arg(short, long)]
+    listen_addr: String,
+
+    /// Path to the secrets TOML file
+    #[arg(short, long)]
+    secrets_file: String,
+}
+
+#[derive(Deserialize)]
+struct DbConfig {
+    host: String,
+    user: String,
+    password: String,
+    dbname: String,
+}
 
 async fn handle_connection(socket: TcpStream) -> Result<DataMsg, Box<dyn Error + Send + Sync>> {
     // Wrap the socket with a length-delimited codec for framing.
@@ -37,7 +58,24 @@ async fn handle_connection(socket: TcpStream) -> Result<DataMsg, Box<dyn Error +
 }
 
 async fn run_server(listen_addr: &str, client: Client) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let listener = TcpListener::bind(listen_addr).await?;
+    // Try three times to bind the address.
+    let listener = {
+        let mut attempts = 0;
+        loop {
+            match TcpListener::bind(listen_addr).await {
+                Ok(listener) => break listener,
+                Err(e) => {
+                    if attempts < 3 {
+                        println!("Failed to bind to {}: {}. Retrying...", listen_addr, e);
+                        attempts += 1;
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            }
+        }
+    };
     println!("Server listening on {}", listen_addr);
 
     loop {
@@ -70,22 +108,21 @@ async fn run_server(listen_addr: &str, client: Client) -> Result<(), Box<dyn Err
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Usage:
-    //   cargo run -- <listen_addr>
-    //
-    // Example:
-    //   cargo run -- 127.0.0.1:8080
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        println!("Usage: {} <listen_addr>", args[0]);
-        return Ok(());
-    }
+    // Load the configuration from the command line arguments
+    let config = Config::parse();
 
-    println!("Connecting to database");
+    let toml_content = std::fs::read_to_string(&config.secrets_file)?;
+    let db_config: DbConfig = toml::from_str(&toml_content)?;
+
+    // Set up the connection to the database
     let (client, connection) = tokio_postgres::connect(
-        "host=localhost user=user password=password dbname=metricsdb", // Very secure
+        &format!(
+            "host={} user={} password={} dbname={}",
+            db_config.host, db_config.user, db_config.password, db_config.dbname
+        ),
         tokio_postgres::NoTls,
-    ).await?;
+    )
+    .await?;
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {
@@ -93,7 +130,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     });
 
-    let listen_addr = args[1].clone();
-    run_server(&listen_addr, client).await?;
+    println!("Starting server on {}", config.listen_addr);
+    run_server(&config.listen_addr, client).await?;
     Ok(())
 }
