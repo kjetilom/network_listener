@@ -1,5 +1,8 @@
 use std::time::SystemTime;
 
+// 1500 - MAXHDRSIZE (60 + 18 + 60)
+const MIN_PAYLOAD_SIZE: f64 = 1362.0;
+
 /// A structure holding a pair of gap measurements and the associated packet length.
 #[derive(Debug, Clone)]
 pub struct GinGout {
@@ -41,7 +44,7 @@ impl PABWESender {
             .iter()
             .filter(|dp| {
                 dp.gin > 0.0
-                    && dp.len > 1000.0 // ! Fix this, this should be set to mss in some way
+                    && dp.len >= MIN_PAYLOAD_SIZE
                     && dp.len / dp.gin < phy_cap
                     && dp.len / dp.gout < phy_cap
             })

@@ -77,8 +77,12 @@ async fn run_server(
     experiment_description: String,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
 
+    println!("Starting server on {}", listen_addr);
+
     // Get experiment ID
     let experiment_id = get_and_insert_experiment(&client, &experiment_name, &experiment_description).await?;
+
+    println!("Experiment ID: {}", experiment_id);
 
     // Try three times to bind the address.
     let listener = {
@@ -105,7 +109,6 @@ async fn run_server(
         tokio::select! {
             Some(thput) = thput_rx.recv() => {
                 // Process the throughput data
-                println!("Received throughput data: {:?}", thput);
                 upload_throughput(thput, &client, experiment_id).await;
             }
             Ok((socket, addr)) = listener.accept() => {

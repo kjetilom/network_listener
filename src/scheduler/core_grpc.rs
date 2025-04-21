@@ -46,7 +46,6 @@ struct Link {
 }
 
 fn build_session(session: CoreSession) -> Session {
-    dbg!(&session);
     let mut core_session = Session {
         _id: session.id,
         nodes: session
@@ -156,7 +155,6 @@ pub async fn start_listener(tx: UnboundedSender<Vec<ThroughputDP>>) -> Result<()
     };
 
     let core_session = build_session(session);
-    dbg!(&core_session);
 
     // Wrap session in a mutex structure.
     let session = Arc::new(Mutex::new(core_session));
@@ -207,7 +205,7 @@ async fn thput_event_loop(
     session: Arc<Mutex<Session>>,
     tx: UnboundedSender<Vec<ThroughputDP>>,
 ) {
-    println!("node1,iface1,ip41,node2,iface2,ip42,throughput,timestamp");
+    // println!("node1,iface1,ip41,node2,iface2,ip42,throughput,timestamp");
     while let Some(event) = thput_event.message().await.unwrap() {
         let locked_session = session.lock().await;
         let mut thput_dps = Vec::new();
@@ -272,6 +270,9 @@ async fn thput_event_loop(
                 thput_dps.push(dp);
             }
         });
+        if thput_dps.is_empty() {
+            continue;
+        }
         match tx.send(std::mem::take(&mut thput_dps)) {
             Ok(_) => {}
             Err(e) => {

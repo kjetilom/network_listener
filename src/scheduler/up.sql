@@ -5,8 +5,8 @@ CREATE TABLE
     IF NOT EXISTS experiment (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
-        description TEXT NOT NULL
-        UNIQUE (name),
+        description TEXT NOT NULL,
+        UNIQUE (name)
     );
 
 CREATE TABLE

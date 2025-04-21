@@ -1,5 +1,5 @@
 use crate::proto_bw::{BandwidthMessage, PgmMessage, Rtts};
-use chrono::{TimeZone, Utc, DateTime};
+use chrono::{DateTime, TimeZone, Utc};
 use log::error;
 use tokio_postgres::{types::Timestamp, Client};
 
@@ -19,8 +19,21 @@ pub async fn get_and_insert_experiment(
     experiment_name: &str,
     description: &str,
 ) -> Result<i32, tokio_postgres::Error> {
-    let query = "INSERT INTO experiment (name, description) VALUES ($1, $2) RETURNING id";
-    let row = client.query_one(query, &[&experiment_name, &description]).await?;
+    let query = r#"
+WITH ins AS (
+  INSERT INTO experiment (name, description)
+  VALUES ($1, $2)
+  ON CONFLICT (name) DO NOTHING
+  RETURNING id
+)
+SELECT id FROM ins
+UNION ALL
+SELECT id FROM experiment WHERE name = $1
+LIMIT 1
+"#;
+    let row = client
+        .query_one(query, &[&experiment_name, &description])
+        .await?;
     Ok(row.get(0))
 }
 
@@ -54,9 +67,8 @@ pub async fn insert_into(
 ) {
     // Build placeholders for timeseries values: they start at parameter $3.
     let num_vals = values.len();
-    let timeseries_placeholders: Vec<String> = (3..(3 + num_vals))
-        .map(|i| format!("${}", i))
-        .collect();
+    let timeseries_placeholders: Vec<String> =
+        (3..(3 + num_vals)).map(|i| format!("${}", i)).collect();
     let timeseries_placeholders_str = timeseries_placeholders.join(", ");
     let columns_str = columns.join(", ");
 
@@ -129,7 +141,15 @@ pub async fn upload_probe_gap_measurements(msg: PgmMessage, client: &Client, exp
 
 pub async fn upload_throughput(msg: Vec<ThroughputDP>, client: &Client, experiment_id: i32) {
     let cols = [
-        "node1", "iface1", "ip41", "node2", "iface2", "ip42", "throughput", "time", "experiment_id",
+        "node1",
+        "iface1",
+        "ip41",
+        "node2",
+        "iface2",
+        "ip42",
+        "throughput",
+        "time",
+        "experiment_id",
     ];
 
     for thput in msg {
@@ -165,17 +185,22 @@ pub async fn upload_throughput(msg: Vec<ThroughputDP>, client: &Client, experime
         if let Err(e) = client.execute(&query, &values).await {
             eprintln!("Error inserting record: {}", e);
         }
-
-        println!("Query: {}", query);
-
     }
-
 }
 
 /// Uploads bandwidth data (for each LinkState) into the database.
 pub async fn upload_bandwidth(msg: BandwidthMessage, client: &Client, experiment_id: i32) {
     let cols = [
-        "thp_in", "thp_out", "bw", "abw", "latency", "delay", "jitter", "loss", "time", "experiment_id",
+        "thp_in",
+        "thp_out",
+        "bw",
+        "abw",
+        "latency",
+        "delay",
+        "jitter",
+        "loss",
+        "time",
+        "experiment_id",
     ];
 
     for ls in &msg.link_state {
