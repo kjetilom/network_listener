@@ -14,6 +14,16 @@ fn timestamp_to_datetime(timestamp: i64) -> Option<TstampTZ> {
     Some(TstampTZ::Value(dtime))
 }
 
+pub async fn get_and_insert_experiment(
+    client: &Client,
+    experiment_name: &str,
+    description: &str,
+) -> Result<i32, tokio_postgres::Error> {
+    let query = "INSERT INTO experiment (name, description) VALUES ($1, $2) RETURNING id";
+    let row = client.query_one(query, &[&experiment_name, &description]).await?;
+    Ok(row.get(0))
+}
+
 /// Inserts data into the given table by first upserting the link and then inserting
 /// the timeseries data with the proper link_id.
 ///
@@ -81,9 +91,9 @@ pub async fn insert_into(
     }
 }
 
-pub async fn upload_probe_gap_measurements(msg: PgmMessage, client: &Client) {
+pub async fn upload_probe_gap_measurements(msg: PgmMessage, client: &Client, experiment_id: i32) {
     // For RTT data, our table (named "rtt") has columns: rtt and ts.
-    let cols = ["time", "gin", "gout", "len", "num_acked"];
+    let cols = ["time", "gin", "gout", "len", "num_acked", "experiment_id"];
 
     for pgmmsg in &msg.pgm_dps {
         // Convert timestamp to a DateTime<Utc>
@@ -102,6 +112,7 @@ pub async fn upload_probe_gap_measurements(msg: PgmMessage, client: &Client) {
                 &pgm_dp.gout,
                 &pgm_dp.len,
                 &pgm_dp.num_acked,
+                &experiment_id,
             ];
             insert_into(
                 client,
@@ -116,9 +127,9 @@ pub async fn upload_probe_gap_measurements(msg: PgmMessage, client: &Client) {
     }
 }
 
-pub async fn upload_throughput(msg: Vec<ThroughputDP>, client: &Client) {
+pub async fn upload_throughput(msg: Vec<ThroughputDP>, client: &Client, experiment_id: i32) {
     let cols = [
-        "node1", "iface1", "ip41", "node2", "iface2", "ip42", "throughput", "time",
+        "node1", "iface1", "ip41", "node2", "iface2", "ip42", "throughput", "time", "experiment_id",
     ];
 
     for thput in msg {
@@ -140,6 +151,7 @@ pub async fn upload_throughput(msg: Vec<ThroughputDP>, client: &Client) {
             &thput.ip42,
             &thput.throughput,
             &ts,
+            &experiment_id,
         ];
         let query = format!(
             "INSERT INTO throughput ({}) VALUES ({})",
@@ -161,9 +173,9 @@ pub async fn upload_throughput(msg: Vec<ThroughputDP>, client: &Client) {
 }
 
 /// Uploads bandwidth data (for each LinkState) into the database.
-pub async fn upload_bandwidth(msg: BandwidthMessage, client: &Client) {
+pub async fn upload_bandwidth(msg: BandwidthMessage, client: &Client, experiment_id: i32) {
     let cols = [
-        "thp_in", "thp_out", "bw", "abw", "latency", "delay", "jitter", "loss", "time",
+        "thp_in", "thp_out", "bw", "abw", "latency", "delay", "jitter", "loss", "time", "experiment_id",
     ];
 
     for ls in &msg.link_state {
@@ -186,6 +198,7 @@ pub async fn upload_bandwidth(msg: BandwidthMessage, client: &Client) {
             &ls.jitter,
             &ls.loss,
             &ts,
+            &experiment_id,
         ];
 
         insert_into(
@@ -201,9 +214,9 @@ pub async fn upload_bandwidth(msg: BandwidthMessage, client: &Client) {
 }
 
 /// Uploads RTT data (for each Rtt) into the database.
-pub async fn upload_rtt(msg: Rtts, client: &Client) {
+pub async fn upload_rtt(msg: Rtts, client: &Client, experiment_id: i32) {
     // For RTT data, our table (named "rtt") has columns: rtt and ts.
-    let cols = ["rtt", "time"];
+    let cols = ["rtt", "time", "experiment_id"];
 
     for rttmsg in &msg.rtts {
         for rtt in &rttmsg.rtt {
@@ -216,7 +229,7 @@ pub async fn upload_rtt(msg: Rtts, client: &Client) {
             };
 
             let values: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
-                vec![&rtt.rtt, &ts];
+                vec![&rtt.rtt, &ts, &experiment_id];
 
             insert_into(
                 client,

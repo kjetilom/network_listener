@@ -3,7 +3,8 @@
 CORESESSION=$(realpath "$EXPERIMENT/config/core_session.xml")
 NETWORK_LISTENER_CONFIG=$(realpath "$EXPERIMENT/config/nlst_cfg.toml")
 MGEN_SCRIPTS=$(realpath "$EXPERIMENT/mgen_scripts")
-EXPERIMENT_DESCRIPTION="3mbps bottleneck, 12ms delay, 1ms jitter, 5mbs links"
+EXPERIMENT_DESCRIPTION=""
+EXPERIMENT_NAME="exp2_fluid"
 
 # Nodes in the format 'IP NAME'
 # NAME is the name of the node in the core session

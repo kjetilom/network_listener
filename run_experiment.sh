@@ -149,7 +149,8 @@ sleep 3
 
 DATABASE_CONFIG="$BASE_DIR/experiments/database_cfg.toml"
 
-tmux send-keys -t "=core:database" "$SCHEDULER -l 172.16.0.254:50041 -s $DATABASE_CONFIG" Enter
+# TODO: Use experiment description
+tmux send-keys -t "=core:database" "$SCHEDULER -l 172.16.0.254:50041 -s $DATABASE_CONFIG -e $EXPERIMENT_NAME -d $EXPERIMENT_NAME" Enter
 
 ###----------------------------------------------------
 ### Wait for user input to kill processes and delete session

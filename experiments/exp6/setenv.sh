@@ -4,6 +4,7 @@ CORESESSION=$(realpath "$EXPERIMENT/config/core_session.xml")
 NETWORK_LISTENER_CONFIG=$(realpath "$EXPERIMENT/config/nlst_cfg.toml")
 MGEN_SCRIPTS=$(realpath "$EXPERIMENT/mgen_scripts")
 EXPERIMENT_DESCRIPTION=""
+EXPERIMENT_NAME="exp6"
 
 # Nodes in the format 'IP NAME'
 # NAME is the name of the node in the core session

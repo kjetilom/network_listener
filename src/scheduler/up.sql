@@ -5,9 +5,8 @@ CREATE TABLE
     IF NOT EXISTS experiment (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,
-        description TEXT NOT NULL,
-        start_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        end_time TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        description TEXT NOT NULL
+        UNIQUE (name),
     );
 
 CREATE TABLE

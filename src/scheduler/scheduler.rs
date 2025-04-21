@@ -1,19 +1,21 @@
-use tokio::sync::mpsc::UnboundedReceiver;
+use clap::Parser;
 use futures::StreamExt;
 use network_listener::proto_bw::data_msg;
 use network_listener::scheduler::core_grpc::{self, ThroughputDP};
 use prost::Message;
-use tokio_postgres::Client;
+use serde::Deserialize;
 use std::error::Error;
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::UnboundedReceiver;
+use tokio_postgres::Client;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use clap::Parser;
-use serde::Deserialize;
 
 // Adjust the module path to match your generated protobuf code.
 use network_listener::proto_bw::DataMsg;
 
-use network_listener::scheduler::db_util::{upload_bandwidth, upload_probe_gap_measurements, upload_rtt, upload_throughput};
+use network_listener::scheduler::db_util::{
+    upload_bandwidth, upload_probe_gap_measurements, upload_rtt, upload_throughput, get_and_insert_experiment,
+};
 
 #[derive(Parser, Debug)]
 #[command(name = "scheduler")]
@@ -25,6 +27,14 @@ struct Config {
     /// Path to the secrets TOML file
     #[arg(short, long)]
     secrets_file: String,
+
+    /// Name of the experiment
+    #[arg(short, long)]
+    experiment_name: String,
+
+    /// Description of the experiment
+    #[arg(short, long)]
+    description: String,
 }
 
 #[derive(Deserialize)]
@@ -59,7 +69,17 @@ async fn handle_connection(socket: TcpStream) -> Result<DataMsg, Box<dyn Error +
     }
 }
 
-async fn run_server(listen_addr: &str, client: Client, mut thput_rx: UnboundedReceiver<Vec<ThroughputDP>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn run_server(
+    listen_addr: &str,
+    client: Client,
+    mut thput_rx: UnboundedReceiver<Vec<ThroughputDP>>,
+    experiment_name: String,
+    experiment_description: String,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+
+    // Get experiment ID
+    let experiment_id = get_and_insert_experiment(&client, &experiment_name, &experiment_description).await?;
+
     // Try three times to bind the address.
     let listener = {
         let mut attempts = 0;
@@ -78,13 +98,15 @@ async fn run_server(listen_addr: &str, client: Client, mut thput_rx: UnboundedRe
             }
         }
     };
+
     println!("Server listening on {}", listen_addr);
+
     loop {
         tokio::select! {
             Some(thput) = thput_rx.recv() => {
                 // Process the throughput data
                 println!("Received throughput data: {:?}", thput);
-                upload_throughput(thput, &client).await;
+                upload_throughput(thput, &client, experiment_id).await;
             }
             Ok((socket, addr)) = listener.accept() => {
                 println!("Accepted connection from {}", addr);
@@ -95,16 +117,16 @@ async fn run_server(listen_addr: &str, client: Client, mut thput_rx: UnboundedRe
                 if let Some(data) = bwm.data {
                     match data {
                         data_msg::Data::Bandwidth(bw) => {
-                            upload_bandwidth(bw, &client).await;
+                            upload_bandwidth(bw, &client, experiment_id).await;
                         },
                         data_msg::Data::Hello(hello) => {
                             println!("Received hello message: {}", hello.message);
                         },
                         data_msg::Data::Rtts(rtts) => {
-                            upload_rtt(rtts, &client).await;
+                            upload_rtt(rtts, &client, experiment_id).await;
                         }
                         data_msg::Data::Pgmmsg(pgm) => {
-                            upload_probe_gap_measurements(pgm, &client).await;
+                            upload_probe_gap_measurements(pgm, &client, experiment_id).await;
                         }
                     }
                 }
@@ -145,7 +167,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     });
 
     let server = tokio::spawn(async move {
-        run_server(&config.listen_addr, client, thput_rx).await.unwrap_or(());
+        run_server(
+            &config.listen_addr,
+            client,
+            thput_rx,
+            config.experiment_name,
+            config.description,
+        )
+        .await
+        .unwrap_or(());
     });
 
     // Wait for both tasks to finish
