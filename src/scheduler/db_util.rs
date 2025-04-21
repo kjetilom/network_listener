@@ -3,6 +3,8 @@ use chrono::{TimeZone, Utc, DateTime};
 use log::error;
 use tokio_postgres::{types::Timestamp, Client};
 
+use super::core_grpc::ThroughputDP;
+
 // alias PostgreSQL TIMESTAMPTZ wrapper for clarity.
 type TstampTZ = Timestamp<DateTime<Utc>>;
 
@@ -112,6 +114,50 @@ pub async fn upload_probe_gap_measurements(msg: PgmMessage, client: &Client) {
             .await;
         }
     }
+}
+
+pub async fn upload_throughput(msg: Vec<ThroughputDP>, client: &Client) {
+    let cols = [
+        "node1", "iface1", "ip41", "node2", "iface2", "ip42", "throughput", "time",
+    ];
+
+    for thput in msg {
+        // Convert timestamp (milliseconds) to a DateTime<Utc>
+        let ts = match timestamp_to_datetime(thput.timestamp as i64) {
+            Some(ts) => ts,
+            None => {
+                eprintln!("Error converting timestamp to DateTime<Utc> for throughput");
+                continue;
+            }
+        };
+
+        let values: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![
+            &thput.node1,
+            &thput.iface1,
+            &thput.ip41,
+            &thput.node2,
+            &thput.iface2,
+            &thput.ip42,
+            &thput.throughput,
+            &ts,
+        ];
+        let query = format!(
+            "INSERT INTO throughput ({}) VALUES ({})",
+            cols.join(", "),
+            (1..=values.len())
+                .map(|i| format!("${}", i))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+
+        if let Err(e) = client.execute(&query, &values).await {
+            eprintln!("Error inserting record: {}", e);
+        }
+
+        println!("Query: {}", query);
+
+    }
+
 }
 
 /// Uploads bandwidth data (for each LinkState) into the database.

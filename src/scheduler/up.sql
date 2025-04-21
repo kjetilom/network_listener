@@ -2,6 +2,15 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 CREATE TABLE
+    IF NOT EXISTS experiment (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        start_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        end_time TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+CREATE TABLE
     IF NOT EXISTS link (
         id SERIAL PRIMARY KEY,
         sender_ip TEXT NOT NULL,
@@ -15,6 +24,7 @@ CREATE TABLE
         time TIMESTAMPTZ NOT NULL,
         id SERIAL,
         link_id INTEGER NOT NULL REFERENCES link (id) ON DELETE CASCADE,
+        experiment_id INTEGER NOT NULL REFERENCES experiment (id) ON DELETE CASCADE,
         thp_in DOUBLE PRECISION,
         thp_out DOUBLE PRECISION,
         bw DOUBLE PRECISION,
@@ -31,6 +41,7 @@ CREATE TABLE
         time TIMESTAMPTZ NOT NULL,
         id SERIAL,
         link_id INTEGER NOT NULL REFERENCES link (id) ON DELETE CASCADE,
+        experiment_id INTEGER NOT NULL REFERENCES experiment (id) ON DELETE CASCADE,
         gin DOUBLE PRECISION,
         gout DOUBLE PRECISION,
         len INTEGER,
@@ -46,6 +57,21 @@ CREATE TABLE
         rtt DOUBLE PRECISION,
         PRIMARY KEY (time, id)
     );
+
+CREATE TABLE
+    IF NOT EXISTS throughput (
+        time TIMESTAMPTZ NOT NULL,
+        id SERIAL,
+        experiment_id INTEGER NOT NULL REFERENCES experiment (id) ON DELETE CASCADE,
+        node1 TEXT NOT NULL,
+        iface1 TEXT NOT NULL,
+        ip41 TEXT NOT NULL,
+        node2 TEXT NOT NULL,
+        iface2 TEXT NOT NULL,
+        ip42 TEXT NOT NULL,
+        throughput DOUBLE PRECISION
+    );
+
 
 CREATE VIEW
     pgm_dps AS
@@ -74,6 +100,7 @@ SELECT
     ls.delay as delay,
     ls.jitter as jitter,
     ls.loss as loss,
+    ls.experiment_id as experiment_id,
     ls.time as time
 FROM
     link_state ls

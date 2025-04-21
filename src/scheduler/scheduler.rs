@@ -1,5 +1,7 @@
+use tokio::sync::mpsc::UnboundedReceiver;
 use futures::StreamExt;
 use network_listener::proto_bw::data_msg;
+use network_listener::scheduler::core_grpc::{self, ThroughputDP};
 use prost::Message;
 use tokio_postgres::Client;
 use std::error::Error;
@@ -11,7 +13,7 @@ use serde::Deserialize;
 // Adjust the module path to match your generated protobuf code.
 use network_listener::proto_bw::DataMsg;
 
-use network_listener::scheduler::db_util::{upload_bandwidth, upload_probe_gap_measurements, upload_rtt};
+use network_listener::scheduler::db_util::{upload_bandwidth, upload_probe_gap_measurements, upload_rtt, upload_throughput};
 
 #[derive(Parser, Debug)]
 #[command(name = "scheduler")]
@@ -57,7 +59,7 @@ async fn handle_connection(socket: TcpStream) -> Result<DataMsg, Box<dyn Error +
     }
 }
 
-async fn run_server(listen_addr: &str, client: Client) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn run_server(listen_addr: &str, client: Client, mut thput_rx: UnboundedReceiver<Vec<ThroughputDP>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Try three times to bind the address.
     let listener = {
         let mut attempts = 0;
@@ -77,32 +79,37 @@ async fn run_server(listen_addr: &str, client: Client) -> Result<(), Box<dyn Err
         }
     };
     println!("Server listening on {}", listen_addr);
-
     loop {
-        // Unefficient, but simple: Connections are not maintained
-        let (socket, addr) = listener.accept().await?;
-        println!("Accepted connection from {}", addr);
-        let bwm = tokio::spawn(async move {
-            handle_connection(socket).await
-        }).await??;
+        tokio::select! {
+            Some(thput) = thput_rx.recv() => {
+                // Process the throughput data
+                println!("Received throughput data: {:?}", thput);
+                upload_throughput(thput, &client).await;
+            }
+            Ok((socket, addr)) = listener.accept() => {
+                println!("Accepted connection from {}", addr);
+                let bwm = tokio::spawn(async move {
+                    handle_connection(socket).await
+                }).await??;
 
-        if let Some(data) = bwm.data {
-            match data {
-                data_msg::Data::Bandwidth(bw) => {
-                    upload_bandwidth(bw, &client).await;
-                },
-                data_msg::Data::Hello(hello) => {
-                    println!("Received hello message: {}", hello.message);
-                },
-                data_msg::Data::Rtts(rtts) => {
-                    upload_rtt(rtts, &client).await;
-                }
-                data_msg::Data::Pgmmsg(pgm) => {
-                    upload_probe_gap_measurements(pgm, &client).await;
+                if let Some(data) = bwm.data {
+                    match data {
+                        data_msg::Data::Bandwidth(bw) => {
+                            upload_bandwidth(bw, &client).await;
+                        },
+                        data_msg::Data::Hello(hello) => {
+                            println!("Received hello message: {}", hello.message);
+                        },
+                        data_msg::Data::Rtts(rtts) => {
+                            upload_rtt(rtts, &client).await;
+                        }
+                        data_msg::Data::Pgmmsg(pgm) => {
+                            upload_probe_gap_measurements(pgm, &client).await;
+                        }
+                    }
                 }
             }
         }
-
     }
 }
 
@@ -130,7 +137,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     });
 
-    println!("Starting server on {}", config.listen_addr);
-    run_server(&config.listen_addr, client).await?;
+    let (thput_tx, thput_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    // start core_grpc listener
+    let core_client = tokio::spawn(async move {
+        core_grpc::start_listener(thput_tx).await.unwrap_or(());
+    });
+
+    let server = tokio::spawn(async move {
+        run_server(&config.listen_addr, client, thput_rx).await.unwrap_or(());
+    });
+
+    // Wait for both tasks to finish
+    let _ = tokio::try_join!(core_client, server);
     Ok(())
 }

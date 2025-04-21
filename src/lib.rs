@@ -26,7 +26,11 @@ pub type CapEventReceiver = UnboundedReceiver<CapEvent>;
 pub type CaptureResult = Result<(PacketCapturer, PCAPMeta), Box<dyn Error>>;
 
 pub mod proto_bw {
-    tonic::include_proto!("bandwidth"); // Matches the package name in .proto
+    tonic::include_proto!("bandwidth");
+}
+
+pub mod core_proto {
+    tonic::include_proto!("core");
 }
 
 use tokio::time::Duration;
