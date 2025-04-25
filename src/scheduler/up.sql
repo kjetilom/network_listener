@@ -10,6 +10,11 @@ CREATE TABLE
     );
 
 CREATE TABLE
+    IF NOT EXISTS experiment_config(
+        experiment_id INTEGER NOT NULL REFERENCES experiment (id) ON DELETE CASCADE,
+    );
+
+CREATE TABLE
     IF NOT EXISTS link (
         id SERIAL PRIMARY KEY,
         sender_ip TEXT NOT NULL,
@@ -70,6 +75,36 @@ CREATE TABLE
         ip42 TEXT NOT NULL,
         throughput DOUBLE PRECISION
     );
+
+
+CREATE VIEW
+    throughputs_filtered AS
+SELECT DISTINCT ON (throughput, time)
+    throughput.*,
+    exp.name AS experiment_name
+FROM
+    throughput
+    JOIN experiment exp ON throughput.experiment_id = exp.id
+WHERE
+    throughput.node1 = 'n2' OR throughput.node2 = 'n2'
+ORDER BY time ASC;
+
+CREATE VIEW
+    pgm_detailed AS
+SELECT
+    l.sender_ip as sender_ip,
+    l.receiver_ip as receiver_ip,
+    ls.id AS link_state_id,
+    exp.name AS experiment_name,
+    pgm.*
+FROM
+    pgm
+    JOIN link l ON pgm.link_id = l.id
+    JOIN experiment exp ON pgm.experiment_id = exp.id
+    JOIN link_state ls ON pgm.link_id = ls.link_id AND pgm.time = ls.time
+ORDER BY
+    pgm.time ASC;
+
 
 
 CREATE VIEW
@@ -144,9 +179,18 @@ CREATE INDEX ON rtt (link_id);
 
 CREATE INDEX ON pgm (link_id);
 
+CREATE INDEX ON pgm (experiment_id);
+
+CREATE INDEX ON link_state (experiment_id);
+
+CREATE INDEX ON throughput (experiment_id);
+
 -- Convert the tables into hypertables using "time" as the time column.
 SELECT
     create_hypertable ('link_state', 'time');
 
 SELECT
     create_hypertable ('rtt', 'time');
+
+SELECT
+    create_hypertable ('pgm', 'link_id');
