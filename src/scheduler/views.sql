@@ -265,7 +265,6 @@ ORDER BY ws.subnet, ws.time;
 
 CREATE VIEW non_interpolated_throughputs AS
 WITH
-  -- A) your existing throughput series, now with experiment_id
   base_throughputs AS (
     SELECT
       tf.time,
@@ -276,7 +275,7 @@ WITH
     FROM throughputs_moving_avg AS tf
   ),
 
-  -- B) every (time, subnet, experiment_id) needed from link_states
+  -- every (time, subnet, experiment_id) needed from link_states
   link_timestamps AS (
     SELECT DISTINCT
       ls.time                    AS time,
@@ -291,7 +290,7 @@ WITH
     FROM link_states AS ls
   ),
 
-  -- C) those slots not already in base_throughputs get NULLs
+  -- those slots not already in base_throughputs get NULLs
   missing_slots AS (
     SELECT
       lt.time,
@@ -307,7 +306,6 @@ WITH
     WHERE bt.time IS NULL
   )
 
--- D) union real + synthetic
 SELECT *
 FROM base_throughputs
 
@@ -320,14 +318,17 @@ ORDER BY experiment_id, subnet, time;
 
 
 
-
 CREATE VIEW link_states_with_subnet AS
 SELECT
-    *,
-    subnet(sender_ip) AS subnet_snd,
-    subnet(receiver_ip) AS subnet_rcv
+    ls.*,
+    l.sender_ip,
+    l.receiver_ip,
+    subnet(l.sender_ip) AS subnet_snd,
+    subnet(l.receiver_ip) AS subnet_rcv
 FROM
-    link_states;
+    link_state AS ls
+    JOIN link AS l
+        ON l.id = ls.link_id;
 
 
 -- For each link state, get the corresponding maximum throughput
