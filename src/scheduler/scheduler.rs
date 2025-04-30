@@ -9,8 +9,6 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_postgres::Client;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-
-// Adjust the module path to match your generated protobuf code.
 use network_listener::proto_bw::DataMsg;
 
 use network_listener::scheduler::db_util::{
