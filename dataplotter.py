@@ -1,7 +1,12 @@
+import colorsys
 import os
+from typing import Tuple, Optional, Dict
+
+import matplotlib.patches
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import matplotlib
 import sqlalchemy
 from sqlalchemy import create_engine
 import psycopg2
@@ -12,6 +17,7 @@ from seaborn.objects import Dot
 import numpy as np
 import statsmodels.api as sm
 from joblib import Parallel, delayed
+import math
 
 sns.set_style("whitegrid")
 sns.set_context("paper", font_scale=2)
@@ -60,74 +66,8 @@ experiments_db = {
     "exp8": {
         "capacity": 7000000,
         "max_capacity": 10000000,
-    }
+    },
 }
-
-# experiments = {
-#     "exp1": {
-#         "link_states": "experiments/exp1/exp1_16_apr_2025/link_states_exp1.csv",
-#         "throughput_dps": "experiments/exp1/exp1_16_apr_2025/throughput.csv",
-#         "pgm_dps": "experiments/exp1/exp1_16_apr_2025/pgm_dps_exp1.csv",
-#         "capacity": 5000000,
-#         "max_capacity": 10000000,
-#         "main_node": "n2",
-#         "udp_throughput": 1213735,
-#     },
-#     "exp1_fluid": {
-#         "link_states": "experiments/exp1_fluid/exp1_fluid_16_apr_2025/link_states_exp1_fluid.csv",
-#         "throughput_dps": "experiments/exp1_fluid/exp1_fluid_16_apr_2025/throughput.csv",
-#         "pgm_dps": "experiments/exp1_fluid/exp1_fluid_16_apr_2025/pgm_dps_exp1_fluid.csv",
-#         "capacity": 5000000,
-#         "max_capacity": 10000000,
-#         "main_node": "n2",
-#         "udp_throughput": 2240893,
-#     },
-#     "exp2": {
-#         "link_states": "experiments/exp2/exp2_16_apr_2025/link_states_exp2.csv",
-#         "throughput_dps": "experiments/exp2/exp2_16_apr_2025/throughput.csv",
-#         "pgm_dps": "experiments/exp2/exp2_16_apr_2025/pgm_dps_exp2.csv",
-#         "capacity": 3000000,
-#         "max_capacity": 5000000,
-#         "main_node": "n2",
-#         "udp_throughput": 795973,
-#     },
-#     "exp3": {
-#         "link_states": "experiments/exp3/exp3_11apr_2025/link_states_exp3.csv",
-#         "throughput_dps": "experiments/exp3/exp3_11apr_2025/throughput_dps_exp3.2.csv",
-#         "pgm_dps": "experiments/exp3/exp3_11apr_2025/pgm_dps_exp3.csv",
-#         "capacity": 5000000,
-#         "max_capacity": 10000000,
-#         "main_node": "n2",
-#         "udp_throughput": 1900603,
-#     },
-#     "exp4": {
-#         "link_states": "experiments/exp4/exp4_2025_13_04/link_states_exp4.csv",
-#         "throughput_dps": "experiments/exp4/exp4_2025_13_04/throughput.csv",
-#         "pgm_dps": "experiments/exp4/exp4_2025_13_04/pgm_dps_exp4.csv",
-#         "capacity": 1000000,
-#         "max_capacity": 4000000,
-#         "main_node": "n2",
-#         "udp_throughput": 327750,
-#     },
-#     "exp5": {
-#         "link_states": "experiments/exp5/exp5_16_apr_2025/link_states_exp5.csv",
-#         "throughput_dps": "experiments/exp5/exp5_16_apr_2025/throughput.csv",
-#         "pgm_dps": "experiments/exp5/exp5_16_apr_2025/pgm_dps_exp5.csv",
-#         "capacity": 1000000,
-#         "max_capacity": 4000000,
-#         "main_node": "n2",
-#         "udp_throughput": 526546,
-#     },
-#     "exp6": {
-#         "link_states": "experiments/exp6/exp6_21_apr_2025/link_states_exp6.csv",
-#         "throughput_dps": "experiments/exp6/exp6_21_apr_2025/throughput.csv",
-#         "pgm_dps": "experiments/exp6/exp6_21_apr_2025/pgm_dps_exp6.csv",
-#         "capacity": 5000000,
-#         "max_capacity": 10000000,
-#         "main_node": "n2",
-#         "udp_throughput": 1234567,
-#     },
-# }
 
 
 def read_data(file_path):
@@ -142,530 +82,6 @@ def read_data_with_header(file_path):
     Reads a CSV file and returns a DataFrame with the first row as the header.
     """
     return pd.read_csv(file_path, delimiter=",", header=0, encoding="utf-8")
-
-
-# def group_by_sender_receiver(df):
-#     """
-#        sender_ip   receiver_ip   gin      gout    len   num_acked  time
-#     0  10.0.1.20   10.0.2.20  0.029314  0.029340  1448          1  2025-03-28 18:34:23.509+00
-#     1  10.0.1.20   10.0.2.20  0.002412  0.002416  1448          1  2025-03-28 18:34:23.509+00
-
-#         Groups the DataFrame by sender_ip and receiver_ip.
-#         returns a list of dataframes, one for each group
-#     """
-#     grouped = df.groupby(["sender_ip", "receiver_ip"])
-#     dataframes = [group for _, group in grouped]
-#     return dataframes
-
-
-# def gin_gout_to_dps(df):
-#     """
-#     Converts gin and gout columns to datapoints for regression.
-#     gout/gin, len/gin
-#     """
-#     df["gout/gin"] = df["gout"] / df["gin"]
-#     df["len/gin"] = df["len"] / df["gin"]
-
-
-# def filter_df(df, max_thp):
-#     """
-#     Filters the DataFrame based on a maximum throughput value.
-#     """
-#     df = df[df["len/gin"] < max_thp]
-#     df = df[df["len"] / df["gout"] < max_thp]
-#     return df
-
-
-# def filter_detailed(df: pd.DataFrame):
-#     """
-#     Filters the DataFrame to remove outliers based on the 10th percentile of the gout column.
-#     """
-#     max_gin_10p = df["gout"].quantile(0.1)
-#     unused = df[df["gin"] > max_gin_10p]
-#     df = df[df["gin"] < max_gin_10p]
-#     df["used"] = True
-#     unused["used"] = False
-#     return df, unused
-
-
-# def plot_scatter(df, x_col, y_col):
-#     """
-#     Plots a scatter plot of the given columns.
-#     """
-#     f, ax = plt.subplots(figsize=(10, 10))
-#     sns.despine(f, left=True, bottom=True)
-#     df[x_col] = df[x_col] / 125000
-
-#     sns.scatterplot(
-#         data=df, x=x_col, y=y_col, ax=ax, color="k", alpha=0.8, size=0.25, legend=False
-#     )
-#     sns.kdeplot(
-#         data=df, x=x_col, y=y_col, fill=True, alpha=0.6, cut=0.1, levels=20, ax=ax
-#     )
-
-#     ax.set(xlabel="Mbit/s", ylabel="gout/gin")
-#     # ax.set_xscale('log')
-#     # ax.set_yscale('log')
-#     plt.title(f"Relationship between {x_col} and {y_col}")
-#     plt.tight_layout()
-#     plt.show()
-
-
-# def plot_regressin(
-#     df, df_unused, x_col, y_col, robust, max_capacity, experiment, capacity
-# ):
-#     """
-#     Plots a regression plot of the given columns.
-#     """
-#     f, ax = plt.subplots(figsize=(20, 10))
-#     # sns.despine(f, left=True, bottom=True)
-#     df[x_col] = df[x_col] / 125000
-#     df_unused[x_col] = df_unused[x_col] / 125000
-
-#     sns.regplot(
-#         robust=robust,
-#         data=df,
-#         x=x_col,
-#         y=y_col,
-#         ax=ax,
-#         scatter=True,
-#         scatter_kws={"s": 12, "alpha": 0.8},
-#         line_kws={"color": "red"},
-#         ci=None,
-#         truncate=False,
-#     )
-#     sns.scatterplot(
-#         data=df_unused,
-#         x=x_col,
-#         y=y_col,
-#         ax=ax,
-#         color="k",
-#         alpha=0.8,
-#         s=12,
-#         legend=False,
-#     )
-#     ax.axvline(
-#         x=capacity / 1000000 * 0.965333333,
-#         color="blue",
-#         linestyle="--",
-#         label="Capacity",
-#     )
-#     ax.set(xlabel="Mbit/s (len/gin)", ylabel="gout/gin")
-#     # plt.xlim(0, max_capacity//1000000)
-#     # plt.ylim(0, 5)
-#     ax.set_xscale("log")
-#     ax.set_yscale("log")
-#     plt.legend(
-#         ["Used for regression", "Regression line", "Filtered out"], loc="upper right"
-#     )
-#     plt.title(f"Regression of {x_col} and {y_col} ({experiment})")
-#     plt.tight_layout()
-#     plt.show()
-
-
-# def plot_regression(df, df_unused, x_col, y_col, capacity):
-#     # Plot side by side
-#     f, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
-#     df[x_col] = df[x_col] / 125000
-#     df_unused[x_col] = df_unused[x_col] / 125000
-#     # Perform regression using robust linear regression
-#     sns.regplot(
-#         robust=True,
-#         data=df,
-#         x=x_col,
-#         y=y_col,
-#         ax=ax1,
-#         scatter=True,
-#         scatter_kws={"s": 3, "alpha": 0.8},
-#         line_kws={"color": "red"},
-#         ci=None,
-#     )
-#     sns.scatterplot(
-#         data=df_unused,
-#         x=x_col,
-#         y=y_col,
-#         ax=ax1,
-#         color="k",
-#         alpha=0.8,
-#         s=3,
-#         legend=False,
-#     )
-#     ax1.set(xlabel="Mbit/s", ylabel="gout/gin")
-
-#     sns.regplot(
-#         data=df,
-#         x=x_col,
-#         y=y_col,
-#         ax=ax2,
-#         scatter=True,
-#         scatter_kws={"s": 4, "alpha": 0.8},
-#         line_kws={"color": "red"},
-#         ci=None,
-#     )
-#     sns.scatterplot(
-#         data=df_unused,
-#         x=x_col,
-#         y=y_col,
-#         ax=ax2,
-#         color="k",
-#         alpha=0.8,
-#         s=4,
-#         legend=False,
-#     )
-#     ax2.set(xlabel="Mbit/s", ylabel="gout/gin")
-#     plt.legend(
-#         ["Used for regression", "Regression line", "Filtered out"], loc="upper right"
-#     )
-#     plt.title(f"Regression of {x_col} and {y_col}")
-#     plt.tight_layout()
-
-#     plt.show()
-
-
-# def plot_timeseries(df, x_col, y_col):
-#     """
-#     Plots a time series plot of the given columns.
-#     """
-#     f, ax = plt.subplots(figsize=(20, 10))
-#     sns.despine(f, left=True, bottom=True)
-#     df["ip_pair"] = df["sender_ip"] + " -> " + df["receiver_ip"]
-
-#     sns.lineplot(
-#         data=df,
-#         x=x_col,
-#         y=y_col,
-#         ax=ax,
-#         color="k",
-#         alpha=0.8,
-#         hue="ip_pair",
-#         legend=False,
-#     )
-#     plt.title(f"Time series of {x_col} and {y_col}")
-#     plt.tight_layout()
-#     plt.show()
-
-
-# def process_ip_pair(group, throughput_dps):
-#     # Only process groups with enough data
-
-#     # Get sender and receiver subnets from the group.
-#     snd_subnet = group["snd_subnet"].iloc[0]
-#     rcv_subnet = group["rcv_subnet"].iloc[0]
-#     ip_pair_label = f"{group['sender_ip'].iloc[0]} - {group['receiver_ip'].iloc[0]}"
-
-#     # Filter throughput data for each subnet.
-#     throughput1 = throughput_dps[throughput_dps["subnet"] == rcv_subnet]
-#     throughput2 = throughput_dps[throughput_dps["subnet"] == snd_subnet]
-
-#     # Merge the throughput data on time and compute the minimum ABW from the two.
-#     merged_tp = throughput1.merge(throughput2, on="time", suffixes=("_1", "_2"))
-#     merged_tp["real_abw"] = merged_tp[["real_abw_1", "real_abw_2"]].min(axis=1)
-#     mean_abw = merged_tp["real_abw"].median()
-#     # Compute rolling median on the merged throughput data (using a window of 35 values)
-#     merged_tp["abw_rolling_mean"] = merged_tp["real_abw"].rolling(window=35).mean()
-
-#     # Ensure sorting by time before merging
-#     group_sorted = group.sort_values("time")
-#     merged_tp_sorted = merged_tp.sort_values("time")
-
-#     # Create a time-indexed series from the merged throughput data
-#     abw_series = merged_tp_sorted.set_index("time")["abw_rolling_mean"]
-
-#     abw_series = abw_series[~abw_series.index.duplicated(keep="first")]
-#     # First, form a union index so that both series are aligned, then reindex and interpolate:
-#     union_index = abw_series.index.union(group_sorted["time"])
-#     abw_series_reindexed = abw_series.reindex(union_index)
-#     abw_series_interp = abw_series_reindexed.interpolate(method="time")
-#     # Preview the interpolated series at the group times:
-#     interp_values = abw_series_interp.reindex(group_sorted["time"])
-#     # print(interp_values.head())
-#     # Copy group_sorted to avoid modifying the original dataframe and assign the interpolated values:
-#     group_sorted = group_sorted.copy()
-#     group_sorted["abw_rolling_mean_interpolated"] = interp_values.values
-
-#     # Optionally, drop rows with NaN in case the group's times fall outside the interpolation range:
-#     group_sorted = group_sorted.dropna(subset=["abw_rolling_mean_interpolated"])
-
-#     # Calculate error as (estimated ABW - real ABW [interpolated rolling median])
-#     group_sorted["error"] = (
-#         group_sorted["abw"] - group_sorted["abw_rolling_mean_interpolated"]
-#     )
-#     group_sorted["error_expected"] = group_sorted["abw"] - mean_abw
-#     group_sorted["ip_pair"] = ip_pair_label
-
-#     # # Use merge_asof to align estimated ABW (from link_states group) with real ABW (rolling median)
-#     # merged_data = pd.merge_asof(
-#     #     group_sorted, merged_tp_sorted,
-#     #     on="time", direction="backward", tolerance=pd.Timedelta("5s")
-#     # )
-#     # merged_data = merged_data.dropna(subset=["abw_rolling_mean"])
-
-#     # # Calculate error as (estimated ABW - real ABW [rolling median])
-#     # merged_data["error"] = merged_data["abw"] - merged_data["abw_rolling_mean"]
-#     # merged_data["ip_pair"] = ip_pair_label
-
-#     # Return only the necessary columns.
-#     return group_sorted
-
-
-# def prepare_error_data(link_states, throughput_dps, capacity, main_node):
-#     """ """
-#     link_states, throughput_dps = prepare_abw_and_throughput_data(
-#         link_states, throughput_dps, capacity, main_node
-#     )
-
-#     # Calculate the error based on the expected abw.
-
-#     # Create merged dataframe with link_states and throughput_dps
-#     grouped = link_states.groupby(["sender_ip", "receiver_ip"])
-
-#     # errors = grouped.apply(lambda group: process_ip_pair(group, throughput_dps), include_groups=False)
-#     errors = pd.DataFrame()
-#     for _, group in grouped:
-#         error = process_ip_pair(group, throughput_dps)
-#         errors = pd.concat([errors, error], ignore_index=True)
-
-#     return errors.reset_index(drop=True)
-
-
-# def prepare_abw_and_throughput_data(
-#     link_states_path, throughput_dps_path, capacity, main_node
-# ):
-#     """
-#     Prepares the ABW and throughput data for analysis.
-#     """
-#     # Read the data files.
-#     link_states = read_data_with_header(link_states_path)
-#     throughput_dps = read_data_with_header(throughput_dps_path)
-
-#     # Convert time to datetime.
-#     link_states["time"] = pd.to_datetime(link_states["time"])
-#     throughput_dps["time"] = pd.to_datetime(throughput_dps["time"], unit="ms", utc=True)
-#     throughput_dps = throughput_dps[
-#         (throughput_dps["node1"] == main_node) | (throughput_dps["node2"] == main_node)
-#     ]
-
-#     throughput_dps.drop_duplicates(subset=["time", "throughput"], inplace=True)
-
-#     throughput_dps["real_abw"] = capacity - throughput_dps["throughput"]
-
-#     # Merge ip41 and ip42 columns into one column
-#     throughput_dps["ip41"] = throughput_dps["ip41"].combine_first(
-#         throughput_dps["ip42"]
-#     )
-#     throughput_dps.drop(columns=["ip42"], inplace=True)
-#     throughput_dps.rename(columns={"ip41": "ip"}, inplace=True)
-
-#     # Create subnet and interface fields
-#     throughput_dps["subnet"] = throughput_dps["ip"].str.split(".").str[:3].str.join(".")
-#     throughput_dps["iface"] = throughput_dps["iface1"].combine_first(
-#         throughput_dps["iface2"]
-#     )
-#     throughput_dps.drop(columns=["iface1", "iface2"], inplace=True)
-
-#     link_states["rcv_subnet"] = (
-#         link_states["receiver_ip"].str.split(".").str[:3].str.join(".")
-#     )
-#     link_states["snd_subnet"] = (
-#         link_states["sender_ip"].str.split(".").str[:3].str.join(".")
-#     )
-#     # Convert estimated ABW to bits per second if needed.
-#     link_states["abw"] *= 8
-#     # Remove rows with abw == 0 in link_states
-#     link_states = link_states[link_states["abw"] != 0]
-
-#     return link_states, throughput_dps
-
-
-# def prepare_pgm_data(exp):
-#     complete_data = []
-#     for exp_name, exp_data in exp.items():
-#         pgm_dps = read_data_with_header(exp_data["pgm_dps"])
-#         pgm_dps["time"] = pd.to_datetime(pgm_dps["time"])
-#         pgm_dps["experiment"] = exp_name
-#         pgm_dps["ip_pair"] = pgm_dps["sender_ip"] + " -> " + pgm_dps["receiver_ip"]
-#         gin_gout_to_dps(pgm_dps)
-#         grouped_data = group_by_sender_receiver(pgm_dps)
-#         grouped_data = [group for group in grouped_data if group.size > 100]
-
-#         grouped_data = [
-#             filter_df(group, exp_data["max_capacity"] // 8) for group in grouped_data
-#         ]
-#         grouped_data = [filter_detailed(group) for group in grouped_data]
-
-#         if len(grouped_data) == 0:
-#             continue
-#         combined_data = pd.concat(
-#             [
-#                 pd.concat([group_used, group_unused], ignore_index=True)
-#                 for group_used, group_unused in grouped_data
-#             ],
-#             ignore_index=True,
-#         )
-#         complete_data.append(combined_data)
-
-#     pgm_dps = pd.concat(complete_data, ignore_index=True)
-#     pgm_dps["len/gin"] = pgm_dps["len/gin"] / 125000
-#     for pair, group in pgm_dps.groupby(["ip_pair"]):
-#         g = sns.FacetGrid(
-#             group,
-#             hue="experiment",
-#             col="experiment",
-#             col_wrap=3,
-#             height=4,
-#             sharex=False,
-#         )
-#         g.set(ylim=(0, 5))
-#         g.map_dataframe(
-#             plot_scatter_pgm, x="len/gin", y="gout/gin", alpha=0.8, legend=False, s=12
-#         )
-
-#         plt.show()
-
-#         # for i, (group_used, group_unused) in enumerate(grouped_data):
-#         #     plot_regressin(group_used, group_unused, 'len/gin','gout/gin', False, exp_data["max_capacity"], exp_name, exp_data["capacity"])
-
-
-# def prepare_exp_errors(exp):
-#     """
-#     example:
-#     "exp5": {
-#             "link_states": "experiments/exp5/exp5_16_apr_2025/link_states_exp5.csv",
-#             "throughput_dps": "experiments/exp5/exp5_16_apr_2025/throughput.csv",
-#             "pgm_dps": "experiments/exp5/exp5_16_apr_2025/pgm_dps_exp5.csv",
-#             "capacity": 1000000,
-#             "main_node": "n2",
-#             "udp_throughput": 526546
-#         },
-#     """
-#     errors = {}
-#     for exp_name, exp_data in exp.items():
-#         errors[exp_name] = prepare_error_data(
-#             exp_data["link_states"],
-#             exp_data["throughput_dps"],
-#             capacity=exp_data["capacity"],
-#             main_node=exp_data["main_node"],
-#         )
-#         errors[exp_name]["error"] = (
-#             errors[exp_name]["error"] / exp_data["capacity"] * 100
-#         )
-#         errors[exp_name]["error_expected"] = (
-#             errors[exp_name]["error_expected"] / exp_data["capacity"] * 100
-#         )
-#     return errors
-
-
-# def plot_scatter_pgm(data, **kwargs):
-#     scatter1 = data[data["used"]]
-#     scatter2 = data[data["used"] == False]
-#     sns.scatterplot(data=scatter1, **kwargs)
-#     kwargs["color"] = "k"
-#     sns.scatterplot(data=scatter2, **kwargs)
-
-
-# def boxplots(exp):
-#     combined_errors = prepare_exp_errors(exp)
-
-#     # Combine all errors into a single DataFrame
-#     for key, value in combined_errors.items():
-#         value["experiment"] = key
-#     combined_errors = pd.concat(combined_errors.values(), ignore_index=True)
-
-#     # combined_errors["error"] = abs(combined_errors["error"])
-#     # combined_errors["error_expected"] = abs(combined_errors["error_expected"])
-
-#     # Add separate plot for error_expected
-
-#     # Plot the boxplot for all experiments
-#     g = sns.PairGrid(
-#         combined_errors,
-#         y_vars=["error"],
-#         x_vars=["experiment"],
-#         aspect=2,
-#         hue="experiment",
-#     )
-#     # g.map(sns.boxplot)
-#     sns.boxplot(
-#         data=combined_errors, x="experiment", y="error", ax=g.axes[0, 0], palette="Set2"
-#     )
-#     g.set(title="Available Bandwidth error by experiment")
-#     # Add legend with experiment names, colors and the median error
-
-#     plt.ylabel("Error (% of capacity)")
-#     plt.xlabel("Experiment")
-#     plt.ylim(top=200)
-#     # plt.xticks(rotation=45)  # Rotate labels if many IP pairs are present.
-#     plt.tight_layout()
-#     plt.show()
-
-
-# def probe_gap_plots(exp):
-#     prepare_pgm_data(exp)
-
-
-# def plot_median(data, **kwargs):
-#     m = data.median()
-#     plt.axhline(m, **kwargs)
-
-
-# def timeseries_plots(exp):
-#     exp_data = {}
-#     for exp_name, data in exp.items():
-#         link_states, throughput_dps = prepare_abw_and_throughput_data(
-#             data["link_states"],
-#             data["throughput_dps"],
-#             capacity=data["capacity"],
-#             main_node=data["main_node"],
-#         )
-#         link_states["experiment"] = exp_name
-#         exp_data[exp_name] = {
-#             "link_states": link_states,
-#             "throughput_dps": throughput_dps,
-#             "capacity": data["capacity"],
-#             "max_capacity": data["max_capacity"],
-#             "main_node": data["main_node"],
-#             "udp_throughput": data["udp_throughput"],
-#         }
-#         # Add ip_pair
-#         exp_data[exp_name]["link_states"]["ip_pair"] = (
-#             exp_data[exp_name]["link_states"]["sender_ip"]
-#             + " -> "
-#             + exp_data[exp_name]["link_states"]["receiver_ip"]
-#         )
-#         # Convert time to relative time from 0 to the end of the experiment
-#         exp_data[exp_name]["link_states"]["time"] = (
-#             exp_data[exp_name]["link_states"]["time"]
-#             - exp_data[exp_name]["link_states"]["time"].min()
-#         ).dt.total_seconds()
-
-#     # Combine all experiments into a single DataFrame
-#     exp_data = pd.concat(
-#         [data["link_states"] for data in exp_data.values()], ignore_index=True
-#     )
-#     exp_data["abw"] = exp_data["abw"] / 1000000  # Convert to Mbit/s
-
-#     for ip_pair, group in exp_data.groupby("ip_pair"):
-#         g = sns.FacetGrid(
-#             group,
-#             col="experiment",
-#             hue="experiment",
-#             col_wrap=3,
-#             height=4,
-#             aspect=1.5,
-#             sharey=False,
-#             sharex=False,
-#         )
-#         g.map(
-#             sns.lineplot,
-#             "time",
-#             "abw",
-#             alpha=0.8,
-#             legend=False,
-#         )
-#         g.map(plot_median, "abw", color="red", linestyle="--")
-#         g.set_axis_labels("Time (s)", "ABW (Mbit/s)")
-#         g.set(xlim=(0, 3000))
-#         plt.show()
 
 
 def read_experiment(engine, exp_name):
@@ -928,12 +344,15 @@ def plot_abw_vs_estimated():
         )
         plt.show()
 
+
 def plot_exp2_abw_vs_estimated_median():
     interp = get_interpolated(sql_engine)
     interp = enrich_interpolated_data(interp)
     # Plot timeseries for each experiment
     exp2: pd.DataFrame = interp[interp["experiment_id"] == exp_id_from_name("exp2")]
-    exp2_fluid: pd.DataFrame = interp[interp["experiment_id"] == exp_id_from_name("exp2_fluid")]
+    exp2_fluid: pd.DataFrame = interp[
+        interp["experiment_id"] == exp_id_from_name("exp2_fluid")
+    ]
 
     experiments = [(exp2, "exp2"), (exp2_fluid, "exp2_fluid")]
     data = []
@@ -1021,9 +440,7 @@ def plot_exp2_abw_vs_estimated_median():
     ax1.axhline(
         y=exp2["real_abw"].median(), color="red", linestyle="--", label="Median"
     )
-    ax1.axhline(
-        y=exp2["abw"].median(), color="blue", linestyle="--", label="Median"
-    )
+    ax1.axhline(y=exp2["abw"].median(), color="blue", linestyle="--", label="Median")
     # Extract the first color from each palette for the legend boxes
     pal_real = sns.color_palette("dark:#5A9_r", 1)[0]
     pal_est = sns.color_palette("ch:s=.25,rot=-.25", 1)[0]
@@ -1065,14 +482,17 @@ def plot_exp2_abw_vs_estimated_median():
         format="pdf",
         bbox_inches="tight",
     )
-    #plt.show()
+    # plt.show()
+
 
 def plot_exp2_abw_vs_estimated():
     interp = get_interpolated(sql_engine)
     interp = enrich_interpolated_data(interp)
     # Plot timeseries for each experiment
     exp2: pd.DataFrame = interp[interp["experiment_id"] == exp_id_from_name("exp2")]
-    exp2_fluid: pd.DataFrame = interp[interp["experiment_id"] == exp_id_from_name("exp2_fluid")]
+    exp2_fluid: pd.DataFrame = interp[
+        interp["experiment_id"] == exp_id_from_name("exp2_fluid")
+    ]
 
     experiments = [(exp2, "exp2"), (exp2_fluid, "exp2_fluid")]
     data = []
@@ -1160,9 +580,7 @@ def plot_exp2_abw_vs_estimated():
     ax1.axhline(
         y=exp2["real_abw"].median(), color="red", linestyle="--", label="Median"
     )
-    ax1.axhline(
-        y=exp2["abw"].median(), color="blue", linestyle="--", label="Median"
-    )
+    ax1.axhline(y=exp2["abw"].median(), color="blue", linestyle="--", label="Median")
     # Extract the first color from each palette for the legend boxes
     pal_real = sns.color_palette("dark:#5A9_r", 1)[0]
     pal_est = sns.color_palette("ch:s=.25,rot=-.25", 1)[0]
@@ -1249,10 +667,15 @@ def plot_pgm_scatterplot():
         plt.yscale("log")
         plt.xlim(left=0.1)
         plt.ylim(bottom=0.01)
+        fig.savefig(
+            os.path.join(out_dir, f"probe_gap_scatterplot_{exp_name}_all_data.png"),
+            format="png",
+            bbox_inches="tight",
+        )
         plt.show()
 
 
-def plot_pgm_scatterplot_with_density():
+def plot_pgm_scatterplot_without_outliers(with_regression=False, robust=False, savefig=True):
     for exp_name, exp_data in experiments_db.items():
         pgm = pgm_filtered_by_timestamp(sql_engine, exp_name, exp_data["max_capacity"])
         pgm["len/gin"] = pgm["len"] / pgm["gin"] * 8
@@ -1267,9 +690,39 @@ def plot_pgm_scatterplot_with_density():
         # Add legend with percentage of total for used and unused
         used_percentage = len(used) / (len(used) + len(unused)) * 100
         unused_percentage = len(unused) / (len(used) + len(unused)) * 100
+        intersect_handle = None
 
         # Create a scatter plot
         fig, ax = plt.subplots(figsize=(18, 10))
+        if with_regression:
+            # ------- fit a simple line on *used* points --------------
+            if robust:
+                # robust fit via statsmodels.RLM
+                X = sm.add_constant(used["len/gin"])
+                res = sm.RLM(used["gout/gin"], X).fit()
+                b0, b1 = res.params
+            else:
+                # ordinary least-squares
+                b1, b0 = np.polyfit(used["len/gin"], used["gout/gin"], 1)
+
+            # x where y == 1   (guard against zero slope)
+            x_star = (1.0 - b0) / b1 if abs(b1) > 1e-9 else None
+            if x_star and exp_data["capacity"] / 5 < x_star < exp_data["max_capacity"]:
+                ax.scatter(x_star, 1.0, color="red", marker="x", s=120, zorder=5)
+                intersect_handle = Line2D([0], [0], color='red', marker='x',
+                                          linestyle='none',
+                                          label=f"Intersect y=1 ({x_star:,.0f} bit/s)")
+            # plot the regression line
+            x_min = exp_data["capacity"] / 5
+            x_max = exp_data["max_capacity"]
+            x_line = np.linspace(x_min, x_max, 200)
+            y_line = b0 + b1 * x_line
+
+            ax.plot(x_line, y_line,
+                color="red",
+                linewidth=1.5,
+                label="Regression line")
+
         sns.scatterplot(
             data=pgm,
             x="len/gin",
@@ -1297,21 +750,26 @@ def plot_pgm_scatterplot_with_density():
             edgecolor="black",
             label=f"Unused ({unused_percentage:.2f}%)",
         )
+        legend_handles = [used_patch, unused_patch]
+        if with_regression and intersect_handle is not None:
+            legend_handles.append(intersect_handle)
 
-        ax.legend(handles=[used_patch, unused_patch], loc="upper left")
+        ax.legend(handles=legend_handles, loc="upper left")
 
         ax.set(xlabel="len/gin (bit/s)", ylabel="gout/gin")
         ax.set_title(f"Gap response pattern {exp_name} (Outliers filtered)")
         plt.xscale("log")
         plt.yscale("log")
-        plt.xlim(left=exp_data["capacity"]/5, right=exp_data["max_capacity"])
+        plt.xlim(left=exp_data["capacity"] / 5, right=exp_data["max_capacity"])
         plt.ylim(bottom=0.1)
         plt.tight_layout()
-        # fig.savefig(
-        #     os.path.join(out_dir, f"scatterplot_pgm_{exp_name}.png"),
-        #     format="png",
-        #     bbox_inches="tight",
-        # )
+        if savefig:
+            appendix = f"_with_regression{'_robust' if robust else ''}" if with_regression else ""
+            fig.savefig(
+                os.path.join(out_dir, f"scatterplot_pgm_{exp_name}{appendix}.png"),
+                format="png",
+                bbox_inches="tight",
+            )
         plt.show()
 
 
@@ -1338,13 +796,27 @@ FROM get_regression_counts_by_timestamp(
     return ret
 
 
-def plot_accuracy_per_real_abw_bucket(n_buckets: int = 10):
+def plot_accuracy_per_real_abw_bucket(n_buckets: int = 10, rls: bool = False):
     """
     Plots the accuracy of the estimator per real ABW bucket.
     n_buckets : int
         Number of equal-frequency buckets used on `real_abw`.
     """
     interp = enrich_interpolated_data(get_interpolated(sql_engine))
+    abw_colname = "abw"
+    if rls:
+        abw_rlm = read_data_with_header("rlm_results.csv")
+        abw_rlm.drop(columns=["experiment_id"], inplace=True)
+
+        interp = interp.merge(
+            abw_rlm,
+            left_on="id",
+            right_on="link_state_id",
+            how="left",
+        )
+        abw_colname = "abw_rls"
+        interp["abw_rls"] = interp["abw_rls"] * 8
+
 
     for exp_id, exp_data in interp.groupby("experiment_id"):
         exp_name = exp_name_from_id(exp_id)
@@ -1352,7 +824,6 @@ def plot_accuracy_per_real_abw_bucket(n_buckets: int = 10):
         if exp_data.empty:
             print(f"Experiment {exp_name} has no data.")
             continue
-
 
         capacity = experiments_db[exp_name]["capacity"]
 
@@ -1380,10 +851,9 @@ def plot_accuracy_per_real_abw_bucket(n_buckets: int = 10):
         )
 
         # ------------------------------------------------------------------ #
-        # 2) absolute-percentage error
-        exp_data["abs_pct_err"] = (exp_data["abw"] - exp_data["real_abw"]) / capacity * 100
-
-        # get outliers
+        exp_data["abs_pct_err"] = (
+            (exp_data[abw_colname] - exp_data["real_abw"]) / capacity * 100
+        )
 
         # ------------------------------------------------------------------ #
         # 3) plot
@@ -1406,24 +876,38 @@ def plot_accuracy_per_real_abw_bucket(n_buckets: int = 10):
 
         plt.tight_layout()
         fig.savefig(
-            os.path.join(out_dir, f"accuracy_by_real_abw_{exp_name}.pdf"),
+            os.path.join(out_dir, f"accuracy_by_real_abw_{exp_name}{"" if not rls else "_rls"}.pdf"),
             format="pdf",
             bbox_inches="tight",
         )
         plt.show()
 
 
-def plot_pgm_barplot():
+def plot_pgm_barplot(rls: bool = False):
     """ """
     interp = get_interpolated(sql_engine)
     interp = enrich_interpolated_data(interp)
+    abw_colname = "abw"
+    if rls:
+        abw_rlm = read_data_with_header("rlm_results.csv")
+        abw_rlm.drop(columns=["experiment_id"], inplace=True)
+
+        interp = interp.merge(
+            abw_rlm,
+            left_on="id",
+            right_on="link_state_id",
+            how="left",
+        )
+        abw_colname = "abw_rls"
+        interp["abw_rls"] = interp["abw_rls"] * 8
+
     for exp_name, exp_data in experiments_db.items():
         counts = get_pgm_filtered_counts(
             sql_engine, exp_name, experiments_db[exp_name]["max_capacity"]
         )
         # add interpolated abw matching on the link_state id
         counts = counts.merge(
-            interp[["id", "real_abw", "abw"]],
+            interp[["id", "real_abw", abw_colname]],
             left_on="link_state_id",
             right_on="id",
             how="left",
@@ -1437,7 +921,7 @@ def plot_pgm_barplot():
 
         # Compute error
         counts = counts.copy()
-        counts["error"] = (counts["real_abw"] - counts["abw"]).abs()
+        counts["error"] = (counts["real_abw"] - counts[abw_colname]).abs()
         counts_missing = counts[counts["error"].isna()]
 
         counts_total = counts.copy()
@@ -1502,70 +986,166 @@ def plot_pgm_barplot():
         ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45)
         plt.tight_layout()
         f.savefig(
-            os.path.join(out_dir, f"error_barplot_buckets_{exp_name}.pdf"),
+            os.path.join(out_dir, f"error_barplot_buckets_{exp_name}{"" if not rls else "_rls"}.pdf"),
             bbox_inches="tight",
             format="pdf",
         )
         plt.show()
 
 
-def _x_at_y_equals_one(group: pd.DataFrame) -> float:
-    """
-    Fit robust linear model  y = b0 + b1*x  (Huber’s T)  for one
-    link_state group and return the x where y == 1, i.e.
-        x* = (1 - b0) / b1
-    Returns NaN if the fit fails or b1 ≈ 0.
-    """
-    X = sm.add_constant(group["len/gin"].to_numpy())   # [n×2]  (const, x)
-    y = group["gout/gin"].to_numpy()
-
+def _fit_rls(group: pd.DataFrame, phy_cap_Bps: float) -> float | None:
+    X = sm.add_constant(group["len/gin"].values)
+    y = group["gout/gin"].values
     try:
         res = sm.RLM(y, X).fit()
         b0, b1 = res.params
-        if abs(b1) < 1e-9:          # avoid divide-by-zero
-            return float("nan")
-        return (1.0 - b0) / b1
+        if b1 <= 0:
+            return None
     except Exception:
-        return float("nan")
+        return None
+    if abs(b1) < 1e-9:
+        return None
+    abw = (1.0 - b0) / b1                    # bytes * s⁻¹
+    return abw if 0.0 < abw < phy_cap_Bps / 8.0 else None
 
-# ------------------------------------------------------------
-# main routine
-# ------------------------------------------------------------
-def calculate_abw_based_on_pgm_using_robust_regression(n_jobs: int = -1):
-    """
-    For every experiment:
-      · keeps the datapoints marked `used_in_regression`
-      · per link_state_id fits a robust line  y=gout/gin vs x=len/gin
-      · stores x_at_y1 = (1 - b0)/b1  in column `abw_rlm`
-    Returns a dict {exp_name: DataFrame_with_abw_rlm}
-    """
-    results = {}
 
-    for exp_name, exp_data in experiments_db.items():
+def calculate_abw_based_on_pgm_using_robust_regression(
+    n_jobs: int = -1
+) -> pd.DataFrame:
+    """
+    Robust ABW estimate for every (experiment, link_state_id) pair.
+    Returns
+    -------
+    DataFrame with columns
+        ['link_state_id', 'experiment_id', 'abw_rls']
+    """
+    rows = []
+
+    for exp_name, meta in experiments_db.items():
         pgm = pgm_filtered_by_timestamp(sql_engine,
                                         exp_name,
-                                        exp_data["max_capacity"])
+                                        meta["max_capacity"])
 
+        # if exp_name != "exp2_fluid":
+        #     continue
+
+        # ratio pre-compute
         pgm["len/gin"]  = pgm["len"]  / pgm["gin"]
         pgm["gout/gin"] = pgm["gout"] / pgm["gin"]
 
-        data = pgm[pgm["used_in_regression"]].copy()
-        link_ids = data["link_state_id"].unique()
+        data = pgm[pgm["used_in_regression"]]
+        if data.empty:
+            continue
 
-        # robust fit in parallel
-        x_vals = Parallel(n_jobs=n_jobs, backend="loky")(
-            delayed(_x_at_y_equals_one)(data[data["link_state_id"] == lid])
+        exp_id    = exp_id_from_name(exp_name)
+        phy_cap_Bps = meta["max_capacity"]          # already Bytes/s
+        link_ids  = data["link_state_id"].unique()
+
+        abw_vals = Parallel(n_jobs=n_jobs, backend="loky")(
+            delayed(_fit_rls)(
+                data[data["link_state_id"] == lid],
+                phy_cap_Bps
+            )
             for lid in link_ids
         )
 
-        abw_rlm = (
-            pd.DataFrame({"link_state_id": link_ids, "abw_rlm": x_vals})
-              .set_index("link_state_id")
+        rows.extend(
+            {"link_state_id": lid,
+             "experiment_id": exp_id,
+             "abw_rls": abw}
+            for lid, abw in zip(link_ids, abw_vals)
         )
 
-        results[exp_name] = abw_rlm
+    return pd.DataFrame(rows)
 
-    return results
+def plot_experiments_pair_grid(exp_names: list[str],
+                               k_per_exp: int = 4,
+                               pts_min: int = 40):
+    """
+    For each experiment in *exp_names*:
+      • pick the k_per_exp link_state_ids with most samples
+      • plot them two per row in their own figure
+      • regression line + y=1 intersect on every subplot
+    """
+
+    def darker(rgb, factor=0.55):
+        import colorsys
+        h, l, s = colorsys.rgb_to_hls(*rgb)
+        return colorsys.hls_to_rgb(h, max(0, l * factor), s)
+
+    for exp in exp_names:
+        meta = experiments_db[exp]
+        pgm  = pgm_filtered_by_timestamp(sql_engine, exp, meta["max_capacity"])
+
+        pgm["len/gin"]  = pgm["len"]  / pgm["gin"] * 8
+        pgm["gout/gin"] = pgm["gout"] / pgm["gin"]
+
+        pgm = pgm[(pgm["len/gin"] < meta["max_capacity"])
+                  & (pgm["len"] / pgm["gout"] < meta["max_capacity"] / 8)]
+
+        used = pgm[pgm["used_in_regression"]]
+
+        # pick the k largest link_state_id groups
+        link_ids = (used.groupby("link_state_id")
+                         .size()
+                         .sort_values(ascending=False)
+                         .head(k_per_exp)
+                         .index)
+
+        if link_ids.empty:
+            print(f"[WARN] {exp}: no link_state_id with ≥{pts_min} pts")
+            continue
+
+        n_rows = math.ceil(len(link_ids) / 2)
+        fig, axes = plt.subplots(n_rows, 2,
+                                 figsize=(12, 5 * n_rows),
+                                 squeeze=False)
+
+        base_clr = sns.color_palette("Set2", len(link_ids))
+
+        for i, lid in enumerate(link_ids):
+            d = used[used["link_state_id"] == lid]
+            r, c = divmod(i, 2)
+            ax = axes[r][c]
+
+            # skip sparse groups
+            if d.shape[0] < pts_min:
+                ax.axis("off")
+                continue
+
+            slope, intercept = np.polyfit(d["len/gin"], d["gout/gin"], 1)
+            if slope <= 0:
+                ax.axis("off")
+                continue
+
+            x_star = (1.0 - intercept) / slope
+            x_span = np.linspace(min(d["len/gin"].min(), x_star * .8),
+                                 max(x_star, d["len/gin"].max()), 200)
+            y_span = intercept + slope * x_span
+
+            sns.scatterplot(data=d, x="len/gin", y="gout/gin",
+                            s=18, color=base_clr[i], ax=ax, alpha=0.8)
+            ax.plot(x_span, y_span, color=darker(base_clr[i]), lw=1.2)
+            ax.axhline(1, color='grey', ls='--', lw=0.7)
+            ax.scatter(x_star, 1, color='red', marker='x', s=60, zorder=4)
+
+            ax.set_title(f"{exp} – link {lid}", fontsize=10)
+            ax.set_xscale('log'); ax.set_yscale('log')
+            ax.set_xlabel("len/gin (Mbit/s)")
+            ax.set_ylabel("gout/gin")
+            ax.set_ylim(0.1, max(1.1, d["gout/gin"].max()))
+            ax.set_xlim(meta["capacity"]/5, meta["max_capacity"]*1.1)
+
+        # hide any unused subplot axes
+        for j in range(len(link_ids), n_rows*2):
+            r, c = divmod(j, 2)
+            axes[r][c].axis("off")
+
+        fig.suptitle(f"Probe‑gap scatter (top {k_per_exp} links) – {exp}",
+                     fontsize=14)
+        plt.tight_layout()
+        plt.show()
+
 
 
 def plot_abw_rlm_vs_abw():
@@ -1575,6 +1155,16 @@ def plot_abw_rlm_vs_abw():
     """
     interp = get_interpolated(sql_engine)
     interp = enrich_interpolated_data(interp)
+    abw_rlm = read_data_with_header("rlm_results.csv")
+    abw_rlm.drop(columns=["experiment_id"], inplace=True)
+
+    interp = interp.merge(
+        abw_rlm,
+        left_on="id",
+        right_on="link_state_id",
+        how="left",
+    )
+    interp["abw_rls"] = interp["abw_rls"] * 8
 
     for exp_id, exp_data in interp.groupby(("experiment_id")):
         # Calculate moving median for each ip_pair
@@ -1582,31 +1172,22 @@ def plot_abw_rlm_vs_abw():
         exp_data["time"] = pd.to_datetime(exp_data["time"])
         exp_data = exp_data.sort_values(["ip_pair", "time"])
 
-        abw_rlm = read_data_with_header(f"testcsv_{experiment_name}.csv")
-        exp_data = exp_data.merge(
-            abw_rlm,
-            left_on="id",
-            right_on="link_state_id",
-            how="left",
-        )
-
-        exp_data["abw_rlm"] = exp_data["abw_rlm"] * 8
-
         # Set all values below 0 or above capacity to NaN
-        exp_data["abw_rlm"] = exp_data["abw_rlm"].where(
-            (exp_data["abw_rlm"] > 0) & (exp_data["abw_rlm"] < experiments_db[experiment_name]["capacity"]),
+        exp_data["abw_rls"] = exp_data["abw_rls"].where(
+            (exp_data["abw_rls"] > 0)
+            & (exp_data["abw_rls"] < experiments_db[experiment_name]["capacity"]),
             np.nan,
         )
-        exp_data["abw_rlm"] /= 1000000
+        exp_data["abw_rls"] /= 1000000
         exp_data["real_abw"] /= 1000000
         # A) rolling for 'abw'
         rolled_abw = (
             exp_data.set_index("time")
-            .groupby("ip_pair")["abw_rlm"]
+            .groupby("ip_pair")["abw_rls"]
             .rolling("720s")
-            .median()
+            .mean()
             .reset_index()
-            .rename(columns={"abw_rlm": "rolling_abw"})
+            .rename(columns={"abw_rls": "rolling_abw"})
         )
 
         # B) rolling for 'real_abw'
@@ -1614,7 +1195,7 @@ def plot_abw_rlm_vs_abw():
             exp_data.set_index("time")
             .groupby("ip_pair")["real_abw"]
             .rolling("720s")
-            .median()
+            .mean()
             .reset_index()
             .rename(columns={"real_abw": "rolling_real_abw"})
         )
@@ -1653,37 +1234,51 @@ def plot_abw_rlm_vs_abw():
 
         # Create colored box handles for the legend
         handles = [
-            Patch(facecolor=pal_est, edgecolor="black", label="Estimated ABW"),
+            Patch(facecolor=pal_est, edgecolor="black", label="Estimated ABW (Robust regression)"),
             Patch(facecolor=pal_real, edgecolor="black", label="Real ABW"),
         ]
 
         # Add the custom legend with colored boxes
         ax.legend(handles=handles, title="Metric", loc="upper left", frameon=True)
 
-        ax.set_title(f"Real vs Estimated ABW (720s moving average) {experiment_name}")
+        ax.set_title(f"Real vs Estimated ABW (720s moving average) {experiment_name} (Robust regression)")
         ax.set_xlabel("Time (minutes)")
         ax.set_ylabel("ABW (Mbit/s)")
         plt.tight_layout()
-        # fig.savefig(
-        #     os.path.join(out_dir, f"real_abw_vs_estimated{experiment_name}.pdf"),
-        #     format="pdf",
-        #     bbox_inches="tight",
-        # )
+        fig.savefig(
+            os.path.join(out_dir, f"real_abw_vs_estimated_{experiment_name}_robust.pdf"),
+            format="pdf",
+            bbox_inches="tight",
+        )
         plt.show()
 
-def plot_error_boxplot_by_used_in_regression_buckets():
+
+def plot_error_boxplot_by_used_in_regression_buckets(rls=False):
     """
     Draws (1) a boxplot of absolute ABW error per bucket of
     used-in-regression samples and (2) a barplot of the share of
     missing estimates in each bucket.
     """
     interp = enrich_interpolated_data(get_interpolated(sql_engine))
+    abw_colname = "abw"
+    if rls:
+        abw_rlm = read_data_with_header("rlm_results.csv")
+        abw_rlm.drop(columns=["experiment_id"], inplace=True)
+
+        interp = interp.merge(
+            abw_rlm,
+            left_on="id",
+            right_on="link_state_id",
+            how="left",
+        )
+        abw_colname = "abw_rls"
+        interp["abw_rls"] = interp["abw_rls"] * 8
 
     for exp_name, exp_data in experiments_db.items():
         counts = get_pgm_filtered_counts(
             sql_engine, exp_name, experiments_db[exp_name]["max_capacity"]
         ).merge(
-            interp[["id", "real_abw", "abw"]],
+            interp[["id", "real_abw", abw_colname]],
             left_on="link_state_id",
             right_on="id",
             how="left",
@@ -1697,7 +1292,7 @@ def plot_error_boxplot_by_used_in_regression_buckets():
         bins = sorted(set(quantiles))
         labels = [f"{int(bins[i])}-{int(bins[i + 1])}" for i in range(len(bins) - 1)]
 
-        counts["error"] = (counts["real_abw"] - counts["abw"]).abs()
+        counts["error"] = (counts["real_abw"] - counts[abw_colname]).abs()
         counts["used_bucket"] = pd.cut(
             counts["used_in_regression"], bins=bins, labels=labels, include_lowest=True
         )
@@ -1749,21 +1344,211 @@ def plot_error_boxplot_by_used_in_regression_buckets():
         ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45)
 
         plt.tight_layout()
-        out_path = os.path.join(out_dir, f"error_boxplot_buckets_{exp_name}.pdf")
+        out_path = os.path.join(out_dir, f"error_boxplot_buckets_{exp_name}{"" if not rls else "_rls"}.pdf")
         fig.savefig(out_path, bbox_inches="tight", format="pdf")
         plt.show()
 
 
-def plot_error_boxplot(absolute=False):
+
+def plot_error_boxplot_dual():
     """
     Plots a boxplot of the error.
     """
     interp = get_interpolated(sql_engine)
     interp = enrich_interpolated_data(interp)
+    abw_rlm = read_data_with_header("rlm_results.csv")
+    abw_rlm.drop(columns=["experiment_id"], inplace=True)
+
+    interp = interp.merge(
+        abw_rlm,
+        left_on="id",
+        right_on="link_state_id",
+        how="left",
+    )
+    interp["abw_rls"] = interp["abw_rls"] * 8
+    interp["error"] = interp["abw"] - interp["real_abw"]
+    interp["error_rls"] = interp["abw_rls"] - interp["real_abw"]
+
+    capacity_map = {
+        exp_id_from_name(name): exp_data["capacity"]
+        for name, exp_data in experiments_db.items()
+    }
+
+    for exp_id, exp_data in interp.groupby("experiment_id"):
+        exp_name = exp_name_from_id(exp_id)
+        capacity = capacity_map[exp_id]
+        exp_data["error"] = exp_data["error"] / capacity * 100
+        exp_data["error_rls"] = exp_data["error_rls"] / capacity * 100
+        exp_data["exp_name"] = exp_name
+        interp.loc[interp["experiment_id"] == exp_id, "error"] = exp_data["error"]
+        interp.loc[interp["experiment_id"] == exp_id, "error_rls"] = exp_data["error_rls"]
+        interp.loc[interp["experiment_id"] == exp_id, "exp_name"] = exp_name
+
+    # collapse the long DataFrame into “tidy” form for seaborn
+    long = (
+        interp.melt(
+            id_vars=["exp_name"],
+            value_vars=["error", "error_rls"],
+            var_name="estimator",
+            value_name="err_pct",
+        )
+        .dropna(subset=["err_pct"])          # keep only finite errors
+    )
+
+    # helper to darken a colour
+    def darker(rgb, factor=0.55):
+        h, l, s = colorsys.rgb_to_hls(*rgb)
+        return colorsys.hls_to_rgb(h, max(0, l * factor), s)
+
+    # ordered experiments for x-axis
+    exp_order = sorted(long["exp_name"].unique())
+
+    fig, ax = plt.subplots(figsize=(20, 10))
+
+    # draw with *only two* hue levels = ['error', 'error_rls']
+    sns.boxplot(
+        data=long,
+        x="exp_name",
+        y="err_pct",
+        hue="estimator",          # just 2 categories
+        order=exp_order,
+        dodge=True,
+        width=0.8,               # narrower so the pair nearly touch
+        whis=1.5,
+        fliersize=2,
+        ax=ax,
+        palette=["#cccccc", "#888888"]  # throw-away palette, will be recoloured
+    )
+
+    # recolour every pair: plain = Set2, robust = darker(Set2)
+    base_set2 = sns.color_palette("Set2", len(exp_order))
+    base_set2.extend([darker(c) for c in base_set2])
+    boxes = ax.findobj(matplotlib.patches.PathPatch)
+    for color, box in zip(base_set2, boxes):
+        box.set_facecolor(color)
+        box.set_edgecolor("black")
+        box.set_alpha(0.90)
+
+    overall_meds = (
+        long.groupby(["exp_name", "estimator"])["err_pct"].median()
+    )
+
+    # Add an average of all experiments with exp name "overall"
+    rls_mean = overall_meds.unstack()["error_rls"].mean()
+    plain_mean = overall_meds.unstack()["error"].mean()
+    print(rls_mean, plain_mean)
+    df_to_latex_table(
+        overall_meds.unstack().round(2),
+        file=os.path.join(out_dir, "error_boxplot_dual.tex"),
+    )
+    # handles = []
+    # for color, (exp_name, estimator) in zip(base_set2, overall_meds.index):
+    #     if estimator == "error":
+    #         label = f"{exp_name} {overall_meds[exp_name, 'error']:.2f}%"
+    #     else:
+    #         label = f"{exp_name}-rls {overall_meds[exp_name, 'error']:.2f}%"
+    #     handles.append(
+    #         Patch(facecolor=color, edgecolor="black", label=label)
+    #     )
+
+    overall_meds = (
+    long.groupby("estimator")["err_pct"]
+         .median()
+         .rename({"error": "Plain", "error_rls": "Robust-LS"})
+)
+
+    handles = [
+        Patch(facecolor=base_set2[0],           edgecolor='black',
+            label=f"Simple linear regression (median {overall_meds['Plain']:.2f} %)"),
+        Patch(facecolor=darker(base_set2[0]),   edgecolor='black',
+            label=f"Robust least squares (median {overall_meds['Robust-LS']:.2f} %)")
+    ]
+    ax.legend(handles=handles, title="Estimator", loc="upper right", ncol=1)
+
+    # ax.legend(handles=handles, title="Estimator", loc="upper right", ncol=2)
+
+    ax.set_xlabel("Experiment")
+    ax.set_ylabel("Error (% of bottleneck capacity)")
+    ax.set_title("Accuracy of ABW estimator by experiment and regression method")
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
+    plt.tight_layout()
+    fig.savefig(
+        os.path.join(out_dir, f"error_boxplot_dual.pdf"),
+        format="pdf",
+        bbox_inches="tight",
+    )
+    plt.show()
+
+
+def df_to_latex_table(
+    df: pd.DataFrame,
+    file: str | None = None,
+    col_format: str | None = None,
+    float_fmt: str = "%.2f"
+) -> str:
+    """
+    Convert *df* to a LaTeX table wrapped in a floating environment.
+
+    Parameters
+    ----------
+    df        : DataFrame to convert.
+    file      : optional path; if given, write the LaTeX to this file.
+    col_format: optional LaTeX column spec (e.g. 'lccc').  If None,
+                pandas chooses one automatically.
+    float_fmt : printf-style format for floats.
+
+    Returns
+    -------
+    str  - the LaTeX code.
+    """
+    latex_body = df.to_latex(
+        index=True,
+        escape=False,          # allow math/LaTeX in cells
+        column_format=col_format,
+        float_format=float_fmt.__mod__        # hack: pass formatter
+    )
+
+    wrapper = (
+        "\\begin{table}[htbp]\n"
+        "  \\centering\n"
+        f"{latex_body.rstrip()}\n"
+        "  \\caption{}\n"
+        "  \\label{}\n"
+        "\\end{table}\n"
+    )
+
+    if file:
+        with open(file, "w", encoding="utf-8") as fh:
+            fh.write(wrapper)
+
+    return wrapper
+
+
+
+def plot_error_boxplot(absolute=False, rls=False):
+    """
+    Plots a boxplot of the error.
+    """
+    interp = get_interpolated(sql_engine)
+    interp = enrich_interpolated_data(interp)
+    abw_colname = "abw"
+    if rls:
+        abw_rlm = read_data_with_header("rlm_results.csv")
+        abw_rlm.drop(columns=["experiment_id"], inplace=True)
+
+        interp = interp.merge(
+            abw_rlm,
+            left_on="id",
+            right_on="link_state_id",
+            how="left",
+        )
+        abw_colname = "abw_rls"
+        interp["abw_rls"] = interp["abw_rls"] * 8
+
     if absolute:
-        interp["error"] = (interp["abw"] - interp["real_abw"]).abs()
+        interp["error"] = (interp[abw_colname] - interp["real_abw"]).abs()
     else:
-        interp["error"] = interp["abw"] - interp["real_abw"]
+        interp["error"] = interp[abw_colname] - interp["real_abw"]
     capacity_map = {
         exp_id_from_name(name): exp_data["capacity"]
         for name, exp_data in experiments_db.items()
@@ -1841,7 +1626,7 @@ def plot_error_boxplot(absolute=False):
     plt.xticks(rotation=45)
     plt.tight_layout()
     fig.savefig(
-        os.path.join(out_dir, f"error_boxplot_absolute_{absolute}.pdf"),
+        os.path.join(out_dir, f"error_boxplot_absolute_{absolute}{"" if not rls else "_rls"}.pdf"),
         format="pdf",
         bbox_inches="tight",
     )
@@ -1867,20 +1652,36 @@ if __name__ == "__main__":
     # plot_pgm_scatterplot()
 
     os.makedirs(out_dir, exist_ok=True)
-    plot_abw_rlm_vs_abw()
+    plot_experiments_pair_grid(
+        ["exp2", "exp2_fluid"],
+        k_per_exp=6,    # show 3 rows (6 groups) each experiment
+        pts_min=30
+    )
+    plot_pgm_scatterplot_without_outliers(with_regression=True, savefig=True)
+    plot_pgm_scatterplot_without_outliers()
+    plot_error_boxplot_dual()
+    # results = calculate_abw_based_on_pgm_using_robust_regression(10)
+    # results.to_csv("rlm_results.csv", index=False)
     # plot_accuracy_per_real_abw_bucket()
-    # plot_error_boxplot()
+    # plot_accuracy_per_real_abw_bucket(rls=True)
+    # plot_error_boxplot(absolute=True, rls=True)
+    # plot_error_boxplot(rls=True)
+
+    # plot_pgm_barplot(rls=True)
+
+    # plot_error_boxplot_by_used_in_regression_buckets(rls=True)
+    # plot_error_boxplot_by_used_in_regression_buckets()
+    # plot_abw_rlm_vs_abw()
+    # plot_pgm_scatterplot()
+    #
+
+
 
     # plot_exp2_abw_vs_estimated()
     # plot_abw_vs_estimated()
-    # plot_pgm_scatterplot_with_density()
-
-    #plot_error_boxplot_by_used_in_regression_buckets()
 
 
-    plot_error_boxplot(absolute=True)
-    plot_error_boxplot()
-    #plot_pgm_barplot()
+    plot_pgm_barplot()
 
     # Close the connection
     conn.close()

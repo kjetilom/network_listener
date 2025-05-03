@@ -238,7 +238,6 @@ impl BwClient {
     }
 
     pub async fn send_hello_noreply(&mut self, message: String) -> Result<HelloReply, Error> {
-        // On self.connection, send a hello request, dont send reply to reply_tx
         let request = tonic::Request::new(HelloRequest { name: message });
 
         let response =

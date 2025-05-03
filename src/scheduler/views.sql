@@ -185,10 +185,11 @@ WITH
   -- B) Within each timestamp, rank the surviving rows by gout
   ranked AS (
     SELECT
-      pf.time,
+      pf.link_state_id,
       pf.gout,
-      ROW_NUMBER() OVER (PARTITION BY pf.time ORDER BY pf.gout) AS rn,
-      COUNT(*)       OVER (PARTITION BY pf.time) AS total_count
+      pf.gin,
+      ROW_NUMBER() OVER (PARTITION BY pf.link_state_id ORDER BY pf.gin) AS rn,
+      COUNT(*)       OVER (PARTITION BY pf.link_state_id) AS total_count
     FROM pre_filter AS pf
     WHERE pf.to_use
   ),
@@ -196,11 +197,11 @@ WITH
   -- C) Compute each timestamp’s bottom-10% average gout
   avg_low AS (
     SELECT
-      time,
+      link_state_id,
       AVG(gout) AS threshold
     FROM ranked
     WHERE rn <= CEIL(total_count * p_quantile)
-    GROUP BY time
+    GROUP BY link_state_id
   )
 
 -- D) Emit every row, joining its timestamp’s threshold
@@ -222,7 +223,7 @@ SELECT
   END AS used_in_regression
 FROM pre_filter AS pf
 LEFT JOIN avg_low AS al
-  ON pf.time = al.time
+  ON pf.link_state_id = al.link_state_id
 ORDER BY pf.time;
 $$;
 
@@ -260,6 +261,7 @@ SELECT
         ) AS moving_avg
 FROM with_subnet AS ws
 ORDER BY ws.subnet, ws.time;
+
 
 
 
