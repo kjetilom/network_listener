@@ -1,19 +1,15 @@
 import colorsys
 import os
-from typing import Tuple, Optional, Dict
 
 import matplotlib.patches
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib
-import sqlalchemy
 from sqlalchemy import create_engine
 import psycopg2
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
-from matplotlib.patches import Circle
-from seaborn.objects import Dot
 import numpy as np
 import statsmodels.api as sm
 from joblib import Parallel, delayed
@@ -272,7 +268,7 @@ def plot_abw_vs_estimated():
         exp_data = exp_data.sort_values(["ip_pair", "time"])
         exp_data["abw"] /= 1000000
         exp_data["real_abw"] /= 1000000
-        # A) rolling for 'abw'
+        # rolling for 'abw'
         rolled_abw = (
             exp_data.set_index("time")
             .groupby("ip_pair")["abw"]
@@ -282,7 +278,7 @@ def plot_abw_vs_estimated():
             .rename(columns={"abw": "rolling_abw"})
         )
 
-        # B) rolling for 'real_abw'
+        # rolling for 'real_abw'
         rolled_real = (
             exp_data.set_index("time")
             .groupby("ip_pair")["real_abw"]
@@ -361,7 +357,7 @@ def plot_exp2_abw_vs_estimated_median():
         exp_data = exp_data.sort_values(["ip_pair", "time"])
         exp_data["abw"] /= 1000000
         exp_data["real_abw"] /= 1000000
-        # A) rolling for 'abw'
+        # rolling for 'abw'
         rolled_abw = (
             exp_data.set_index("time")
             .groupby("ip_pair")["abw"]
@@ -371,7 +367,7 @@ def plot_exp2_abw_vs_estimated_median():
             .rename(columns={"abw": "rolling_abw"})
         )
 
-        # B) rolling for 'real_abw'
+        # rolling for 'real_abw'
         rolled_real = (
             exp_data.set_index("time")
             .groupby("ip_pair")["real_abw"]
@@ -482,7 +478,7 @@ def plot_exp2_abw_vs_estimated_median():
         format="pdf",
         bbox_inches="tight",
     )
-    # plt.show()
+    plt.show()
 
 
 def plot_exp2_abw_vs_estimated():
@@ -633,7 +629,6 @@ def plot_pgm_scatterplot():
         used = pgm[pgm["used_in_regression"]]
         unused = pgm[pgm["used_in_regression"] == False]
 
-        # Add legend with percentage of total for used and unused
         used_percentage = len(used) / (len(used) + len(unused)) * 100
         unused_percentage = len(unused) / (len(used) + len(unused)) * 100
 
@@ -687,7 +682,6 @@ def plot_pgm_scatterplot_without_outliers(with_regression=False, robust=False, s
         used = pgm[pgm["used_in_regression"]]
         unused = pgm[pgm["used_in_regression"] == False]
 
-        # Add legend with percentage of total for used and unused
         used_percentage = len(used) / (len(used) + len(unused)) * 100
         unused_percentage = len(unused) / (len(used) + len(unused)) * 100
         intersect_handle = None
@@ -695,7 +689,6 @@ def plot_pgm_scatterplot_without_outliers(with_regression=False, robust=False, s
         # Create a scatter plot
         fig, ax = plt.subplots(figsize=(18, 10))
         if with_regression:
-            # ------- fit a simple line on *used* points --------------
             if robust:
                 # robust fit via statsmodels.RLM
                 X = sm.add_constant(used["len/gin"])
@@ -827,8 +820,6 @@ def plot_accuracy_per_real_abw_bucket(n_buckets: int = 10, rls: bool = False):
 
         capacity = experiments_db[exp_name]["capacity"]
 
-        # ------------------------------------------------------------------ #
-        # 1) build quantile edges and human-readable labels
         quantile_edges = (
             exp_data["real_abw"].quantile(np.linspace(0, 1, n_buckets + 1)).to_numpy()
         )
@@ -1026,10 +1017,6 @@ def calculate_abw_based_on_pgm_using_robust_regression(
                                         exp_name,
                                         meta["max_capacity"])
 
-        # if exp_name != "exp2_fluid":
-        #     continue
-
-        # ratio pre-compute
         pgm["len/gin"]  = pgm["len"]  / pgm["gin"]
         pgm["gout/gin"] = pgm["gout"] / pgm["gin"]
 
@@ -1057,6 +1044,7 @@ def calculate_abw_based_on_pgm_using_robust_regression(
         )
 
     return pd.DataFrame(rows)
+
 
 def plot_experiments_pair_grid(exp_names: list[str],
                                k_per_exp: int = 4,
@@ -1180,7 +1168,7 @@ def plot_abw_rlm_vs_abw():
         )
         exp_data["abw_rls"] /= 1000000
         exp_data["real_abw"] /= 1000000
-        # A) rolling for 'abw'
+        #  rolling for 'abw'
         rolled_abw = (
             exp_data.set_index("time")
             .groupby("ip_pair")["abw_rls"]
@@ -1190,7 +1178,7 @@ def plot_abw_rlm_vs_abw():
             .rename(columns={"abw_rls": "rolling_abw"})
         )
 
-        # B) rolling for 'real_abw'
+        #  rolling for 'real_abw'
         rolled_real = (
             exp_data.set_index("time")
             .groupby("ip_pair")["real_abw"]
@@ -1203,10 +1191,8 @@ def plot_abw_rlm_vs_abw():
             rolled_real, on=["ip_pair", "time"], how="left"
         )
         exp_data = add_relative_time(exp_data, unit="m", new_col="reltime")
-        # after you’ve prepared exp_data and reltime...
         fig, ax = plt.subplots(figsize=(20, 12))
 
-        # plot your two series without legends
         sns.lineplot(
             data=exp_data,
             x="reltime",
@@ -1284,8 +1270,6 @@ def plot_error_boxplot_by_used_in_regression_buckets(rls=False):
             how="left",
         )
 
-        # ------------------------------------------------------------------ #
-        # bucket preparation (unchanged)
         quantiles = (
             counts["used_in_regression"].quantile([x * 0.1 for x in range(11)]).tolist()
         )
@@ -1308,7 +1292,6 @@ def plot_error_boxplot_by_used_in_regression_buckets(rls=False):
             error=lambda df: df["error"] / exp_data["capacity"] * 100
         )
 
-        # ------------------------------------------------------------------ #
         # plotting
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 10))
 
@@ -1328,7 +1311,6 @@ def plot_error_boxplot_by_used_in_regression_buckets(rls=False):
         ax1.set_xticklabels(ax1.get_xticklabels(), rotation=45)
 
         # BARPLOT – intensity of variation (std-dev) per bucket
-        #     ─────────────────────────────────────────────────────
         variation = (
             counts_good.groupby("used_bucket")["error"]
             .std()
