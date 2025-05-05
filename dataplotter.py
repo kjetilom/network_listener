@@ -18,6 +18,7 @@ import math
 sns.set_style("whitegrid")
 sns.set_context("paper", font_scale=2)
 
+
 experiments_db = {
     "exp1": {
         "capacity": 5000000,
@@ -31,11 +32,23 @@ experiments_db = {
         "capacity": 5000000,
         "max_capacity": 10000000,
     },
+    "exp1_lowgap": {
+        "capacity": 5000000,
+        "max_capacity": 8300000,
+    },
+    "exp1_jitterlowgap": {
+        "capacity": 5000000,
+        "max_capacity": 8300000,
+    },
     "exp2": {
         "capacity": 3000000,
         "max_capacity": 5000000,
     },
     "exp2_fluid": {
+        "capacity": 3000000,
+        "max_capacity": 5000000,
+    },
+    "exp2_nopktloss": {
         "capacity": 3000000,
         "max_capacity": 5000000,
     },
@@ -47,7 +60,15 @@ experiments_db = {
         "capacity": 1000000,
         "max_capacity": 4000000,
     },
+    "exp4_nopktloss": {
+        "capacity": 1000000,
+        "max_capacity": 4000000,
+    },
     "exp5": {
+        "capacity": 1000000,
+        "max_capacity": 4000000,
+    },
+    "exp5_nopktloss": {
         "capacity": 1000000,
         "max_capacity": 4000000,
     },
@@ -60,6 +81,10 @@ experiments_db = {
         "max_capacity": 10000000,
     },
     "exp8": {
+        "capacity": 7000000,
+        "max_capacity": 10000000,
+    },
+    "exp8_lowtraffic": {
         "capacity": 7000000,
         "max_capacity": 10000000,
     },
@@ -873,6 +898,75 @@ def plot_accuracy_per_real_abw_bucket(n_buckets: int = 10, rls: bool = False):
         )
         plt.show()
 
+def plot_relative_error_trends(rls: bool = False):
+    interp = get_interpolated(sql_engine)
+    interp = enrich_interpolated_data(interp)
+    abw_col = "abw_rls" if rls else "abw"
+    if rls:
+        abw_rlm = read_data_with_header("rlm_results.csv").drop(columns=["experiment_id"])
+        interp = interp.merge(abw_rlm, left_on="id", right_on="link_state_id", how="left")
+        interp["abw_rls"] *= 8
+
+    all_rel = []
+    for exp_name, exp_data in experiments_db.items():
+        counts = (
+            get_pgm_filtered_counts(sql_engine, exp_name, exp_data["max_capacity"])
+            .merge(interp[["id", "real_abw", abw_col]], left_on="link_state_id", right_on="id", how="left")
+            .copy()
+        )
+        counts["error"] = (counts["real_abw"] - counts[abw_col]).abs() / exp_data["capacity"] * 100
+
+        quantiles = counts["used_in_regression"].quantile([i/10 for i in range(11)])
+        bins = sorted(set(quantiles))
+        labels = list(range(1, len(bins)))
+
+        counts["bucket_idx"] = pd.cut(
+            counts["used_in_regression"], bins=bins, labels=labels, include_lowest=True
+        ).astype(int)
+
+        summary = (
+            counts.dropna(subset=["error"])
+                  .groupby("bucket_idx")["error"]
+                  .median()
+                  .rename("median_error")
+                  .reset_index()
+        )
+
+        summary["relative_error"] = summary["median_error"] / summary["median_error"].max()
+        summary["experiment"] = exp_name
+        all_rel.append(summary)
+
+    df = pd.concat(all_rel, ignore_index=True)
+
+    sns.set_style("whitegrid")
+    plt.figure(figsize=(12, 6))
+    sns.lineplot(
+        data=df,
+        x="bucket_idx", y="relative_error",
+        hue="experiment", style="experiment",
+        palette="colorblind",
+        markers=True,
+        ci=None
+    )
+    plt.legend(
+        title="Experiment",
+        bbox_to_anchor=(1.05, 1),
+        loc="upper left",
+        borderaxespad=0
+    )
+    plt.xlabel("Decile bucket of used datapoints")
+    plt.ylabel("Relative error (max = 1)")
+    plt.title("Normalized ABW-error trend by experiment")
+    plt.xticks(range(1, 11))
+    plt.tight_layout()
+
+    suffix = "_rls" if rls else ""
+    plt.savefig(
+        os.path.join(out_dir, f"relative_error_trends{suffix}.pdf"),
+        bbox_inches="tight", format="pdf"
+    )
+    plt.show()
+
 
 def plot_pgm_barplot(rls: bool = False):
     """ """
@@ -1634,6 +1728,9 @@ if __name__ == "__main__":
     # plot_pgm_scatterplot()
 
     os.makedirs(out_dir, exist_ok=True)
+    results = calculate_abw_based_on_pgm_using_robust_regression(10)
+    results.to_csv("rlm_results.csv", index=False)
+    plot_relative_error_trends(rls=False)
     plot_experiments_pair_grid(
         ["exp2", "exp2_fluid"],
         k_per_exp=6,    # show 3 rows (6 groups) each experiment
@@ -1642,14 +1739,13 @@ if __name__ == "__main__":
     plot_pgm_scatterplot_without_outliers(with_regression=True, savefig=True)
     plot_pgm_scatterplot_without_outliers()
     plot_error_boxplot_dual()
-    # results = calculate_abw_based_on_pgm_using_robust_regression(10)
-    # results.to_csv("rlm_results.csv", index=False)
+
     # plot_accuracy_per_real_abw_bucket()
     # plot_accuracy_per_real_abw_bucket(rls=True)
     # plot_error_boxplot(absolute=True, rls=True)
     # plot_error_boxplot(rls=True)
 
-    # plot_pgm_barplot(rls=True)
+    plot_pgm_barplot(rls=True)
 
     # plot_error_boxplot_by_used_in_regression_buckets(rls=True)
     # plot_error_boxplot_by_used_in_regression_buckets()
