@@ -28,15 +28,21 @@ use crate::PCAPMeta;
 
 type Streams = HashMap<IpPair, StreamManager>;
 
+/// Manages multiple IP-pair streams, collects metrics, and sends protobuf messages.
 #[derive(Debug)]
 pub struct LinkManager {
-    links: Streams,             // Private field
-    vip_links: HashSet<IpPair>, // Links we care about (Empty at startup)
+    /// Active streams keyed by local/remote IP pairs.
+    links: Streams,
+    /// links of special interest (Naming needs to be changed)
+    vip_links: HashSet<IpPair>,
+    /// Channel to send events to the bandwidth client handler.
     client_sender: Sender<ClientHandlerEvent>,
+    /// Metadata from PCAP (local IPs).
     pcap_meta: Arc<PCAPMeta>,
 }
 
 impl LinkManager {
+    /// Creates a new LinkManager with the given client sender and device metadata.
     pub fn new(client_sender: Sender<ClientHandlerEvent>, pcap_meta: Arc<PCAPMeta>) -> Self {
         LinkManager {
             links: HashMap::new(),
@@ -46,8 +52,7 @@ impl LinkManager {
         }
     }
 
-    /// Tries to construct a key from an existing external IP addr.
-    /// If the key exists, returns the link.
+    /// Looks up a stream manager by external IP address, if present.
     pub fn get_link_by_ext_ip(&self, ext_ip: IpAddr) -> Option<&StreamManager> {
         let ip_pair = match ext_ip {
             IpAddr::V4(_) => IpPair::new(ext_ip, self.pcap_meta.ipv4.into()),
@@ -56,11 +61,16 @@ impl LinkManager {
         self.links.get(&ip_pair)
     }
 
+    /// Inserts a parsed packet into the appropriate stream manager.
+    ///
+    /// Filters out loopback and multicast, and any packet to/from the server port.
     pub fn insert(&mut self, packet: ParsedPacket) {
         // Ignore if loopback
         if packet.src_ip.is_loopback() || packet.dst_ip.is_loopback() {
             return;
         }
+        // This is done in the current implementation as a hack to avoid spamming
+        // all clients seen with gRPC hello messages.
         if packet.src_ip.is_multicast() || packet.dst_ip.is_multicast() {
             return;
         }
@@ -78,6 +88,9 @@ impl LinkManager {
             .record_packet(&packet);
     }
 
+    /// Inserts iperf measurement results into the registry for a given stream.
+    ///
+    /// Proof of concept for future active measurement integration.
     pub fn insert_iperf_result(
         &mut self,
         ip_pair: IpPair,
@@ -90,12 +103,18 @@ impl LinkManager {
             .record_iperf_result(bps, stream);
     }
 
+    /// Used by the parser task to perform periodic tasks.
+    /// As for now, this is just a pass-through to the stream managers.
     pub async fn periodic(&mut self) {
         for (_, stream_manager) in self.links.iter_mut() {
             stream_manager.periodic();
         }
     }
 
+    /// Marks a stream as important. Used by the parser task when it receives a
+    /// gRPC hello response or message.
+    /// This is a temporary solution until we have a better way to handle
+    /// this logic.
     pub fn add_important_link(&mut self, ip_addr: Result<IpAddr, AddrParseError>) {
         if let Ok(ip_addr) = ip_addr {
             self.vip_links
@@ -105,6 +124,12 @@ impl LinkManager {
         }
     }
 
+    /// Sends bandwidth, RTT, and PGM data messages over the client channel.
+    ///
+    /// The only part of this function that should be used in production is the
+    /// `send_bandwidth` function. The rest is for gathering data for analysis.
+    ///
+    /// TODO: Avoid excessive creation of messages.
     pub async fn send_bandwidth(&mut self) {
         let (bw_message, rtt_message, pgm_dps) = self.build_messages();
 
@@ -152,10 +177,12 @@ impl LinkManager {
         }
     }
 
+    /// Returns all remote IPs currently tracked.
     pub fn collect_external_ips(&self) -> Vec<IpAddr> {
         self.links.keys().map(|ip_pair| ip_pair.remote()).collect()
     }
 
+    /// Sends initial client registration message with known IPs.
     pub async fn send_init_clients_msg(&mut self) {
         self.client_sender
             .send(ClientHandlerEvent::InitClients {
@@ -165,11 +192,13 @@ impl LinkManager {
             .unwrap();
     }
 
+    /// Creates an RTT message from a vector of RTTs and an IP pair.
     pub fn get_rtt_message(rtts: Vec<(u32, SystemTime)>, ip_pair: IpPair) -> RttMessage {
         let messages: Vec<Rtt> = rtts
             .into_iter()
             .map(|(rtt, timestamp)| Rtt {
                 rtt: rtt as f64,
+                // This is bad practice. Safe for now, as timestamps will always be in the past.
                 timestamp: timestamp.duration_since(UNIX_EPOCH).unwrap().as_millis() as i64,
             })
             .collect();
@@ -181,6 +210,7 @@ impl LinkManager {
         }
     }
 
+    /// Internal helper to produce LinkState and PGM for one stream.
     fn get_link_state(
         stream_manager: &mut StreamManager,
         pkt_reg: &mut PacketRegistry,
@@ -219,6 +249,7 @@ impl LinkManager {
         (Link { ip_pair, state }, pgm)
     }
 
+    /// Builds protobuf messages for bandwidth, RTTs, and PGM data.
     pub fn build_messages(&mut self) -> (BandwidthMessage, Rtts, PgmMessage) {
         let mut links = Vec::new();
         let mut rtts = Vec::new();
@@ -241,24 +272,42 @@ impl LinkManager {
     }
 }
 
+/// Represents the measured and estimated state of a link at an instant.
+/// Most of the parameters are unused, but kept for future use.
+///
+/// The ones that are most significant are:
+/// - `thp_in`: Measured throughput in Kbps
+/// - `thp_out`: Measured throughput out Kbps
+/// - `abw`: Estimated available bandwidth in bytes/sec
+/// - `latency`: Measured latency in ms (Not an accurate representation of RTT)
 #[derive(Debug)]
 pub struct LinkState {
-    thp_in: f64,          // Throughput in (Measured)
-    thp_out: f64,         // Throughput out (Measured)
-    bw: Option<f64>,      // bps, None if not available (Bandwidth, estimated)
-    abw: Option<f64>,     // bps, None if not available (Available bandwidth, estimated)
-    latency: Option<f64>, // ms rtt, None if not available (Measured)
-    delay: Option<f64>,   // ms, None if not available (Estimated)
-    jitter: Option<f64>,  // ms, None if not available (Measured)
-    loss: Option<f64>,    // %, None if not available (Measured)
-    timestamp: i64,      // Timestamp of the measurement
+    /// Throughput in and out (Measured)
+    thp_in: f64,
+    /// Throughput out (Measured)
+    thp_out: f64,
+    /// bps, None if not available (unused)
+    bw: Option<f64>,
+    /// bps, None if not available (Available bandwidth, estimated)
+    abw: Option<f64>,
+    /// ms rtt, None if not available (Measured)
+    latency: Option<f64>,
+    /// ms, None if not available (Estimated, unused)
+    delay: Option<f64>,
+    /// ms, None if not available (Measured, unused)
+    jitter: Option<f64>,
+    /// %, None if not available (Measured, unused)
+    loss: Option<f64>,
+    /// Timestamp of the measurement
+    timestamp: i64,
 }
 
 impl LinkState {
-    pub fn to_proto(&self, sender_ip: String, receiver_ip: String) -> LinkStateProto {
+    /// Converts internal state to protobuf message.
+    pub fn to_proto(&self) -> LinkStateProto {
         LinkStateProto {
-            sender_ip: sender_ip,
-            receiver_ip: receiver_ip,
+            sender_ip: String::new(), // filled by caller
+            receiver_ip: String::new(),
             thp_in: self.thp_in,
             thp_out: self.thp_out,
             bw: self.bw.unwrap_or(0.0),
@@ -279,11 +328,12 @@ pub struct Link {
 }
 
 impl Link {
+    /// Converts to protobuf, injecting IP strings.
     pub fn to_proto(&self) -> LinkStateProto {
-        self.state.to_proto(
-            self.ip_pair.local().to_string(),
-            self.ip_pair.remote().to_string(),
-        )
+        let mut msg = self.state.to_proto();
+        msg.sender_ip = self.ip_pair.local().to_string();
+        msg.receiver_ip = self.ip_pair.remote().to_string();
+        msg
     }
 }
 
@@ -297,5 +347,52 @@ impl Display for LinkState {
 impl Display for Link {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {:?}", self.ip_pair, self.state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::IpAddr;
+
+    #[test]
+    fn test_linkstate_display_and_proto() {
+        let state = LinkState {
+            thp_in: 1.0,
+            thp_out: 2.0,
+            bw: Some(3.0),
+            abw: Some(4.0),
+            latency: Some(5.0),
+            delay: None,
+            jitter: None,
+            loss: None,
+            timestamp: 0,
+        };
+        let s = format!("{}", state);
+        assert!(s.contains("thp_in: 1.00"));
+        let proto = state.to_proto();
+        assert_eq!(proto.thp_in, 1.0);
+    }
+
+    #[test]
+    fn test_link_display() {
+        let ipl: IpAddr = [192, 168, 1, 1].into();
+        let ipr: IpAddr = [10, 0, 0, 1].into();
+        let lp = Link {
+            ip_pair: IpPair::new(ipl, ipr),
+            state: LinkState {
+                thp_in: 0.0,
+                thp_out: 0.0,
+                bw: None,
+                abw: None,
+                latency: None,
+                delay: None,
+                jitter: None,
+                loss: None,
+                timestamp: 0,
+            },
+        };
+        let s = format!("{}", lp);
+        assert!(s.contains("192.168.1.1"));
     }
 }

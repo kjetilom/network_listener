@@ -1,25 +1,36 @@
 use std::time::SystemTime;
 
-// 1500 - MAXHDRSIZE (60 + 18 + 60)
+// Minimum payload size threshold: MTU (1500 bytes) minus maximum header sizes (IP+Ethernet+TCP).
 const MIN_PAYLOAD_SIZE: f64 = 1362.0;
 
 /// A structure holding a pair of gap measurements and the associated packet length.
 #[derive(Debug, Clone)]
 pub struct GinGout {
+    /// Gap between this packet's ack and the previous ack (s).
     pub gout: f64,
+    /// Gap between this packet's send and the previous send (s).
     pub gin: f64,
+    /// Packet payload length (bytes).
     pub len: f64,
+    /// Number of packets acknowledged by this ack. (cumulative ack number)
     pub num_acked: u8,
+    /// Timestamp when the ack was observed.
     pub timestamp: SystemTime,
 }
 
 impl GinGout {
+    /// Computes packet metrics.
+    ///
+    /// Returns a tuple `(x, y, timestamp)` where:
+    /// - `x = len / gin` (bytes per input gap)
+    /// - `y = gout / gin` (output-to-input gap ratio)
+    /// - `timestamp`: original timestamp
     pub fn get_dp(&self) -> (f64, f64, SystemTime) {
         (self.len / self.gin, self.gout / self.gin, self.timestamp)
     }
 }
 
-/// A sender that collects gap data points (dps) for available bandwidth estimation.
+/// Sender that accumulates `GinGout` data points for passive bandwidth estimation.
 #[derive(Debug)]
 pub struct PABWESender {
     pub dps: Vec<GinGout>,
@@ -30,13 +41,23 @@ impl PABWESender {
         PABWESender { dps: Vec::new() }
     }
 
+    /// Appends a new data point to the collection.
     pub fn push(&mut self, dp: GinGout) {
         self.dps.push(dp);
     }
 
+    /// Filters data points based on minimum payload, nonzero gaps, and link capacity.
+    ///
+    /// Steps:
+    /// 1. Discard any `dp` where `gin == 0`, `len < MIN_PAYLOAD_SIZE`, or ratio constraints exceed physical capacity.
+    /// 2. Sort remaining by `gin` ascending.
+    /// 3. Compute average of the smallest 10% of `gin` and corresponding `gout`.
+    /// 4. Retain only points with `gin < average_gout`.
+    ///
+    /// # Returns
+    /// A vector of `GinGout` that passed all filters.
     pub fn filter_gin_gacks(&mut self) -> Vec<GinGout> {
-        // Get the average of the 10% smallest gin values.
-        // Calculate the average gack and gin for these values:
+        // Convert bit to byte.
         let phy_cap = crate::CONFIG.client.link_phy_cap as f64 / 8.0;
 
         let mut filtered: Vec<GinGout> = self
@@ -65,17 +86,16 @@ impl PABWESender {
             .cloned()
             .collect();
 
-        return filtered
+        return filtered;
     }
 
-    /// Estimates the available bandwidth using a linear regression.
+    /// Estimates available bandwidth via ordinary least squares regression.
     ///
-    /// For each data point, we define:
-    ///   x = len / gin   (representing the effective packet size per input gap)
-    ///   y = gout / gin   (the gap ratio)
+    /// Returns `(Some(bw), used_points)` if estimation succeeded and bandwidth in bytes/sec;
+    /// otherwise `(None, used_points)`.
     ///
-    /// The regression line is computed over all points, and the available
-    /// bandwidth is estimated as (1 - b) / a, where a is the slope and b is the intercept.
+    /// ! The used_points are should be removed in production code.
+    /// ! They are returned to be pushed to the database.
     pub fn passive_pgm_abw(&mut self) -> (Option<f64>, Vec<GinGout>) {
         // Ensure we have some data points.
         if self.dps.is_empty() {
@@ -84,13 +104,8 @@ impl PABWESender {
 
         let dps = self.filter_gin_gacks();
 
-        let mut sum_x = 0.0;
-        let mut sum_y = 0.0;
-        let mut sum_xy = 0.0;
-        let mut sum_x2 = 0.0;
+        let (mut sum_x, mut sum_y, mut sum_xy, mut sum_x2, mut count) = (0.0, 0.0, 0.0, 0.0, 0);
 
-        // Process each data point, skipping any with a zero gin (to avoid division by zero).
-        let mut count = 0;
         for dp in &dps {
             let x = dp.len / dp.gin;
             let y = dp.gout / dp.gin;
@@ -123,12 +138,7 @@ impl PABWESender {
         (None, dps)
     }
 
-    /// Estimates the available bandwidth using a robust linear regression.
-    ///
-    /// This method is similar to `passive_pgm_abw`, but it uses an iterative
-    /// robust least squares (IRLS) approach to minimize the influence of outliers.
-    /// The available bandwidth is estimated as (1 - b) / a, where a is the slope
-    /// and b is the intercept.
+    /// Estimates available bandwidth using robust linear regression (IRLS with Huber weighting).
     pub fn passive_pgm_abw_rls(&mut self) -> (Option<f64>, Vec<GinGout>) {
         if self.dps.is_empty() {
             return (None, Vec::new());
@@ -171,8 +181,9 @@ impl PABWESender {
         }
     }
 
-    /// Performs robust linear regression using IRLS with Huber weighting.
-    /// Returns Some((slope, intercept)) on success.
+    /// Performs IRLS-based robust least squares with Huber weights.
+    ///
+    /// Returns `Some((slope, intercept))` or `None` on failure.
     fn robust_least_squares(x: &[f64], y: &[f64]) -> Option<(f64, f64)> {
         let n = x.len();
         if n == 0 {
@@ -235,7 +246,7 @@ impl PABWESender {
                 delta = tol;
             }
 
-            // Update weights: if the residual is small, weight remains 1; otherwise, weight = delta/residual.
+            // Update weights
             for i in 0..n {
                 let res = (y[i] - (a * x[i] + b)).abs();
                 weights[i] = if res <= delta { 1.0 } else { delta / res };
@@ -247,47 +258,65 @@ impl PABWESender {
 
 #[cfg(test)]
 mod tests {
-    use super::{GinGout, PABWESender};
+    use super::*;
+    use std::time::SystemTime;
 
     #[test]
-    fn test_empty_sender() {
-        let mut sender = PABWESender::new();
+    fn test_get_dp() {
+        let t = SystemTime::now();
+        let gg = GinGout {
+            gin: 2.0,
+            gout: 4.0,
+            len: 1000.0,
+            num_acked: 1,
+            timestamp: t,
+        };
+        let (x, y, ts) = gg.get_dp();
+        assert_eq!(x, 500.0);
+        assert_eq!(y, 2.0);
+        assert_eq!(ts, t);
+    }
+
+    #[test]
+    fn test_filter_empty() {
+        let mut s = PABWESender::new();
+        let filtered = s.filter_gin_gacks();
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_filter_small_payload() {
+        let mut s = PABWESender::new();
+        s.push(GinGout {
+            gin: 1.0,
+            gout: 1.0,
+            len: 100.0,
+            num_acked: 1,
+            timestamp: SystemTime::now(),
+        });
+        let filtered = s.filter_gin_gacks();
         assert!(
-            sender.passive_pgm_abw().0.is_none(),
-            "Empty sender should return None"
+            filtered.is_empty(),
+            "Packets below MIN_PAYLOAD_SIZE should be dropped"
         );
     }
 
     #[test]
-    fn test_zero_gin_ignored() {
-        let mut sender = PABWESender::new();
-        // This point has gin == 0, so it should be ignored in the regression.
-        sender.push(GinGout {
-            gin: 0.0,
-            gout: 1.0,
-            len: 1400.0,
-            num_acked: 1,
-            timestamp: std::time::SystemTime::now(),
-        });
-        assert!(
-            sender.passive_pgm_abw().0.is_none(),
-            "Only zero gin data should yield None"
-        );
+    fn test_robust_least_squares_simple() {
+        let xs = [1.0, 2.0, 3.0];
+        let ys = [2.0, 4.0, 6.0];
+        if let Some((a, b)) = PABWESender::robust_least_squares(&xs, &ys) {
+            assert!((a - 2.0).abs() < 1e-6);
+            assert!((b - 0.0).abs() < 1e-6);
+        } else {
+            panic!("Expected Some((2.0,0.0))");
+        }
     }
 
     #[test]
-    fn test_clear_function() {
-        let mut sender = PABWESender::new();
-        sender.push(GinGout {
-            gin: 0.1,
-            gout: 1.0,
-            len: 1400.0,
-            num_acked: 1,
-            timestamp: std::time::SystemTime::now(),
-        });
-        assert!(
-            !sender.dps.is_empty(),
-            "Sender should have data points after push"
-        );
+    fn test_empty_abw_methods() {
+        let mut s = PABWESender::new();
+        assert!(s.passive_pgm_abw().0.is_none());
+        assert!(s.passive_pgm_abw_rls().0.is_none());
     }
 }

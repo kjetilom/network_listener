@@ -196,13 +196,13 @@ mod tests {
             0x40, 0x00, 0x40, 0x06, // flags, ttl=64, protocol=TCP
             0x7F, 0x00, 0x00, 0x01, // src IP 127.0.0.1
             0x7F, 0x00, 0x00, 0x02,
-        ]; // dst IP 127.0.0.2
-           // Adjust the total length field (bytes 2..4) to 20 + 1000
+        ];
+
         let total_len = 20 + 1000;
         ipv4_header[2] = (total_len >> 8) as u8;
         ipv4_header[3] = total_len as u8;
         packet_data.extend_from_slice(&ipv4_header);
-        // 1000 bytes of payload
+
         packet_data.extend_from_slice(&vec![0xAB; 1000]);
 
         let owned_packet = OwnedPacket {

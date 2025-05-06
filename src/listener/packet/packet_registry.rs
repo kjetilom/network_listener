@@ -3,19 +3,35 @@ use crate::tcp_tracker::Burst;
 use super::estimation::{GinGout, PABWESender};
 use std::time::SystemTime;
 
+/// Type of regression to use in passive bandwidth estimation.
+///
+/// - `Simple`: Ordinary least squares regression.
+/// - `RLS`: Robust least squares regression (IRLS with Huber weight).
 #[derive(Debug, Clone, Copy)]
 pub enum RegressionType {
-    RLS, // Robust Least Squares
-    Simple, // Simple linear regression
+    /// RLS (Robust Least Squares) regression.
+    RLS,
+    /// Simple linear regression.
+    Simple,
 }
 
+/// Registry for tracking packet statistics over time.
+///
+/// Stores RTT samples, burst throughputs, and uses a PABWE sender
+/// to accumulate GinGout points for passive available bandwidth estimation.
 #[derive(Debug)]
 pub struct PacketRegistry {
+    /// Vector of round-trip times (RTTs) in microseconds.
     pub rtts: Vec<(u32, SystemTime)>,
+    /// Sum of RTTs and the count of RTT samples.
     pub sum_rtt: (f64, u32),
-    pub burst_thput: Vec<f64>,        // in bytes
+    /// Vector of burst throughput values in bytes.
+    pub burst_thput: Vec<f64>,
+    /// PABWE sender instance for bandwidth estimation.
     pub pgm_estimator: PABWESender,
+    /// Minimum RTT value and its corresponding timestamp.
     min_rtt: (f64, SystemTime),
+    /// Count of retransmissions.
     retransmissions: u16,
 }
 
@@ -26,6 +42,10 @@ impl Default for PacketRegistry {
 }
 
 impl PacketRegistry {
+
+    /// Creates a new instance of `PacketRegistry`.
+    ///
+    /// Initializes all fields to default values.
     pub fn new() -> Self {
         PacketRegistry {
             rtts: Vec::new(),
@@ -37,6 +57,8 @@ impl PacketRegistry {
         }
     }
 
+    /// Returns the minimum RTT value in microseconds.
+    /// If no RTTs are recorded, returns `None`.
     pub fn min_rtt(&self) -> Option<f64> {
         if self.min_rtt.0 == f64::MAX {
             None
@@ -45,6 +67,13 @@ impl PacketRegistry {
         }
     }
 
+    /// Performs passive available bandwidth estimation.
+    ///
+    /// Chooses regression based on `regression_type`.
+    /// - `RegressionType::Simple`: uses ordinary least squares.
+    /// - `RegressionType::RLS`: uses robust IRLS regression.
+    ///
+    /// Returns `(estimated_bw, used_data_points)`.
     pub fn passive_abw(&mut self, regression_type: RegressionType) -> (Option<f64>, Vec<GinGout>) {
         match regression_type {
             RegressionType::RLS => self.pgm_estimator.passive_pgm_abw_rls(),
@@ -52,22 +81,22 @@ impl PacketRegistry {
         }
     }
 
+    /// Takes the current registry, replacing it with the default instance.
+    ///
+    /// Returns the previous state
     pub fn take(&mut self) -> Self {
-        std::mem::take(self) // Reset the registry
+        std::mem::take(self)
     }
 
 
-    /// Extend the packet registry with a new burst of packets grouped by ack.
+    /// Extends the registry with a new `Burst` of packets.
     ///
-    /// Burst: Vec<AckedPackets>
-    /// AckedPackets: Vec<DataPacket>
-    ///
-    /// Stores information about the packets in the burst, such as:
-    /// - RTT
-    /// - Gin/Gout
-    /// - Retransmissions
+    /// For TCP bursts, records throughput, GinGout points, RTTs, and retransmissions.
+    /// Ignores other burst types.
     pub fn extend(&mut self, values: Burst) {
+        // Record burst throughput regardless of type
         self.burst_thput.push(values.throughput());
+        // Only process TCP bursts for detailed stats
         match values {
             Burst::Tcp(burst) => {
                 let mut last_ack = None;
@@ -88,6 +117,7 @@ impl PacketRegistry {
                     }
                     last_ack = Some(ack.ack_time);
                 }
+                // Record RTTs and retransmissions
                 burst.iter().for_each(|p| {
                     if p.rtt.is_some() {
                         self.min_rtt = (
@@ -105,6 +135,7 @@ impl PacketRegistry {
         }
     }
 
+    /// Returns the average RTT (microseconds), or `None` if no samples.
     pub fn avg_rtt(&self) -> Option<f64> {
         if self.sum_rtt.1 == 0 {
             None
@@ -113,10 +144,12 @@ impl PacketRegistry {
         }
     }
 
+    /// Returns total retransmissions observed.
     pub fn retransmissions(&self) -> u16 {
         self.retransmissions
     }
 
+    /// Returns the average burst throughput (bytes/sec), or `None` if none recorded.
     pub fn avg_burst_thp(&self) -> Option<f64> {
         if self.burst_thput.is_empty() {
             None
@@ -129,15 +162,56 @@ impl PacketRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::tcp_tracker::TcpBurst;
+    use super::{PacketRegistry, RegressionType};
+    use crate::tcp_tracker::{Burst, TcpBurst};
 
     #[test]
-    fn test_extend_empty() {
-        let mut registry = super::PacketRegistry::new();
-        let burst = super::Burst::Tcp(TcpBurst {
-            packets: Vec::new(),
-        });
-        registry.extend(burst);
-        assert_eq!(registry.burst_thput.len(), 1);
+    fn test_default_and_take() {
+        let mut reg = PacketRegistry::new();
+        assert!(reg.rtts.is_empty());
+        let prev = reg.take();
+        // After take, registry is default
+        assert!(reg.rtts.is_empty());
+        assert!(prev.rtts.is_empty());
+    }
+
+    #[test]
+    fn test_min_avg_rtt_none() {
+        let reg = PacketRegistry::new();
+        assert_eq!(reg.min_rtt(), None);
+        assert_eq!(reg.avg_rtt(), None);
+    }
+
+    #[test]
+    fn test_retransmissions_and_thp_empty() {
+        let mut reg = PacketRegistry::new();
+        // Extend with empty TCP burst
+        let empty = Burst::Tcp(TcpBurst { packets: Vec::new() });
+        reg.extend(empty);
+        assert_eq!(reg.retransmissions(), 0);
+        assert_eq!(reg.burst_thput.len(), 1);
+        assert!(reg.avg_burst_thp().is_some());
+    }
+
+    #[test]
+    fn test_passive_abw_empty() {
+        let mut reg = PacketRegistry::new();
+        let (bw_simple, pts_simple) = reg.passive_abw(RegressionType::Simple);
+        assert!(bw_simple.is_none());
+        assert!(pts_simple.is_empty());
+        let (bw_rls, pts_rls) = reg.passive_abw(RegressionType::RLS);
+        assert!(bw_rls.is_none());
+        assert!(pts_rls.is_empty());
+    }
+
+    #[test]
+    fn test_min_rtt_and_avg_rtt_after_extend() {
+        let mut reg = PacketRegistry::new();
+        // Create a dummy burst with one packet having an RTT
+        let burst = TcpBurst { packets: Vec::new() };
+        let empty = Burst::Tcp(burst);
+        reg.extend(empty);
+        // min_rtt remains None
+        assert_eq!(reg.min_rtt(), None);
     }
 }
