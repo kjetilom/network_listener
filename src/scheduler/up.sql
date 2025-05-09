@@ -1,4 +1,5 @@
--- First, enable the TimescaleDB extension (if not already enabled)
+-- These tables and views are used to store experiment data for later analysis.
+
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 CREATE TABLE
@@ -140,8 +141,6 @@ FROM
     link_state ls
     JOIN link l ON ls.link_id = l.id;
 
-
--- Create a view to calculate the average latency for each link.
 CREATE VIEW
     latency AS
 SELECT
@@ -158,7 +157,6 @@ ORDER BY
     metric,
     time ASC;
 
--- Links that are bidirectional.
 CREATE VIEW
     links AS
 SELECT
@@ -185,7 +183,6 @@ CREATE INDEX ON link_state (experiment_id);
 
 CREATE INDEX ON throughput (experiment_id);
 
--- Convert the tables into hypertables using "time" as the time column.
 SELECT
     create_hypertable ('link_state', 'time');
 

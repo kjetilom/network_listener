@@ -10,6 +10,9 @@ use crate::probe::iperf_json::Connected;
 
 pub type IpPair = Pair<IpAddr>;
 
+/// Marker trait for types that can be used in a `Pair`.
+///
+/// Abstraction layer to simplify the logic behind the 5-tuple and 3-tuple keys.
 pub trait Pairable: PartialEq + Eq + Hash + Clone + Copy {}
 impl<T: PartialEq + Eq + Hash + Clone + Copy> Pairable for T {}
 impl<T: Pairable> Eq for Pair<T> {}
@@ -20,11 +23,23 @@ pub struct Pair<T: Pairable> {
     remote: T,
 }
 
+/// An ordered or unordered pair of values (e.g., IP addresses or ports).
+/// A single instance of the tool will never have two stream trackers with the
+/// same 5-tuple or 3-tuple, so we want to match incoming and outgoing packets
+/// to the same tracker.
+///
+/// Invariants:
+/// - `Pair::new(a, b)` keeps `local = a`, `remote = b`.
+/// - Equality is symmetric: `(a, b) == (b, a)`.
 impl<T: Pairable> Pair<T> {
     pub fn new(local: T, remote: T) -> Self {
         Pair { local, remote }
     }
 
+    /// Build a [`Pair`] from source and destination values based on a packet `direction`.
+    ///
+    /// - For `Incoming`, the guest sees `t_dst` as local and `t_src` as remote.
+    /// - For `Outgoing`, `t_src` is local and `t_dst` is remote.
     pub fn from_direction(t_src: T, t_dst: T, direction: Direction) -> Self {
         match direction {
             Direction::Incoming => Self::new(t_dst, t_src),
@@ -32,16 +47,19 @@ impl<T: Pairable> Pair<T> {
         }
     }
 
+    /// Returns the "local" side of the pair.
     pub fn local(&self) -> T {
         self.local
     }
 
+    /// Returns the "remote" side of the pair.
     pub fn remote(&self) -> T {
         self.remote
     }
 }
 
 impl<T: Pairable> PartialEq<Pair<T>> for Pair<T> {
+    /// Two [`Pair`]s are equal if they contain the same two elements, regardless of order.
     fn eq(&self, other: &Self) -> bool {
         self.local == other.local && self.remote == other.remote
             || self.local == other.remote && self.remote == other.local
@@ -49,6 +67,7 @@ impl<T: Pairable> PartialEq<Pair<T>> for Pair<T> {
 }
 
 impl Pair<IpAddr> {
+    /// Extract a `Pair<IpAddr>` from a parsed packet, ordering by direction.
     pub fn from_packet(packet: &ParsedPacket) -> Self {
         Pair::from_direction(packet.src_ip, packet.dst_ip, packet.direction)
     }
@@ -60,11 +79,16 @@ impl Display for Pair<IpAddr> {
     }
 }
 
+/// A key identifying a transport-layer stream: a pair of ports plus protocol.
+///
+/// The [`StreamKey`] is used inside the `StreamManager` to identify the stream.
 #[derive(Debug, PartialEq, Hash, Eq)]
 pub struct StreamKey {
     ports: Pair<Option<u16>>,
     protocol: IpNextHeaderProtocol,
 }
+
+
 
 impl StreamKey {
     pub fn new(protocol: IpNextHeaderProtocol, local: Option<u16>, remote: Option<u16>) -> Self {
@@ -74,6 +98,7 @@ impl StreamKey {
         }
     }
 
+    /// Construct from separate src/dst ports and direction.
     pub fn from_direction(
         protocol: IpNextHeaderProtocol,
         src: Option<u16>,
@@ -84,6 +109,9 @@ impl StreamKey {
         StreamKey { ports, protocol }
     }
 
+    /// Derive a [`StreamKey`] from a parsed packet's transport layer.
+    ///
+    /// Supports TCP and UDP; uses `None` ports otherwise.
     pub fn from_packet(packet: &ParsedPacket) -> Self {
         match &packet.transport {
             TransportPacket::TCP {
@@ -108,6 +136,8 @@ impl Display for StreamKey {
     }
 }
 
+
+/// Create a `StreamKey` and `Pair<IpAddr>` from an `iperf` JSON-connected struct.
 pub fn from_iperf_connected(
     connected: &Connected,
     proto: IpNextHeaderProtocol,
@@ -125,6 +155,9 @@ pub fn from_iperf_connected(
     )
 }
 
+/// Macro to generate helpers from procfs net entries (TCP/UDP).
+///
+/// Each function returns the corresponding `StreamKey` and IP `Pair`.
 macro_rules! from_net_entry {
     ($func_name:ident, $net_type:ty) => {
         pub fn $func_name(

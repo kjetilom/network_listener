@@ -1,3 +1,6 @@
+/// The purpose of this module is for data collection only, and is not a core
+/// part of the tool itself.
+
 use clap::Parser;
 use futures::StreamExt;
 use network_listener::proto_bw::data_msg;

@@ -1,3 +1,6 @@
+-- A collection of views and functions to support the data analysis and visualization
+-- up.sql must be run first for this to work.
+
 CREATE OR REPLACE FUNCTION is_pre_filter_candidate (
     p_len       double precision,
     p_gin       double precision,
@@ -169,7 +172,7 @@ RETURNS TABLE (
 LANGUAGE SQL STABLE
 AS $$
 WITH
-  -- A) Apply the basic len/gin/gout filters once
+  -- Apply the basic len/gin/gout filters once
   pre_filter AS (
     SELECT
       *,
@@ -182,7 +185,7 @@ WITH
     WHERE experiment_id = p_experiment
   ),
 
-  -- B) Within each timestamp, rank the surviving rows by gout
+  -- Within each timestamp, rank the surviving rows by gout
   ranked AS (
     SELECT
       pf.link_state_id,
@@ -194,7 +197,7 @@ WITH
     WHERE pf.to_use
   ),
 
-  -- C) Compute each timestamp’s bottom-10% average gout
+  -- Compute each timestamp’s bottom-10% average gout
   avg_low AS (
     SELECT
       link_state_id,
@@ -204,7 +207,7 @@ WITH
     GROUP BY link_state_id
   )
 
--- D) Emit every row, joining its timestamp’s threshold
+-- Emit every row, joining its timestamp’s threshold
 SELECT
   pf.len,
   pf.gin,
@@ -331,8 +334,5 @@ FROM
     link_state AS ls
     JOIN link AS l
         ON l.id = ls.link_id;
-
-
--- For each link state, get the corresponding maximum throughput
 
 
