@@ -1,3 +1,5 @@
+/// Partial implementation of an active probing module using ICMP echo requests.
+/// Needs further development and testing.
 use std::collections::HashMap;
 use std::net::IpAddr;
 use rand::random;
@@ -8,7 +10,7 @@ use crate::{CapEvent, CapEventSender};
 
 /// Commands sent to the PingManager.
 pub enum PingCommand {
-    /// Register a host with a custom Config.
+    /// Register a host
     Register {
         host: IpAddr,
         config: Config,

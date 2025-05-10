@@ -74,6 +74,11 @@ impl PCAPMeta {
     }
 }
 
+/// Packet header structure
+/// The PCAP library provides a struct for this, but we need to move its
+/// ownership to send it to the parser thread.
+///
+/// This struct acts as a replacement for the `Packet` struct to move ownership
 #[derive(Debug)]
 pub struct OwnedPacket {
     pub header: PacketHeader,
@@ -90,9 +95,7 @@ impl<'a> From<Packet<'a>> for OwnedPacket {
 }
 
 impl PacketCapturer {
-    /**
-     *  Create a new PacketCapturer instance
-     */
+    /// Get a list of all available devices
     pub fn device_by_name(name: &str) -> Result<Device> {
         let device = Device::list()?.into_iter().find(|d| d.name == name);
         match device {
@@ -101,6 +104,11 @@ impl PacketCapturer {
         }
     }
 
+    /// Create a new PacketCapturer instance
+    ///
+    /// It takes a `CapEventSender` to send captured packets to the parser thread
+    /// and an optional device name. If no device name is provided, it will
+    /// use the default interface.
     pub fn new(sender: CapEventSender, name: Option<String>) -> CaptureResult {
         let device = match name {
             Some(name) => Self::device_by_name(&name)?,

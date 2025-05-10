@@ -24,11 +24,11 @@ pub fn dispatch_server() -> tokio::task::JoinHandle<()> {
 
 pub fn dispatch_pathload_client(sender: CapEventSender, ip_addr: String) {
     tokio::spawn(async move {
-        do_iperf_test(sender, ip_addr).await;
+        do_pathload_test(sender, ip_addr).await;
     });
 }
 
-pub async fn do_iperf_test(sender: CapEventSender, ip_addr: String) {
+pub async fn do_pathload_test(sender: CapEventSender, ip_addr: String) {
     info!("Starting pathload_rcv");
     let mut cmd = Command::new("pathload_rcv");
 

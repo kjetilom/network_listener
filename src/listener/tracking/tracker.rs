@@ -2,7 +2,9 @@ use std::time::SystemTime;
 
 use pnet::packet::ip::{IpNextHeaderProtocol, IpNextHeaderProtocols};
 
-use crate::{tcp_tracker::TcpTracker, udp_tracker::UdpTracker, Direction, GenericTracker, ParsedPacket};
+use crate::{
+    tcp_tracker::TcpTracker, udp_tracker::UdpTracker, Direction, GenericTracker, ParsedPacket,
+};
 
 use super::tcp_tracker::Burst;
 
