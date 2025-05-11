@@ -92,7 +92,7 @@ async fn run_server(
     println!("Experiment ID: {}", experiment_id);
     let (data_tx, mut data_rx) = tokio::sync::mpsc::channel(10);
     let data_receiver = DataReceiver::new(data_tx);
-    data_receiver.dispatch_server(listen_port.to_string()).await??;
+    data_receiver.dispatch_server(listen_port.to_string());
 
     println!("Server listening on {}", listen_addr);
 
@@ -103,7 +103,6 @@ async fn run_server(
                 upload_throughput(thput, &client, experiment_id).await;
             }
 
-            // TODO: Make connections persistent!
             // This just reads raw unencrypted TCP packets as protobuf data
             Some(bwm) = data_rx.recv() => {
                 if let Some(data) = bwm.data {
