@@ -3,7 +3,7 @@ use network_listener::listener::{capture::PacketCapturer, parser::Parser};
 use network_listener::logging::logger;
 use network_listener::probe::iperf::IperfServer;
 use network_listener::prost_net::bandwidth_client::ClientHandlerEvent;
-use network_listener::{prost_net, CONFIG, IPERF3_PORT};
+use network_listener::{prost_net, CapEvent, CONFIG, IPERF3_PORT};
 use prost_net::bandwidth_client::ClientHandler;
 use prost_net::bandwidth_server::BwServer;
 use std::error::Error;
@@ -21,8 +21,13 @@ pub struct NetworkListener {
     result_handles: Vec<JoinHandle<anyhow::Result<()>>>,
 }
 
+/// Enum representing events that can be sent to the main event loop.
+/// The idea is to be able to pause and resume the packet capture to do
+/// active measurements, but this is not implemented or used.
 pub enum EventMessage {
+    /// Pause the packet capture
     PausePCAP(tokio::time::Duration),
+    /// Resume the packet capture
     ResumePCAP,
 }
 
@@ -37,10 +42,15 @@ impl NetworkListener {
         })
     }
 
+    /// Start all the different tasks and components of the network listener.
+    /// This includes the packet capture, parser, client handler, and server.
+    ///
+    /// It creates channels for communication between the components and
+    /// dispatches the tasks to run concurrently.
     pub fn start(&mut self) -> Result<(), Box<dyn Error>> {
         info!("Starting packet capture");
 
-        let (sender, receiver) = unbounded_channel();
+        let (sender, receiver) = channel::<CapEvent>(1000);
         let (client_sender, client_receiver) = channel::<ClientHandlerEvent>(100);
 
         let (pcap, pcap_meta) =
@@ -73,10 +83,10 @@ impl NetworkListener {
             tokio::select! {
                 Some(event) = self.event_receiver.recv() => match event {
                     EventMessage::PausePCAP(_) => {
-                        info!("Pausing packet capture! (JK)");
+                        info!("Not implemented (pause packet capture)");
                     },
                     EventMessage::ResumePCAP => {
-                        info!("Resuming packet capture! (JK)");
+                        info!("Not implemented (resume packet capture)");
                     },
                 },
                 _ = tokio::signal::ctrl_c() => {
@@ -115,7 +125,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     logger::setup_logging()?;
     let mut netlistener = NetworkListener::new()?;
     netlistener.start()?;
+    // Start the core event loop, as of now it just blocks until Ctrl-C
+    // is received, but it could be used to pause and resume the packet
+    // capture.
     netlistener.blocking_event_loop().await.stop().await;
 
+    // All tasks are stopped, return Ok(());
     Ok(())
 }

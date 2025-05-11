@@ -93,9 +93,6 @@ impl PABWESender {
     ///
     /// Returns `(Some(bw), used_points)` if estimation succeeded and bandwidth in bytes/sec;
     /// otherwise `(None, used_points)`.
-    ///
-    /// ! The used_points are should be removed in production code.
-    /// ! They are returned to be pushed to the database.
     pub fn passive_pgm_abw(&mut self) -> (Option<f64>, Vec<GinGout>) {
         // Ensure we have some data points.
         if self.dps.is_empty() {

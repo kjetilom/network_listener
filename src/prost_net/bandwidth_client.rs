@@ -332,6 +332,6 @@ pub async fn send_message(peer_addr: &str, message: DataMsg, cap_ev_tx: CapEvent
 
     if let Err(e) = res {
         // Ignore send errors, as the receiver may have disconnected.
-        cap_ev_tx.send(CapEvent::Error(e.into())).unwrap_or(());
+        cap_ev_tx.send(CapEvent::Error(e.into())).await.unwrap_or(());
     }
 }

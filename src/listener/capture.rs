@@ -145,7 +145,7 @@ impl PacketCapturer {
         // Clone the sender to move into the thread
         let sender = self.sender.clone();
         // Capture needs to be in a blocking task since pcap::Capture is blocking
-        let handle = task::spawn_blocking(move || {
+        task::spawn_blocking(move || {
             let mut cap = match self.cap.open() {
                 Ok(c) => c,
                 Err(e) => {
@@ -157,9 +157,10 @@ impl PacketCapturer {
                 match cap.next_packet() {
                     Ok(packet) => {
                         let packet = OwnedPacket::from(packet);
-                        match sender.send(CapEvent::Packet(packet)) {
-                            Ok(_) => {}
+                        match sender.blocking_send(CapEvent::Packet(packet)) {
+                            Ok(()) => {}
                             Err(e) => {
+                                error!("Failed to send packet: {}", e);
                                 return Err(e.into());
                             }
                         }
@@ -170,8 +171,7 @@ impl PacketCapturer {
                     }
                 }
             }
-        });
-        handle
+        })
     }
 }
 
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_packet_capturer_new() {
-        let (sender, _) = ch::unbounded_channel();
+        let (sender, _) = ch::channel(10);
         let result = PacketCapturer::new(sender, None);
         assert!(result.is_ok());
     }

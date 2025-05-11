@@ -1,10 +1,10 @@
 use anyhow::Error as AnyError;
+use tokio::sync::mpsc::{Receiver, Sender};
 use listener::capture::{OwnedPacket, PCAPMeta, PacketCapturer};
 use probe::iperf_json::IperfResponse;
 use prost_net::bandwidth_server::PbfMsg;
 use surge_ping::SurgeError;
 use std::error::Error;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 pub mod listener;
 pub mod logging;
@@ -21,8 +21,8 @@ pub use config::AppConfig;
 
 pub const IPERF3_PORT: u16 = 5201;
 
-pub type CapEventSender = UnboundedSender<CapEvent>;
-pub type CapEventReceiver = UnboundedReceiver<CapEvent>;
+pub type CapEventSender = Sender<CapEvent>;
+pub type CapEventReceiver = Receiver<CapEvent>;
 pub type CaptureResult = Result<(PacketCapturer, PCAPMeta), Box<dyn Error>>;
 
 pub mod proto_bw {

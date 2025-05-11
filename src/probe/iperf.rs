@@ -77,7 +77,7 @@ impl IperfServer {
                         .expect("Failed to parse JSON");
                 self.sender
                     .send(CapEvent::IperfResponse(parsed_json))
-                    .expect("Failed to send iperf response");
+                    .await.expect("Failed to send iperf response");
                 json_buffer.clear();
             }
         }
@@ -140,7 +140,7 @@ pub async fn do_iperf_test(dest_ip: &str, port: u16, duration: u16, sender: CapE
                 serde_json::from_str::<IperfResponse>(&json_buffer).expect("Failed to parse JSON");
             sender
                 .send(CapEvent::IperfResponse(parsed_json))
-                .expect("Failed to send iperf response");
+                .await.expect("Failed to send iperf response");
             json_buffer.clear();
         }
     }

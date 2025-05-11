@@ -49,7 +49,7 @@ pub async fn do_pathload_test(sender: CapEventSender, ip_addr: String) {
 
     while let Some(line) = reader.next_line().await.unwrap() {
         if line.starts_with("DATE=") {
-            sender.send(CapEvent::PathloadResponse(line)).unwrap_or_else(
+            sender.send(CapEvent::PathloadResponse(line)).await.unwrap_or_else(
                 |e| {
                     info!("Failed to send pathload response: {}", e)
                 }
