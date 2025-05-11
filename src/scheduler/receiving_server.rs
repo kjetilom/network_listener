@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use crate::proto_bw::{DataMsg, HelloMessage};
 use crate::proto_bw::client_data_service_server::{ClientDataService, ClientDataServiceServer};
-use log::{error, info};
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -24,26 +23,26 @@ impl DataReceiver {
     /// Consumes self, returns a handle to the task
     /// Spawns the server in the background.
     /// The server will listen on the address specified in the config file.
-    pub fn dispatch_server(self, listen_addr: String) -> JoinHandle<anyhow::Result<()>> {
+    pub fn dispatch_server(self, listen_port: String) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
-            let addr = listen_addr
+            let addr = format!("0.0.0.0:{}", listen_port)
                 .parse()
                 .map_err(|e| anyhow::anyhow!("Invalid listen address: {}", e))?;
 
             let mut backoff = Duration::from_secs(3);
             loop {
-                info!("Attempting to bind gRPC server on {}", addr);
+                println!("Attempting to bind gRPC server on {}", addr);
                 let serve_result = Server::builder()
                     .add_service(ClientDataServiceServer::new(self.clone()))
                     .serve(addr);
 
                 match serve_result.await {
                     Ok(()) => {
-                        info!("gRPC server exited cleanly");
+                        println!("gRPC server exited cleanly");
                         return Ok(());
                     }
                     Err(e) => {
-                        error!(
+                        println!(
                             "gRPC server failed to start/ran into error: {}. \
                              retrying in {:?}…",
                             e, backoff

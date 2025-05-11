@@ -4,6 +4,7 @@ use crate::proto_bw::client_data_service_client::ClientDataServiceClient;
 use crate::proto_bw::{BandwidthRequest, DataMsg};
 use crate::{proto_bw, CapEvent, CapEventSender};
 use anyhow::{Error, Result};
+use chrono::format;
 use futures::future::join_all;
 use log::info;
 use proto_bw::bandwidth_service_client::BandwidthServiceClient;
@@ -168,7 +169,7 @@ impl ClientHandler {
                 }
                 ClientHandlerEvent::SendDataMsg(bw) => {
                     if self.bw_message_bc.receiver_count() > 0 {
-                        match self.bw_message_bc.send(bw.clone()) {
+                        match self.bw_message_bc.send(bw) {
                             Ok(_) => {}
                             Err(e) => {
                                 info!("Failed to send bandwidth message: {}", e);
@@ -364,7 +365,18 @@ pub async fn stream_data_msg(
     peer_addr: &str,
     cap_ev_tx: CapEventSender,
 ) -> Result<(), Error> {
-    let mut client = ClientDataServiceClient::connect(format!("http://{}", peer_addr)).await?;
+    let mut client = loop {
+        match ClientDataServiceClient::connect(format!("http://{}", peer_addr)).await {
+            Ok(client) => break client,
+            Err(e) => {
+                cap_ev_tx
+                    .send(CapEvent::Error(anyhow::anyhow!("Failed to connect: {}", e)))
+                    .await
+                    .unwrap_or(());
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+        }
+    };
 
     let bc_stream = BroadcastStream::new(stream);
 

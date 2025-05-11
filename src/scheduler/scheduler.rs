@@ -79,7 +79,12 @@ async fn run_server(
     experiment_description: String,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
 
-    println!("Starting server on {}", listen_addr);
+    let listen_port = listen_addr
+        .split(':')
+        .last()
+        .ok_or("Invalid listen address")?
+        .parse::<u16>()
+        .map_err(|_| "Invalid port number")?;
 
     // Get experiment ID
     let experiment_id = get_and_insert_experiment(&client, &experiment_name, &experiment_description).await?;
@@ -87,7 +92,7 @@ async fn run_server(
     println!("Experiment ID: {}", experiment_id);
     let (data_tx, mut data_rx) = tokio::sync::mpsc::channel(10);
     let data_receiver = DataReceiver::new(data_tx);
-    data_receiver.dispatch_server(listen_addr.into()).await??;
+    data_receiver.dispatch_server(listen_port.to_string()).await??;
 
     println!("Server listening on {}", listen_addr);
 
