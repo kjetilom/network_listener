@@ -2,14 +2,16 @@ use std::time::Duration;
 
 use crate::proto_bw::{DataMsg, HelloMessage};
 use crate::proto_bw::client_data_service_server::{ClientDataService, ClientDataServiceServer};
+use log::{error, info};
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
 use anyhow::Result;
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DataReceiver {
     data_tx: Sender<DataMsg>,
 }
@@ -19,17 +21,39 @@ impl DataReceiver {
         DataReceiver { data_tx }
     }
 
-    /// Spawns the server in the background.
     /// Consumes self, returns a handle to the task
-    pub fn dispatch_server(self, listen_addr: String) -> JoinHandle<Result<()>> {
+    /// Spawns the server in the background.
+    /// The server will listen on the address specified in the config file.
+    pub fn dispatch_server(self, listen_addr: String) -> JoinHandle<anyhow::Result<()>> {
         tokio::spawn(async move {
-            let addr = listen_addr.parse().expect("Failed to parse address");
+            let addr = listen_addr
+                .parse()
+                .map_err(|e| anyhow::anyhow!("Invalid listen address: {}", e))?;
 
-            Server::builder()
-                .add_service(ClientDataServiceServer::new(self))
-                .serve(addr)
-                .await?;
-            Ok(())
+            let mut backoff = Duration::from_secs(3);
+            loop {
+                info!("Attempting to bind gRPC server on {}", addr);
+                let serve_result = Server::builder()
+                    .add_service(ClientDataServiceServer::new(self.clone()))
+                    .serve(addr);
+
+                match serve_result.await {
+                    Ok(()) => {
+                        info!("gRPC server exited cleanly");
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        error!(
+                            "gRPC server failed to start/ran into error: {}. \
+                             retrying in {:?}…",
+                            e, backoff
+                        );
+                        sleep(backoff).await;
+                        // Exponential backoff with a cap of 30 seconds
+                        backoff = std::cmp::min(backoff * 2, Duration::from_secs(30));
+                    }
+                }
+            }
         })
     }
 }
