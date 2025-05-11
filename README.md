@@ -216,6 +216,15 @@ such as ping, iperf3, etc. to test the network. (It will however impact the resu
 To stop the simulation, press enter in the window with the experiment running, and wait
 for it to finish.
 
+## Additional information
+
+The naming of "scheduler" is a bit misleading, as it does not schedule anything, but rather
+it is meant to be acting as a data consumer in replace of a real Kubernetes master node:
+collecting data from the nodes.
+
+It contains examples of how to interact with the nodes, via a `ClientStreamingServer` that nodes can
+stream `DataMsg`s to, containing link state information.
+
 
 # Creating plots
 The `dataplotter.py` script can be used to create plots from the data in the database.
