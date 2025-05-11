@@ -80,21 +80,3 @@ cd mgen
 git submodule update --init
 cd makefiles
 make -f Makefile.linux
-
-# install rust
-cd $HOME
-# Check if rust is installed
-if ! command -v cargo &> /dev/null; then
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source $HOME/.cargo/env
-fi
-
-# install iperf3, postgresql, docker
-cd $HOME
-
-sudo apt-get install -y \
-    postgresql \
-    docker \
-    libpcap-dev \
-    iperf3 \
-    docker.io

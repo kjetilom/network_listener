@@ -1712,6 +1712,7 @@ def plot_error_boxplot(absolute=False, rls=False):
 sql_engine = create_engine(
     "postgresql+psycopg2://postgres:password@localhost:5432/metricsdb"
 )
+
 conn_string = "host='localhost' dbname='metricsdb'\
 user='postgres' password='password'"
 conn = psycopg2.connect(conn_string)
@@ -1723,13 +1724,16 @@ if __name__ == "__main__":
     # probe_gap_plots(exp=experiments)
     # timeseries_plots(experiments)
     # boxplots(exp=experiments)
-
-    #
-    # plot_pgm_scatterplot()
-
     os.makedirs(out_dir, exist_ok=True)
+
+    # Calculate ABW using robust regression (if not already done)
+    # This will use quite a bit of memory.
     results = calculate_abw_based_on_pgm_using_robust_regression(10)
     results.to_csv("rlm_results.csv", index=False)
+
+    # Plotting functions
+    plot_pgm_scatterplot_without_outliers(with_regression=True)
+    plot_abw_vs_estimated()
     plot_relative_error_trends(rls=False)
     plot_experiments_pair_grid(
         ["exp2", "exp2_fluid"],
@@ -1738,28 +1742,14 @@ if __name__ == "__main__":
     )
     plot_pgm_scatterplot_without_outliers(with_regression=True, savefig=True)
     plot_pgm_scatterplot_without_outliers()
-    plot_error_boxplot_dual()
-
-    # plot_accuracy_per_real_abw_bucket()
-    # plot_accuracy_per_real_abw_bucket(rls=True)
-    # plot_error_boxplot(absolute=True, rls=True)
-    # plot_error_boxplot(rls=True)
-
+    plot_accuracy_per_real_abw_bucket()
+    plot_accuracy_per_real_abw_bucket(rls=True)
     plot_pgm_barplot(rls=True)
-
-    # plot_error_boxplot_by_used_in_regression_buckets(rls=True)
-    # plot_error_boxplot_by_used_in_regression_buckets()
-    # plot_abw_rlm_vs_abw()
-    # plot_pgm_scatterplot()
-    #
-
-
-
-    # plot_exp2_abw_vs_estimated()
-    # plot_abw_vs_estimated()
-
-
     plot_pgm_barplot()
+    plot_error_boxplot_by_used_in_regression_buckets(rls=True)
+    plot_error_boxplot_by_used_in_regression_buckets()
+    plot_abw_rlm_vs_abw()
+    plot_exp2_abw_vs_estimated()
 
     # Close the connection
     conn.close()

@@ -1,5 +1,4 @@
 -- These tables and views are used to store experiment data for later analysis.
-
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 CREATE TABLE
@@ -8,11 +7,6 @@ CREATE TABLE
         name TEXT NOT NULL,
         description TEXT NOT NULL,
         UNIQUE (name)
-    );
-
-CREATE TABLE
-    IF NOT EXISTS experiment_config(
-        experiment_id INTEGER NOT NULL REFERENCES experiment (id) ON DELETE CASCADE,
     );
 
 CREATE TABLE
