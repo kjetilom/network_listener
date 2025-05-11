@@ -31,6 +31,7 @@ yata = "0.7.0"
 itertools = "0.14.0"
 toml = "0.8.20"
 lazy_static = "1.5.0"
+tokio-stream = { version = "0.1.10", features = ["sync"] }
 
 # Wifi
 neli-wifi = { version = "0.6.0", features = ["async"] }

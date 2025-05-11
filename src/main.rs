@@ -3,12 +3,14 @@ use network_listener::listener::{capture::PacketCapturer, parser::Parser};
 use network_listener::logging::logger;
 use network_listener::probe::iperf::IperfServer;
 use network_listener::prost_net::bandwidth_client::ClientHandlerEvent;
+use network_listener::proto_bw::DataMsg;
 use network_listener::{prost_net, CapEvent, CONFIG, IPERF3_PORT};
 use prost_net::bandwidth_client::ClientHandler;
 use prost_net::bandwidth_server::BwServer;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::mpsc::{channel, unbounded_channel};
+use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 pub type EventSender = tokio::sync::mpsc::UnboundedSender<EventMessage>;
 pub type EventReceiver = tokio::sync::mpsc::UnboundedReceiver<EventMessage>;
@@ -52,14 +54,18 @@ impl NetworkListener {
 
         let (sender, receiver) = channel::<CapEvent>(1000);
         let (client_sender, client_receiver) = channel::<ClientHandlerEvent>(100);
+        let (bw_message_bc, _bw_message_rx) = broadcast::channel::<DataMsg>(4);
+        let bw_message_bc = Arc::new(bw_message_bc);
 
         let (pcap, pcap_meta) =
             PacketCapturer::new(sender.clone(), crate::CONFIG.client.iface.clone())?;
         let pcap_meta = Arc::new(pcap_meta);
         let (parser, ctx) = Parser::new(receiver, pcap_meta.clone(), client_sender)?;
-        let client_handler = ClientHandler::new(ctx, client_receiver, sender.clone());
+        let client_handler = ClientHandler::new(ctx, client_receiver, sender.clone(), bw_message_bc.clone());
         let server = IperfServer::new(IPERF3_PORT, sender.clone())?;
-        let bw_server = BwServer::new(sender.clone(), pcap_meta.clone());
+
+        // Pass Arc reference to the bandwidth message channel
+        let bw_server = BwServer::new(sender.clone(), pcap_meta.clone(), bw_message_bc.clone());
 
         let bw_client_h = client_handler.dispatch_client_handler();
         let cap_h = pcap.start_capture_loop();

@@ -1,18 +1,22 @@
 use crate::probe::iperf::dispatch_iperf_client;
 use crate::probe::pathload::dispatch_pathload_client;
-use crate::proto_bw::DataMsg;
+use crate::proto_bw::client_data_service_client::ClientDataServiceClient;
+use crate::proto_bw::{BandwidthRequest, DataMsg};
 use crate::{proto_bw, CapEvent, CapEventSender};
 use anyhow::{Error, Result};
 use futures::future::join_all;
 use log::info;
 use proto_bw::bandwidth_service_client::BandwidthServiceClient;
 use proto_bw::{HelloReply, HelloRequest};
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::StreamExt;
+use tonic::Request;
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::sync::Arc;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task::JoinHandle;
 use tokio::time::{timeout, Duration, Instant};
-
 use bytes::BytesMut;
 use futures::SinkExt;
 use prost::Message;
@@ -82,6 +86,7 @@ pub struct ClientHandler {
     reply_tx: Sender<ClientEventResult>,
     event_rx: Receiver<ClientHandlerEvent>,
     cap_ev_tx: CapEventSender,
+    bw_message_bc: Arc<tokio::sync::broadcast::Sender<proto_bw::DataMsg>>,
 }
 
 impl ClientHandler {
@@ -89,12 +94,14 @@ impl ClientHandler {
         reply_tx: Sender<ClientEventResult>,
         event_rx: Receiver<ClientHandlerEvent>,
         cap_ev_tx: CapEventSender,
+        bw_message_bc: Arc<tokio::sync::broadcast::Sender<proto_bw::DataMsg>>,
     ) -> Self {
         ClientHandler {
             clients: HashMap::new(),
             reply_tx,
             event_rx,
             cap_ev_tx,
+            bw_message_bc,
         }
     }
 
@@ -118,6 +125,25 @@ impl ClientHandler {
     }
 
     pub async fn start_event_loop(mut self) {
+        let receiver = self.bw_message_bc.subscribe();
+        let cap_ev_tx = self.cap_ev_tx.clone();
+        tokio::spawn(async move {
+            match stream_data_msg(
+                receiver,
+                &format!(
+                "{}:{}",
+                &crate::CONFIG.server.ip,
+                &crate::CONFIG.server.port
+                ),
+                cap_ev_tx,
+            ).await {
+                Ok(_) => {}
+                Err(e) => {
+                    info!("Failed to stream data message: {}", e);
+                }
+            }
+        });
+
         while let Some(event) = self.event_rx.recv().await {
             match event {
                 ClientHandlerEvent::SendHello { ip, message } => {
@@ -141,6 +167,15 @@ impl ClientHandler {
                     dispatch_pathload_client(self.cap_ev_tx.clone(), ip);
                 }
                 ClientHandlerEvent::SendDataMsg(bw) => {
+                    if self.bw_message_bc.receiver_count() > 0 {
+                        match self.bw_message_bc.send(bw.clone()) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                info!("Failed to send bandwidth message: {}", e);
+                            }
+                        }
+                    }
+
                     let cap_ev_tx = self.cap_ev_tx.clone();
                     tokio::spawn(async move {
                         send_message(
@@ -256,6 +291,23 @@ impl BwClient {
         Ok(response)
     }
 
+    /// Subscribe to the bandwidth service.
+    /// This will return a stream of DataMsg messages.
+    pub async fn subscribe_bandwidth(
+        &mut self,
+        ip: String,
+        port: u16,
+        name: String,
+    ) -> Result<tonic::Response<tonic::Streaming<DataMsg>>, Error> {
+        let mut client = BandwidthServiceClient::connect(format!("http://{}:{}", ip, port)).await?;
+
+        let stream = client
+            .subscribe_bandwidth(tonic::Request::new(BandwidthRequest { name }))
+            .await?;
+
+        Ok(stream)
+    }
+
     pub async fn start_event_loop(mut self) -> JoinHandle<()> {
         tokio::spawn(async move {
             while let Some(event) = self.event_rx.recv().await {
@@ -306,7 +358,39 @@ impl BwClient {
     }
 }
 
-/// Sends a HelloMessage to the given peer address.
+pub async fn stream_data_msg(
+    stream: tokio::sync::broadcast::Receiver<proto_bw::DataMsg>,
+    peer_addr: &str,
+    cap_ev_tx: CapEventSender,
+) -> Result<(), Error> {
+    let mut client = ClientDataServiceClient::connect(format!("http://{}", peer_addr)).await?;
+
+    let bc_stream = BroadcastStream::new(stream);
+
+    let msg_stream = bc_stream.filter_map(|res| {
+        match res {
+            Ok(msg) => Some(msg),
+            Err(_) => None,
+        }
+    });
+
+    let request = Request::new(msg_stream);
+
+    match client.client_stream(request).await {
+        Ok(response) => info!("Received response: {:?}", response),
+        Err(e) => {
+            cap_ev_tx
+                .send(CapEvent::Error(anyhow::anyhow!("Failed to connect: {}", e)))
+                .await
+                .unwrap_or(());
+            return Err(e.into());
+        }
+    }
+
+    Ok(())
+}
+
+/// Sends measurement data by TCP to the listening server.
 pub async fn send_message(peer_addr: &str, message: DataMsg, cap_ev_tx: CapEventSender) {
     let res = async move {
         let stream = match timeout(Duration::from_secs(4), TcpStream::connect(peer_addr)).await {
@@ -332,6 +416,9 @@ pub async fn send_message(peer_addr: &str, message: DataMsg, cap_ev_tx: CapEvent
 
     if let Err(e) = res {
         // Ignore send errors, as the receiver may have disconnected.
-        cap_ev_tx.send(CapEvent::Error(e.into())).await.unwrap_or(());
+        cap_ev_tx
+            .send(CapEvent::Error(e.into()))
+            .await
+            .unwrap_or(());
     }
 }

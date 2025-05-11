@@ -3,8 +3,12 @@ package bandwidth;
 
 service BandwidthService {
     rpc SayHello (HelloRequest) returns (HelloReply);
-    rpc GetBandwidth (BandwidthRequest) returns (BandwidthMessage);
-    rpc SubscribeBandwidth (BandwidthRequest) returns (stream BandwidthMessage);
+    rpc GetBandwidth (BandwidthRequest) returns (DataMsg);
+    rpc SubscribeBandwidth (BandwidthRequest) returns (stream DataMsg);
+}
+
+service ClientDataService {
+    rpc ClientStream (stream DataMsg) returns (HelloMessage); // Empty return value
 }
 
 message DataMsg {

@@ -8,11 +8,12 @@ use network_listener::scheduler::core_grpc::{self, ThroughputDP};
 use prost::Message;
 use serde::Deserialize;
 use std::error::Error;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_postgres::Client;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 use network_listener::proto_bw::DataMsg;
+use network_listener::scheduler::receiving_server::DataReceiver;
 
 use network_listener::scheduler::db_util::{
     upload_bandwidth, upload_probe_gap_measurements, upload_rtt, upload_throughput, get_and_insert_experiment,
@@ -84,25 +85,9 @@ async fn run_server(
     let experiment_id = get_and_insert_experiment(&client, &experiment_name, &experiment_description).await?;
 
     println!("Experiment ID: {}", experiment_id);
-
-    // Try three times to bind the address.
-    let listener = {
-        let mut attempts = 0;
-        loop {
-            match TcpListener::bind(listen_addr).await {
-                Ok(listener) => break listener,
-                Err(e) => {
-                    if attempts < 3 {
-                        println!("Failed to bind to {}: {}. Retrying...", listen_addr, e);
-                        attempts += 1;
-                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                    } else {
-                        return Err(e.into());
-                    }
-                }
-            }
-        }
-    };
+    let (data_tx, mut data_rx) = tokio::sync::mpsc::channel(10);
+    let data_receiver = DataReceiver::new(data_tx);
+    data_receiver.dispatch_server(listen_addr.into()).await??;
 
     println!("Server listening on {}", listen_addr);
 
@@ -112,12 +97,10 @@ async fn run_server(
                 // Process the throughput data
                 upload_throughput(thput, &client, experiment_id).await;
             }
-            Ok((socket, addr)) = listener.accept() => {
-                println!("Accepted connection from {}", addr);
-                let bwm = tokio::spawn(async move {
-                    handle_connection(socket).await
-                }).await??;
 
+            // TODO: Make connections persistent!
+            // This just reads raw unencrypted TCP packets as protobuf data
+            Some(bwm) = data_rx.recv() => {
                 if let Some(data) = bwm.data {
                     match data {
                         data_msg::Data::Bandwidth(bw) => {
