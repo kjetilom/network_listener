@@ -2,17 +2,12 @@
 /// part of the tool itself.
 
 use clap::Parser;
-use futures::StreamExt;
 use network_listener::proto_bw::data_msg;
 use network_listener::scheduler::core_grpc::{self, ThroughputDP};
-use prost::Message;
 use serde::Deserialize;
 use std::error::Error;
-use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_postgres::Client;
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use network_listener::proto_bw::DataMsg;
 use network_listener::scheduler::receiving_server::DataReceiver;
 
 use network_listener::scheduler::db_util::{
@@ -47,30 +42,6 @@ struct DbConfig {
     dbname: String,
 }
 
-async fn handle_connection(socket: TcpStream) -> Result<DataMsg, Box<dyn Error + Send + Sync>> {
-    // Wrap the socket with a length-delimited codec for framing.
-    let mut framed = Framed::new(socket, LengthDelimitedCodec::new());
-
-    // Wait for a complete frame (a complete Protobuf message)
-    if let Some(frame) = framed.next().await {
-        let bytes = match frame {
-            Ok(bytes) => bytes,
-            Err(e) => return Err(e.into()),
-        };
-
-        // Parse the message
-        let msg = DataMsg::decode(bytes);
-        match msg {
-            Ok(msg) => {
-                return Ok(msg);
-            }
-            Err(e) => return Err(e.into()),
-        }
-    } else {
-        return Err("No data received".into());
-    }
-}
-
 async fn run_server(
     listen_addr: &str,
     client: Client,
@@ -90,7 +61,7 @@ async fn run_server(
     let experiment_id = get_and_insert_experiment(&client, &experiment_name, &experiment_description).await?;
 
     println!("Experiment ID: {}", experiment_id);
-    let (data_tx, mut data_rx) = tokio::sync::mpsc::channel(10);
+    let (data_tx, mut data_rx) = tokio::sync::mpsc::channel(40);
     let data_receiver = DataReceiver::new(data_tx);
     data_receiver.dispatch_server(listen_port.to_string());
 

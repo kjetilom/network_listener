@@ -4,7 +4,6 @@ use crate::proto_bw::client_data_service_client::ClientDataServiceClient;
 use crate::proto_bw::{BandwidthRequest, DataMsg};
 use crate::{proto_bw, CapEvent, CapEventSender};
 use anyhow::{Error, Result};
-use chrono::format;
 use futures::future::join_all;
 use log::info;
 use proto_bw::bandwidth_service_client::BandwidthServiceClient;
@@ -360,6 +359,9 @@ impl BwClient {
     }
 }
 
+/// Client side streaming of DataMsg.
+/// This can be used to avoid having to request data from each client, instead
+/// an address can be provided and the client will stream data to the server.
 pub async fn stream_data_msg(
     stream: tokio::sync::broadcast::Receiver<proto_bw::DataMsg>,
     peer_addr: &str,
@@ -370,14 +372,14 @@ pub async fn stream_data_msg(
             Ok(client) => break client,
             Err(e) => {
                 cap_ev_tx
-                    .send(CapEvent::Error(anyhow::anyhow!("Failed to connect: {}", e)))
+                    .send(CapEvent::Error(anyhow::anyhow!("Failed to connect to remote: {}", e)))
                     .await
                     .unwrap_or(());
                 tokio::time::sleep(Duration::from_secs(5)).await;
             }
         }
     };
-
+    info!("Connected to remote server: {}", peer_addr);
     let bc_stream = BroadcastStream::new(stream);
 
     let msg_stream = bc_stream.filter_map(|res| {
@@ -388,7 +390,7 @@ pub async fn stream_data_msg(
     });
 
     let request = Request::new(msg_stream);
-
+    info!("Starting data stream to remote server");
     match client.client_stream(request).await {
         Ok(response) => info!("Received response: {:?}", response),
         Err(e) => {
