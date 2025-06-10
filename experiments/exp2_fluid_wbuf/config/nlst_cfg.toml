@@ -1,0 +1,16 @@
+[client]
+iface = "eth0"
+listen_port = 40042
+link_phy_cap = 5000000
+measurement_window = 35
+tstamp_type = "adapter"
+precision = "nano"
+regression_type = "simple"
+
+[server]
+ip = "172.16.0.254"
+port = 50041
+send_rtts = false
+send_link_states = true
+send_pgm_dps = true
+probe_technique = "iperf3" # "iperf3" or "pathload"
